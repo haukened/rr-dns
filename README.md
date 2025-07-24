@@ -45,17 +45,16 @@ uDNS is built with **CLEAN architecture** at its core:
 
 ```
 cmd/udnsd            ← CLI entrypoint
-
+docs/                ← Project documentation (Arc42, design notes)
 internal/
   dns/
     domain/          ← Core types like DNSQuery, DNSResponse, ResourceRecord
-    service/         ← Query resolution, orchestration logic
-    repo/            ← In-memory/static zone storage, later dynamic options
     infra/
-      udp/           ← UDP socket server
       config/        ← Config loading via env or CLI
       log/           ← Pluggable logging backend
-
+      udp/           ← UDP socket server
+    repo/            ← In-memory/static zone storage, later dynamic options
+    service/         ← Query resolution, orchestration logic
 pkg/                 ← Shared library code (if needed)
 ```
 
@@ -65,6 +64,8 @@ pkg/                 ← Shared library code (if needed)
 - [x] **SOLID principles**: small interfaces, testable logic, dependency inversion
 - [x] **Testability first**: domain and service layers are fully unit-testable
 - [x] **Go idioms**, not Go monoliths: no unnecessary abstractions, only meaningful ones
+
+For a detailed architectural breakdown, see the [Arc42 documentation](docs/arc42.md).
 
 ---
 
