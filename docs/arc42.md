@@ -129,11 +129,19 @@ Important Interfaces
 
 ### Black Box: Logger
 
-- **Responsibility**: Emit structured logs for query lifecycle and system activity.
-- **Interfaces**: Logger interface (e.g., `Info`, `Error`)
-- **Uses**: Underlying logging framework (e.g. `pino`, `zap`, `log`)
-- **Exposes**: `Info(fields map[string]any, msg string)`
-- **Location**: `internal/dns/infra/log/logger.go`
+- **Responsibility**: Emit structured, leveled logs for query lifecycle and system activity.
+- **Interfaces**: `Logger` interface (`Info`, `Error`, `Debug`, `Warn`, `Panic`, `Fatal`)
+- **Uses**: `zap` for production logging backend
+- **Exposes**: `Configure(env, level)`, `SetLogger()`, and global logging functions (`Info`, `Warn`, etc.)
+- **Location**: `internal/dns/infra/log/log.go`
+
+### Black Box: Config
+
+- **Responsibility**: Load environment-based configuration and apply schema validation.
+- **Interfaces**: None (invoked directly during startup)
+- **Uses**: `koanf` for env parsing, `validator` for field validation
+- **Exposes**: `Load() (*AppConfig, error)`
+- **Location**: `internal/dns/infra/config/config.go`
 
 # Runtime View
 
@@ -170,7 +178,7 @@ Mapping of Building Blocks to Infrastructure
 
 ## Logging
 
-- Use structured logging via `logger.Info({ queryID, name }, "message")`
+- Use structured logging via `logger.Info(map[string]any{ "field": value }, "message")`
 
 ## Configuration
 
