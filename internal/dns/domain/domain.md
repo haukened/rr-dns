@@ -1,0 +1,216 @@
+# uDNS Domain Model
+
+This document defines the core domain entities used in uDNS. These types are pure Go structures representing validated DNS data and responses, free of infrastructure, protocol, or side effects. They form the core contracts across the system and are designed to support CLEAN architecture and testability.
+
+---
+
+## Domain Philosophy
+
+- All domain types must be pure data: no logging, networking, or side effects
+- All domain logic must be deterministic and validation-driven
+- Domain types should be easy to construct, compare, serialize, and test
+- No dependency on services, infrastructure, or external libraries
+- Serve as the shared boundary contract across layers (e.g. service <-> infra)
+
+---
+
+## Top-Level Entities
+
+- `DNSQuery` – an incoming question from a client
+- `DNSResponse` – a full structured response (including Answers, Authority, Additional)
+- `ResourceRecord` – a typed DNS RR (A, AAAA, CNAME, etc.)
+- `RRType` – DNS record types (A, AAAA, NS, etc.)
+- `RRClass` – DNS classes (typically IN)
+- `RCode` – response codes (NOERROR, NXDOMAIN, SERVFAIL, etc.)
+
+---
+
+## DNSQuery
+
+Represents a single question section from a DNS request, as defined in [RFC 1035 §4.1.2](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2).
+
+**Fields:**
+- `ID`: 16-bit query identifier (used to match the response)
+- `Name`: Fully-qualified domain name (FQDN), e.g., `example.com.`
+- `Type`: RRType (see list below)
+- `Class`: RRClass (see list below)
+
+**Supported Types (RRType):**  
+Per [IANA DNS Parameters – Resource Record Types](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
+
+| Name     | Code | Description         |
+|----------|------|---------------------|
+| A        | 1    | IPv4 address        |
+| AAAA     | 28   | IPv6 address        |
+| CNAME    | 5    | Canonical name      |
+| MX       | 15   | Mail exchange       |
+| NS       | 2    | Name server         |
+| PTR      | 12   | Domain name pointer |
+| SOA      | 6    | Start of authority  |
+| SRV      | 33   | Service locator     |
+| TXT      | 16   | Text record         |
+| ANY      | 255  | Wildcard query (meta-query)
+
+**Supported Classes (RRClass):**  
+Per [RFC 1035 §3.2.4](https://datatracker.ietf.org/doc/html/rfc1035#section-3.2.4)
+
+| Name | Code | Description              |
+|------|------|--------------------------|
+| IN   | 1    | Internet (default class) |
+| CH   | 3    | Chaos (legacy)           |
+| HS   | 4    | Hesiod (legacy)          |
+| ANY  | 255  | Wildcard query (meta-query)
+
+**Constraints:**
+- `Name` must be a valid FQDN and must not be empty
+- `Type` must be a recognized RRType
+- `Class` must be a recognized RRClass
+
+---
+
+## DNSResponse
+
+Represents the entire response to a DNS query, as defined in [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1).
+
+
+**Fields:**
+- `ID`: Must match `DNSQuery.ID`
+- `RCode`: DNS response code
+- `Answers`: Answer records
+- `Authority`: Records describing the authoritative source
+- `Additional`: Additional helpful records (e.g. glue)
+
+**Field Details:**
+
+- `Authority`:  
+  This section typically contains `NS` or `SOA` records that identify the authoritative source for the queried domain. It is used to indicate which server is authoritative or to supply zone-level metadata in negative responses (e.g. NXDOMAIN, NXRRSET).
+
+- `Additional`:  
+  This section provides helpful extra records that clients might need to use the answer or authority data without additional queries. Common examples include glue records (A/AAAA for `NS` or `SRV` targets) or `OPT` pseudo-records for EDNS0.
+
+**Supported RCodes (Response Codes):**  
+Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1) and [RFC 6895](https://datatracker.ietf.org/doc/html/rfc6895)
+
+| Name      | Code | Meaning                          |
+|-----------|------|----------------------------------|
+| NOERROR   | 0    | No error                         |
+| FORMERR   | 1    | Format error                     |
+| SERVFAIL  | 2    | Server failure                   |
+| NXDOMAIN  | 3    | Non-existent domain              |
+| NOTIMP    | 4    | Not implemented                  |
+| REFUSED   | 5    | Query refused                    |
+| YXDOMAIN  | 6    | Name exists when it should not   |
+| YXRRSET   | 7    | RR Set exists when it should not |
+| NXRRSET   | 8    | RR Set that should exist does not|
+| NOTAUTH   | 9    | Server not authoritative         |
+| NOTZONE   | 10   | Name not inside zone             |
+
+-**Constraints:**
+- Response must conform to RFC 1035 structure
+- Answers must match the query name and type
+- RCode must be one of the values listed above
+
+---
+
+## ResourceRecord
+
+Represents a single DNS resource record.
+
+**Fields:**
+- `Name`: Domain name this record applies to
+- `Type`: RRType
+- `Class`: RRClass
+- `TTL`: Time-to-live (seconds)
+- `Data`: RDATA (binary content, format depends on type)
+
+**Constraints:**
+- TTL must be a non-negative 32-bit value
+- Data must conform to RRType-specific format (not enforced here)
+
+---
+
+## RRType
+
+**Note:** uDNS currently supports a subset of defined RRTypes. For the full authoritative list, see [IANA RRTypes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4).
+
+DNS Resource Record Types as defined by [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
+
+| Name     | Code | Description         |
+|----------|------|---------------------|
+| A        | 1    | IPv4 address        |
+| NS       | 2    | Name server         |
+| CNAME    | 5    | Canonical name      |
+| SOA      | 6    | Start of authority  |
+| PTR      | 12   | Domain name pointer |
+| MX       | 15   | Mail exchange       |
+| TXT      | 16   | Text record         |
+| AAAA     | 28   | IPv6 address        |
+| SRV      | 33   | Service locator     |
+| OPT      | 41   | EDNS0 option        |
+| CAA      | 257  | Certification Authority Authorization |
+
+- `OPT` (code 41) is a pseudo-record used for EDNS(0) extensions. It only appears in the Additional section and does not behave like traditional records.
+- `ANY` (code 255) is a meta-query type. Many resolvers restrict or refuse ANY queries in practice.
+
+---
+
+## RRClass
+
+**Note:** Most DNS traffic uses class `IN`. Other classes are included for completeness. See [IANA RR Classes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-2).
+
+DNS Resource Record Classes per RFC 1035
+
+| Name | Code | Description         |
+|------|------|---------------------|
+| IN   | 1    | Internet             |
+| CH   | 3    | Chaos (obsolete)     |
+| HS   | 4    | Hesiod (obsolete)    |
+| ANY  | 255  | Wildcard match class |
+
+**Note:** Most DNS traffic uses class `IN`.
+
+---
+
+## RCode
+
+**Note:** This list includes only the most common RCode values. For a complete list of extended response codes, see [IANA RCODE Assignments](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-6).
+
+Response Codes per RFC 1035 and RFC 6895
+
+| Name      | Code | Meaning                          |
+|-----------|------|----------------------------------|
+| NOERROR   | 0    | No error                         |
+| FORMERR   | 1    | Format error                     |
+| SERVFAIL  | 2    | Server failure                   |
+| NXDOMAIN  | 3    | Non-existent domain              |
+| NOTIMP    | 4    | Not implemented                  |
+| REFUSED   | 5    | Query refused                    |
+| YXDOMAIN  | 6    | Name exists when it should not   |
+| YXRRSET   | 7    | RR Set exists when it should not |
+| NXRRSET   | 8    | RR Set that should exist does not|
+| NOTAUTH   | 9    | Server not authoritative         |
+| NOTZONE   | 10   | Name not inside zone             |
+
+---
+
+## Example Request/Response Flow
+
+The following sequence illustrates how `DNSQuery`, `DNSResponse`, and `ResourceRecord` are passed through the system:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Infra as UDP Listener (infra/udp)
+    participant Service as Resolver (service)
+    participant Repo as ZoneRepository (repo)
+    participant Domain as Domain Models
+
+    Client->>Infra: raw DNS query packet
+    Infra->>Domain: decode to DNSQuery
+    Infra->>Service: Resolve(DNSQuery)
+    Service->>Repo: FindRecords(name, type)
+    Repo-->>Service: []ResourceRecord
+    Service->>Domain: construct DNSResponse
+    Service-->>Infra: DNSResponse
+    Infra->>Client: encoded DNS response
+```
