@@ -4,6 +4,21 @@ This document defines the core domain entities used in uDNS. These types are pur
 
 ---
 
+## Table of Contents
+
+- [Domain Philosophy](#domain-philosophy)
+- [Top-Level Entities](#top-level-entities)
+- [DNSQuery](#dnsquery)
+- [DNSResponse](#dnsresponse)
+- [ResourceRecord](#resourcerecord)
+- [RRType](#rrtype)
+- [RRClass](#rrclass)
+- [RCode](#rcode)
+- [Entity Relationships](#entity-relationships)
+- [Example Request/Response Flow](#example-requestresponse-flow)
+
+---
+
 ## Domain Philosophy
 
 - All domain types must be pure data: no logging, networking, or side effects
@@ -34,6 +49,17 @@ Represents a single question section from a DNS request, as defined in [RFC 1035
 - `Name`: Fully-qualified domain name (FQDN), e.g., `example.com.`
 - `Type`: RRType (see list below)
 - `Class`: RRClass (see list below)
+
+**Example:**
+
+```go
+DNSQuery{
+  ID: 12345,
+  Name: "example.com.",
+  Type: A,
+  Class: IN,
+}
+```
 
 **Supported Types (RRType):**  
 Per [IANA DNS Parameters – Resource Record Types](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
@@ -110,6 +136,26 @@ Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 - Answers must match the query name and type
 - RCode must be one of the values listed above
 
+**Example:**
+
+```go
+DNSResponse{
+  ID: 12345,
+  RCode: NOERROR,
+  Answers: []ResourceRecord{
+    {
+      Name: "example.com.",
+      Type: A,
+      Class: IN,
+      TTL: 300,
+      Data: []byte{192, 0, 2, 1}, // 192.0.2.1
+    },
+  },
+  Authority: nil,
+  Additional: nil,
+}
+```
+
 ---
 
 ## ResourceRecord
@@ -126,6 +172,21 @@ Represents a single DNS resource record.
 **Constraints:**
 - TTL must be a non-negative 32-bit value
 - Data must conform to RRType-specific format (not enforced here)
+- TTL must be a non-negative 32-bit value
+- Data must conform to RRType-specific format (not enforced here)
+- `ResourceRecord` instances are immutable once constructed and should not be mutated
+
+**Example:**
+
+```go
+ResourceRecord{
+  Name: "example.com.",
+  Type: A,
+  Class: IN,
+  TTL: 300,
+  Data: []byte{192, 0, 2, 1}, // IPv4 address: 192.0.2.1
+}
+```
 
 ---
 
@@ -200,34 +261,46 @@ The diagram below illustrates how the core domain entities are composed and rela
 ```mermaid
 classDiagram
     class DNSQuery {
-        uint16 ID
-        string Name
-        RRType Type
-        RRClass Class
+        <<value object>>
+        +ID: uint16
+        +Name: string
+        +Type: RRType
+        +Class: RRClass
+        +Validate(): error
     }
 
     class DNSResponse {
-        uint16 ID
-        RCode RCode
-        ResourceRecord[] Answers
-        ResourceRecord[] Authority
-        ResourceRecord[] Additional
+        +ID: uint16
+        +RCode: RCode
+        +Answers: []ResourceRecord
+        +Authority: []ResourceRecord
+        +Additional: []ResourceRecord
     }
 
     class ResourceRecord {
-        string Name
-        RRType Type
-        RRClass Class
-        uint32 TTL
-        []byte Data
+        +Name: string
+        +Type: RRType
+        +Class: RRClass
+        +TTL: uint32
+        +Data: []byte
     }
 
-    DNSQuery --> RRType
-    DNSQuery --> RRClass
-    DNSResponse --> RCode
-    DNSResponse --> ResourceRecord
-    ResourceRecord --> RRType
-    ResourceRecord --> RRClass
+    class RRType {
+      <<enumeration>>
+    }
+    class RRClass {
+      <<enumeration>>
+    }
+    class RCode {
+      <<enumeration>>
+    }
+
+    DNSResponse "1" *-- "*" ResourceRecord : answers/authority/additional
+    DNSQuery --> RRClass : has
+    ResourceRecord --> RRClass : has
+    ResourceRecord --> RRType : has
+    DNSQuery --> RRType : has
+    DNSResponse --> RCode : has
 ```
 
 ---
