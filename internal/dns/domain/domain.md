@@ -193,6 +193,45 @@ Response Codes per RFC 1035 and RFC 6895
 
 ---
 
+## Entity Relationships
+
+The diagram below illustrates how the core domain entities are composed and related:
+
+```mermaid
+classDiagram
+    class DNSQuery {
+        uint16 ID
+        string Name
+        RRType Type
+        RRClass Class
+    }
+
+    class DNSResponse {
+        uint16 ID
+        RCode RCode
+        ResourceRecord[] Answers
+        ResourceRecord[] Authority
+        ResourceRecord[] Additional
+    }
+
+    class ResourceRecord {
+        string Name
+        RRType Type
+        RRClass Class
+        uint32 TTL
+        []byte Data
+    }
+
+    DNSQuery --> RRType
+    DNSQuery --> RRClass
+    DNSResponse --> RCode
+    DNSResponse --> ResourceRecord
+    ResourceRecord --> RRType
+    ResourceRecord --> RRClass
+```
+
+---
+
 ## Example Request/Response Flow
 
 The following sequence illustrates how `DNSQuery`, `DNSResponse`, and `ResourceRecord` are passed through the system:
