@@ -1,0 +1,123 @@
+package domain
+
+import (
+	"fmt"
+)
+
+// RRType represents a DNS resource record type (e.g. A, AAAA, MX).
+// See IANA DNS Parameters for assigned codes.
+type RRType uint16
+
+// RRClass represents a DNS class (usually IN for Internet).
+type RRClass uint16
+
+// RCode represents a DNS response code indicating the result of a query.
+type RCode uint8
+
+// DNSQuery represents a DNS query section containing a question for resolution.
+type DNSQuery struct {
+	ID    uint16
+	Name  string
+	Type  RRType
+	Class RRClass
+}
+
+// DNSResponse represents a full DNS response including answer, authority, and additional sections.
+type DNSResponse struct {
+	ID         uint16
+	RCode      RCode
+	Answers    []ResourceRecord
+	Authority  []ResourceRecord
+	Additional []ResourceRecord
+}
+
+// ResourceRecord represents a DNS resource record (RR) containing a name, type, class, TTL, and RDATA.
+type ResourceRecord struct {
+	Name  string
+	Type  RRType
+	Class RRClass
+	TTL   uint32
+	Data  []byte
+}
+
+// NewDNSQuery constructs a DNSQuery and validates its fields.
+func NewDNSQuery(id uint16, name string, rrtype RRType, class RRClass) (DNSQuery, error) {
+	q := DNSQuery{
+		ID:    id,
+		Name:  name,
+		Type:  rrtype,
+		Class: class,
+	}
+	if err := q.Validate(); err != nil {
+		return DNSQuery{}, err
+	}
+	return q, nil
+}
+
+// Validate checks whether the DNSQuery fields are structurally and semantically valid.
+func (q DNSQuery) Validate() error {
+	if q.Name == "" {
+		return fmt.Errorf("query name must not be empty")
+	}
+	if !q.Type.IsValid() {
+		return fmt.Errorf("unsupported RRType: %d", q.Type)
+	}
+	if !q.Class.IsValid() {
+		return fmt.Errorf("unsupported RRClass: %d", q.Class)
+	}
+	return nil
+}
+
+// NewResourceRecord constructs a ResourceRecord and validates its fields.
+func NewResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error) {
+	rr := ResourceRecord{
+		Name:  name,
+		Type:  rrtype,
+		Class: class,
+		TTL:   ttl,
+		Data:  data,
+	}
+	if err := rr.Validate(); err != nil {
+		return ResourceRecord{}, err
+	}
+	return rr, nil
+}
+
+// Validate checks whether the ResourceRecord fields are valid.
+func (rr ResourceRecord) Validate() error {
+	if rr.Name == "" {
+		return fmt.Errorf("record name must not be empty")
+	}
+	if !rr.Type.IsValid() {
+		return fmt.Errorf("invalid RRType: %d", rr.Type)
+	}
+	if !rr.Class.IsValid() {
+		return fmt.Errorf("invalid RRClass: %d", rr.Class)
+	}
+	return nil
+}
+
+// IsValid returns true if the RRType is one of the supported types.
+func (t RRType) IsValid() bool {
+	switch t {
+	case 1, 2, 5, 6, 12, 15, 16, 28, 33, 41, 255, 257:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsValid returns true if the RRClass is one of the supported classes.
+func (c RRClass) IsValid() bool {
+	switch c {
+	case 1, 3, 4, 255:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsValid returns true if the RCode is within the supported response code range.
+func (r RCode) IsValid() bool {
+	return r <= 10
+}

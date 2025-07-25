@@ -1,0 +1,147 @@
+package domain
+
+import "testing"
+
+func TestNewResourceRecord_ValidInput(t *testing.T) {
+	rr, err := NewResourceRecord("example.com.", RRType(1), RRClass(1), 3600, []byte{127, 0, 0, 1})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if rr.Name != "example.com." {
+		t.Errorf("expected Name 'example.com.', got %q", rr.Name)
+	}
+	if rr.Type != 1 {
+		t.Errorf("expected Type 1, got %d", rr.Type)
+	}
+	if rr.Class != 1 {
+		t.Errorf("expected Class 1, got %d", rr.Class)
+	}
+	if rr.TTL != 3600 {
+		t.Errorf("expected TTL 3600, got %d", rr.TTL)
+	}
+	if len(rr.Data) != 4 || rr.Data[0] != 127 {
+		t.Errorf("unexpected Data: %v", rr.Data)
+	}
+}
+
+func TestNewResourceRecord_EmptyName(t *testing.T) {
+	_, err := NewResourceRecord("", RRType(1), RRClass(1), 60, []byte{1, 2, 3, 4})
+	if err == nil {
+		t.Fatal("expected error for empty name, got nil")
+	}
+	if want := "record name must not be empty"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestNewResourceRecord_InvalidRRType(t *testing.T) {
+	_, err := NewResourceRecord("example.com.", RRType(9999), RRClass(1), 60, []byte{1})
+	if err == nil {
+		t.Fatal("expected error for invalid RRType, got nil")
+	}
+	if want := "invalid RRType: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestNewResourceRecord_InvalidRRClass(t *testing.T) {
+	_, err := NewResourceRecord("example.com.", RRType(1), RRClass(9999), 60, []byte{1})
+	if err == nil {
+		t.Fatal("expected error for invalid RRClass, got nil")
+	}
+	if want := "invalid RRClass: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+func TestRRType_IsValid(t *testing.T) {
+	validTypes := []RRType{1, 2, 5, 6, 12, 15, 16, 28, 33, 41, 255, 257}
+	for _, typ := range validTypes {
+		if !typ.IsValid() {
+			t.Errorf("expected RRType %d to be valid", typ)
+		}
+	}
+	invalidTypes := []RRType{0, 3, 4, 7, 100, 9999}
+	for _, typ := range invalidTypes {
+		if typ.IsValid() {
+			t.Errorf("expected RRType %d to be invalid", typ)
+		}
+	}
+}
+
+func TestRRClass_IsValid(t *testing.T) {
+	validClasses := []RRClass{1, 3, 4, 255}
+	for _, class := range validClasses {
+		if !class.IsValid() {
+			t.Errorf("expected RRClass %d to be valid", class)
+		}
+	}
+	invalidClasses := []RRClass{0, 2, 5, 100, 9999}
+	for _, class := range invalidClasses {
+		if class.IsValid() {
+			t.Errorf("expected RRClass %d to be invalid", class)
+		}
+	}
+}
+
+func TestRCode_IsValid(t *testing.T) {
+	for i := 0; i <= 10; i++ {
+		rc := RCode(i)
+		if !rc.IsValid() {
+			t.Errorf("expected RCode %d to be valid", i)
+		}
+	}
+	invalidRCodes := []RCode{11, 12, 15, 100, 255}
+	for _, rc := range invalidRCodes {
+		if rc.IsValid() {
+			t.Errorf("expected RCode %d to be invalid", rc)
+		}
+	}
+}
+func TestNewDNSQuery_ValidInput(t *testing.T) {
+	q, err := NewDNSQuery(1234, "example.org.", RRType(1), RRClass(1))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if q.ID != 1234 {
+		t.Errorf("expected ID 1234, got %d", q.ID)
+	}
+	if q.Name != "example.org." {
+		t.Errorf("expected Name 'example.org.', got %q", q.Name)
+	}
+	if q.Type != 1 {
+		t.Errorf("expected Type 1, got %d", q.Type)
+	}
+	if q.Class != 1 {
+		t.Errorf("expected Class 1, got %d", q.Class)
+	}
+}
+
+func TestNewDNSQuery_EmptyName(t *testing.T) {
+	_, err := NewDNSQuery(1, "", RRType(1), RRClass(1))
+	if err == nil {
+		t.Fatal("expected error for empty name, got nil")
+	}
+	if want := "query name must not be empty"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestNewDNSQuery_UnsupportedRRType(t *testing.T) {
+	_, err := NewDNSQuery(1, "example.org.", RRType(9999), RRClass(1))
+	if err == nil {
+		t.Fatal("expected error for unsupported RRType, got nil")
+	}
+	if want := "unsupported RRType: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestNewDNSQuery_UnsupportedRRClass(t *testing.T) {
+	_, err := NewDNSQuery(1, "example.org.", RRType(1), RRClass(9999))
+	if err == nil {
+		t.Fatal("expected error for unsupported RRClass, got nil")
+	}
+	if want := "unsupported RRClass: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
