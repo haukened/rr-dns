@@ -29,11 +29,13 @@ This document defines the core domain entities used in uDNS. These types are pur
 
 ---
 
+
 ## Top-Level Entities
 
 - `DNSQuery` – an incoming question from a client
 - `DNSResponse` – a full structured response (including Answers, Authority, Additional)
-- `ResourceRecord` – a typed DNS RR (A, AAAA, CNAME, etc.)
+- `ResourceRecord` – a DNS RR used for caching, includes expiry
+- `AuthoritativeRecord` – a DNS RR loaded from zone files, includes TTL
 - `RRType` – DNS record types (A, AAAA, NS, etc.)
 - `RRClass` – DNS classes (typically IN)
 - `RCode` – response codes (NOERROR, NXDOMAIN, SERVFAIL, etc.)
@@ -158,9 +160,10 @@ DNSResponse{
 
 ---
 
+
 ## ResourceRecord
 
-Represents a single DNS resource record.
+Represents a DNS resource record used for caching. Contains an expiration timestamp (`ExpiresAt`) and is constructed from zone data or responses. Not persisted to disk.
 
 **Fields:**
 - `Name`: Domain name this record applies to
@@ -174,8 +177,11 @@ Represents a single DNS resource record.
 - Data must conform to RRType-specific format (not enforced here)
 - `ResourceRecord` instances are immutable once constructed and should not be mutated
 
-**Notes**
-- Typical RR's have TTL in seconds for expiry. This is only valuable in the context of the request timestamp. Upon arrival TTL is parsed to ExpiresAt to preserve the proper expiry time.
+**Notes:**
+- TTL is converted to `ExpiresAt` at construction time for cache expiry.
+- Use `NewResourceRecord` to construct and validate records.
+- Use `TTLRemaining()` to get time until expiry.
+- Use `CacheKey()` to generate a cache key for lookups.
 
 **Example:**
 
@@ -184,8 +190,39 @@ ResourceRecord{
   Name: "example.com.",
   Type: A,
   Class: IN,
-  ExpiresAt: time.Now().Add(TTL * time.Second),
+  ExpiresAt: time.Now().Add(300 * time.Second),
   Data: []byte{192, 0, 2, 1}, // IPv4 address: 192.0.2.1
+}
+```
+
+## AuthoritativeRecord
+
+Represents a DNS resource record loaded from a zone file. Used for authoritative answers and not subject to cache expiry. TTL is preserved for wire responses.
+
+**Fields:**
+- `Name`: Domain name this record applies to
+- `Type`: RRType
+- `Class`: RRClass
+- `TTL`: Time-to-live in seconds
+- `Data`: RDATA (binary content, format depends on type)
+
+**Constraints:**
+- `TTL` must be a positive integer
+- Data must conform to RRType-specific format (not enforced here)
+- Use `Validate()` to check record validity
+
+**Conversion:**
+- Use `NewResourceRecordFromAuthoritative(ar, now)` to convert to a `ResourceRecord` with expiry
+
+**Example:**
+
+```go
+AuthoritativeRecord{
+  Name: "example.com.",
+  Type: A,
+  Class: IN,
+  TTL: 300,
+  Data: []byte{192, 0, 2, 1},
 }
 ```
 
@@ -255,53 +292,76 @@ Response Codes per RFC 1035 and RFC 6895
 
 ---
 
+
 ## Entity Relationships
 
 The diagram below illustrates how the core domain entities are composed and related:
 
 ```mermaid
 classDiagram
-    class DNSQuery {
-        <<value object>>
-        +ID: uint16
-        +Name: string
-        +Type: RRType
-        +Class: RRClass
-        +Validate(): error
+    class RRType {
+      <<enumeration>>
+      +IsValid() bool
     }
 
-    class DNSResponse {
-        +ID: uint16
-        +RCode: RCode
-        +Answers: []ResourceRecord
-        +Authority: []ResourceRecord
-        +Additional: []ResourceRecord
+    class RRClass {
+      <<enumeration>>
+      +IsValid() bool
+    }
+
+    class RCode {
+      <<enumeration>>
+      +IsValid() bool
+    }
+
+    class DNSQuery {
+        <<value object>>
+        +ID uint16
+        +Name string
+        +Type RRType
+        +Class RRClass
+        +Validate() error
+        +CacheKey() string
+    }
+
+    class AuthoritativeRecord {
+        +Name string
+        +Type RRType
+        +Class RRClass
+        +TTL uint32
+        +Data []byte
+        +Validate() error
     }
 
     class ResourceRecord {
-        +Name: string
-        +Type: RRType
-        +Class: RRClass
-        +ExpiresAt: time.Time
-        +Data: []byte
+        +Name string
+        +Type RRType
+        +Class RRClass
+        +ExpiresAt time.Time
+        +Data []byte
+        +Validate() error
+        +TTLRemaining() time.Duration
+        +CacheKey() string
     }
 
-    class RRType {
-      <<enumeration>>
-    }
-    class RRClass {
-      <<enumeration>>
-    }
-    class RCode {
-      <<enumeration>>
+    class DNSResponse {
+        +ID uint16
+        +RCode RCode
+        +Answers []ResourceRecord
+        +Authority []ResourceRecord
+        +Additional []ResourceRecord
     }
 
-    DNSResponse "1" *-- "*" ResourceRecord : answers/authority/additional
-    DNSQuery --> RRClass : has
-    ResourceRecord --> RRClass : has
-    ResourceRecord --> RRType : has
-    DNSQuery --> RRType : has
-    DNSResponse --> RCode : has
+    %% Associations
+    DNSResponse --> RCode
+    DNSResponse --> ResourceRecord : answers/authority/additional
+    AuthoritativeRecord --> RRType
+    AuthoritativeRecord --> RRClass
+    AuthoritativeRecord --> ResourceRecord : produces
+    ResourceRecord --> RRType
+    ResourceRecord --> RRClass
+    DNSQuery --> RRType
+    DNSQuery --> RRClass
 ```
 
 ---
