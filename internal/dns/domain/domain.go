@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"time"
 )
 
 // RRType represents a DNS resource record type (e.g. A, AAAA, MX).
@@ -33,11 +34,11 @@ type DNSResponse struct {
 
 // ResourceRecord represents a DNS resource record (RR) containing a name, type, class, TTL, and RDATA.
 type ResourceRecord struct {
-	Name  string
-	Type  RRType
-	Class RRClass
-	TTL   uint32
-	Data  []byte
+	Name      string
+	Type      RRType
+	Class     RRClass
+	ExpiresAt time.Time
+	Data      []byte
 }
 
 // NewDNSQuery constructs a DNSQuery and validates its fields.
@@ -71,11 +72,11 @@ func (q DNSQuery) Validate() error {
 // NewResourceRecord constructs a ResourceRecord and validates its fields.
 func NewResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error) {
 	rr := ResourceRecord{
-		Name:  name,
-		Type:  rrtype,
-		Class: class,
-		TTL:   ttl,
-		Data:  data,
+		Name:      name,
+		Type:      rrtype,
+		Class:     class,
+		ExpiresAt: time.Now().Add(time.Duration(ttl) * time.Second),
+		Data:      data,
 	}
 	if err := rr.Validate(); err != nil {
 		return ResourceRecord{}, err
@@ -95,6 +96,11 @@ func (rr ResourceRecord) Validate() error {
 		return fmt.Errorf("invalid RRClass: %d", rr.Class)
 	}
 	return nil
+}
+
+// TTLRemaining returns the remaining TTL duration until the record expires.
+func (rr ResourceRecord) TTLRemaining() time.Duration {
+	return time.Until(rr.ExpiresAt)
 }
 
 // IsValid returns true if the RRType is one of the supported types.
@@ -120,4 +126,19 @@ func (c RRClass) IsValid() bool {
 // IsValid returns true if the RCode is within the supported response code range.
 func (r RCode) IsValid() bool {
 	return r <= 10
+}
+
+// generateCacheKey returns a string key derived from name, type, and class for caching.
+func generateCacheKey(name string, t RRType, c RRClass) string {
+	return fmt.Sprintf("%s:%d:%d", name, t, c)
+}
+
+// CacheKey returns a cache key string derived from the query's name, type, and class.
+func (q DNSQuery) CacheKey() string {
+	return generateCacheKey(q.Name, q.Type, q.Class)
+}
+
+// CacheKey returns a cache key string derived from the record's name, type, and class.
+func (rr ResourceRecord) CacheKey() string {
+	return generateCacheKey(rr.Name, rr.Type, rr.Class)
 }

@@ -84,8 +84,10 @@ graph TD
 ```mermaid
 graph TD
   UDPServer --> Resolver
-  Resolver --> ZoneRepository
-  ZoneRepository --> ZoneData
+  Resolver --> ZoneRepo
+  Resolver --> CacheRepo
+  CacheRepo --> MemCache
+  ZoneRepo --> ZoneData
   Resolver --> DNSResponse
   DNSResponse --> UDPServer
 ```
@@ -96,12 +98,29 @@ Maintain a modular, testable, and understandable DNS server architecture. Easy t
 Contained Building Blocks  
 - `UDPServer`: Listens and responds on port 53
 - `Resolver`: Interprets DNS queries and determines responses
-- `ZoneRepository`: In-memory lookup of static DNS records
+- `ZoneRepo`: In-memory lookup of static DNS records
+- `CacheRepo`: In-Memory lookup of cached records
+- `MemCache`: LRU cache for DNS resource records
 - `Logger`: Structured logging interface
 
 Important Interfaces  
 - `QueryResolver`: main service interface for DNS query handling
 - `ZoneRepository`: abstraction over zone data (in-memory, later file or network)
+- `MemCache`: cache interface for storing and retrieving ResourceRecords
+
+# Black Box: MemCache
+
+- **Responsibility**: Provide a fast, in-memory LRU cache for DNS resource records to reduce lookup latency and avoid redundant computation or zone file access. Used primarily by the resolver layer, and optionally the repository layer, to store recently accessed ResourceRecords keyed by query parameters (e.g., name+type).
+- **Interfaces**: Exposes cache operations (`Get(key string) ([]ResourceRecord, bool)`, `Put(key string, records []ResourceRecord, ttl time.Duration)`, `Delete(key string)`, etc.)
+- **Uses**: [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU cache implementation
+- **Exposes**: `New(size int) (*dnsCache, error)` and cache methods
+- **Location**: `internal/dns/infra/memcache/memcache.go`
+
+## Architectural Context
+
+The MemCache component is part of the infrastructure layer and is responsible for caching DNS resource records in memory using an LRU eviction policy. This reduces the load on the static zone repository and improves response times for frequently requested records. The cache is designed to be thread-safe and efficient, leveraging a proven third-party LRU implementation. It is not responsible for persistence or zone management, but acts as a performance optimization for the resolver and, optionally, the repository layers.
+
+MemCache is optional but recommended for high-throughput or resource-constrained deployments. Its size and usage can be configured at startup. The cache stores domain-layer `ResourceRecord` objects and is agnostic to the source of the records (static, dynamic, etc.).
 
 ### Black Box: UDPServer
 

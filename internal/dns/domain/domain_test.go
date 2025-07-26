@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestNewResourceRecord_ValidInput(t *testing.T) {
 	rr, err := NewResourceRecord("example.com.", RRType(1), RRClass(1), 3600, []byte{127, 0, 0, 1})
@@ -16,8 +19,9 @@ func TestNewResourceRecord_ValidInput(t *testing.T) {
 	if rr.Class != 1 {
 		t.Errorf("expected Class 1, got %d", rr.Class)
 	}
-	if rr.TTL != 3600 {
-		t.Errorf("expected TTL 3600, got %d", rr.TTL)
+	ttl := time.Until(rr.ExpiresAt)
+	if ttl < 3599*time.Second || ttl > 3601*time.Second {
+		t.Errorf("expected TTL ~3600s, got %v", ttl)
 	}
 	if len(rr.Data) != 4 || rr.Data[0] != 127 {
 		t.Errorf("unexpected Data: %v", rr.Data)
@@ -143,5 +147,87 @@ func TestNewDNSQuery_UnsupportedRRClass(t *testing.T) {
 	}
 	if want := "unsupported RRClass: 9999"; err.Error() != want {
 		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func TestResourceRecord_TTLRemaining(t *testing.T) {
+	rr, err := NewResourceRecord("example.com.", RRType(1), RRClass(1), 5, []byte{127, 0, 0, 1})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	ttl := rr.TTLRemaining()
+	if ttl <= 0 || ttl > 5*time.Second {
+		t.Errorf("expected TTL remaining between 0 and 5s, got %v", ttl)
+	}
+}
+
+func TestGenerateCacheKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rrtype   RRType
+		class    RRClass
+		expected string
+	}{
+		{"example.com.", 1, 1, "example.com.:1:1"},
+		{"test.org.", 28, 255, "test.org.:28:255"},
+		{"", 5, 3, ":5:3"},
+		{"zone.local.", 16, 4, "zone.local.:16:4"},
+	}
+	for _, tt := range tests {
+		got := generateCacheKey(tt.name, tt.rrtype, tt.class)
+		if got != tt.expected {
+			t.Errorf("generateCacheKey(%q, %d, %d) = %q; want %q", tt.name, tt.rrtype, tt.class, got, tt.expected)
+		}
+	}
+}
+func TestDNSQuery_CacheKey(t *testing.T) {
+	tests := []struct {
+		id       uint16
+		name     string
+		rrtype   RRType
+		class    RRClass
+		expected string
+	}{
+		{1, "example.com.", 1, 1, "example.com.:1:1"},
+		{2, "test.org.", 28, 255, "test.org.:28:255"},
+		{3, "", 5, 3, ":5:3"},
+		{4, "zone.local.", 16, 4, "zone.local.:16:4"},
+	}
+	for _, tt := range tests {
+		q := DNSQuery{
+			ID:    tt.id,
+			Name:  tt.name,
+			Type:  tt.rrtype,
+			Class: tt.class,
+		}
+		got := q.CacheKey()
+		if got != tt.expected {
+			t.Errorf("DNSQuery.CacheKey() = %q; want %q", got, tt.expected)
+		}
+	}
+}
+
+func TestResourceRecord_CacheKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		rrtype   RRType
+		class    RRClass
+		expected string
+	}{
+		{"example.com.", 1, 1, "example.com.:1:1"},
+		{"test.org.", 28, 255, "test.org.:28:255"},
+		{"", 5, 3, ":5:3"},
+		{"zone.local.", 16, 4, "zone.local.:16:4"},
+	}
+	for _, tt := range tests {
+		rr := ResourceRecord{
+			Name:  tt.name,
+			Type:  tt.rrtype,
+			Class: tt.class,
+		}
+		got := rr.CacheKey()
+		if got != tt.expected {
+			t.Errorf("ResourceRecord.CacheKey() = %q; want %q", got, tt.expected)
+		}
 	}
 }

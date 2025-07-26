@@ -7,16 +7,22 @@ import (
 	"github.com/haukened/udns/internal/dns/domain"
 )
 
+func TestInvalidCacheSize(t *testing.T) {
+	_, err := New(-1)
+	if err == nil {
+		t.Errorf("expected error for negative cache size, got nil")
+	}
+}
+
 func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 	cache, err := New(2)
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	key := "example.com:A"
-	rr := &domain.ResourceRecord{Name: "example.com.", Type: 1, Class: 1, TTL: 60}
-	cache.Set(key, rr, 1*time.Minute)
+	rr := &domain.ResourceRecord{Name: "example.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(10 * time.Second)}
+	cache.Set(rr)
 
-	got, ok := cache.Get(key)
+	got, ok := cache.Get(rr.CacheKey())
 	if !ok {
 		t.Fatalf("expected record to be found")
 	}
@@ -30,11 +36,10 @@ func TestDnsCache_Get_ReturnsFalseIfExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	key := "expired.com:A"
-	rr := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, TTL: 1}
-	cache.Set(key, rr, -1*time.Second) // already expired
+	rr := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
+	cache.Set(rr) // already expired
 
-	got, ok := cache.Get(key)
+	got, ok := cache.Get(rr.CacheKey())
 	if ok {
 		t.Errorf("expected not found for expired record, got %v", got)
 	}
@@ -60,19 +65,19 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, TTL: 60}
-	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, TTL: 60}
-	rr3 := &domain.ResourceRecord{Name: "c.com.", Type: 1, Class: 1, TTL: 60}
+	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
+	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
+	rr3 := &domain.ResourceRecord{Name: "c.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	cache.Set("a.com:A", rr1, 1*time.Minute)
-	cache.Set("b.com:A", rr2, 1*time.Minute)
-	cache.Set("c.com:A", rr3, 1*time.Minute)
+	cache.Set(rr1)
+	cache.Set(rr2)
+	cache.Set(rr3)
 
 	keys := cache.Keys()
 	want := map[string]bool{
-		"a.com:A": true,
-		"b.com:A": true,
-		"c.com:A": true,
+		"a.com.:1:1": true,
+		"b.com.:1:1": true,
+		"c.com.:1:1": true,
 	}
 	if len(keys) != 3 {
 		t.Errorf("expected 3 keys, got %d", len(keys))
@@ -89,18 +94,18 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, TTL: 1}
-	rr2 := &domain.ResourceRecord{Name: "valid.com.", Type: 1, Class: 1, TTL: 60}
+	rr1 := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
+	rr2 := &domain.ResourceRecord{Name: "valid.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	cache.Set("expired.com:A", rr1, -1*time.Second) // expired
-	cache.Set("valid.com:A", rr2, 1*time.Minute)
+	cache.Set(rr1) // expired
+	cache.Set(rr2) // valid
 
 	// Trigger eviction of expired by accessing it
-	cache.Get("expired.com:A")
+	cache.Get(rr1.CacheKey())
 
 	keys := cache.Keys()
-	if len(keys) != 1 || keys[0] != "valid.com:A" {
-		t.Errorf("expected only 'valid.com:A' in keys, got %v", keys)
+	if len(keys) != 1 || keys[0] != "valid.com.:1:1" {
+		t.Errorf("expected only 'valid.com.:1:1' in keys, got %v", keys)
 	}
 }
 
@@ -120,13 +125,12 @@ func TestDnsCache_Delete_RemovesEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	key := "delete.com:A"
-	rr := &domain.ResourceRecord{Name: "delete.com.", Type: 1, Class: 1, TTL: 60}
-	cache.Set(key, rr, 1*time.Minute)
+	rr := &domain.ResourceRecord{Name: "delete.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
+	cache.Set(rr)
 
-	cache.Delete(key)
+	cache.Delete(rr.CacheKey())
 
-	got, ok := cache.Get(key)
+	got, ok := cache.Get(rr.CacheKey())
 	if ok {
 		t.Errorf("expected record to be deleted, got %v", got)
 	}
@@ -153,17 +157,17 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, TTL: 60}
-	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, TTL: 60}
-	cache.Set("a.com:A", rr1, 1*time.Minute)
-	cache.Set("b.com:A", rr2, 1*time.Minute)
+	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
+	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
+	cache.Set(rr1)
+	cache.Set(rr2)
 
-	cache.Delete("a.com:A")
+	cache.Delete(rr1.CacheKey())
 
-	if _, ok := cache.Get("a.com:A"); ok {
+	if _, ok := cache.Get(rr1.CacheKey()); ok {
 		t.Errorf("expected 'a.com:A' to be deleted")
 	}
-	if _, ok := cache.Get("b.com:A"); !ok {
+	if _, ok := cache.Get(rr2.CacheKey()); !ok {
 		t.Errorf("expected 'b.com:A' to remain")
 	}
 	if cache.Len() != 1 {

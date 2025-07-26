@@ -166,15 +166,16 @@ Represents a single DNS resource record.
 - `Name`: Domain name this record applies to
 - `Type`: RRType
 - `Class`: RRClass
-- `TTL`: Time-to-live (seconds)
+- `ExpiresAt`: Timestamp when this record becomes invalid
 - `Data`: RDATA (binary content, format depends on type)
 
 **Constraints:**
-- TTL must be a non-negative 32-bit value
-- Data must conform to RRType-specific format (not enforced here)
-- TTL must be a non-negative 32-bit value
+- `ExpiresAt` must be a valid time in the future
 - Data must conform to RRType-specific format (not enforced here)
 - `ResourceRecord` instances are immutable once constructed and should not be mutated
+
+**Notes**
+- Typical RR's have TTL in seconds for expiry. This is only valuable in the context of the request timestamp. Upon arrival TTL is parsed to ExpiresAt to preserve the proper expiry time.
 
 **Example:**
 
@@ -183,7 +184,7 @@ ResourceRecord{
   Name: "example.com.",
   Type: A,
   Class: IN,
-  TTL: 300,
+  ExpiresAt: time.Now().Add(TTL * time.Second),
   Data: []byte{192, 0, 2, 1}, // IPv4 address: 192.0.2.1
 }
 ```
@@ -281,7 +282,7 @@ classDiagram
         +Name: string
         +Type: RRType
         +Class: RRClass
-        +TTL: uint32
+        +ExpiresAt: time.Time
         +Data: []byte
     }
 
