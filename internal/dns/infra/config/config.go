@@ -12,6 +12,8 @@ import (
 
 // AppConfig holds configuration values parsed from environment variables.
 type AppConfig struct {
+	CacheSize uint `koanf:"cache_size" validate:"required,gte=1"`
+
 	// Env is the runtime environment, either "dev" or "prod".
 	Env string `koanf:"env" validate:"required,oneof=dev prod"`
 
@@ -42,9 +44,10 @@ func Load() (*AppConfig, error) {
 
 	// Load default values using structs provider.
 	k.Load(structs.Provider(AppConfig{
-		Env:      "prod",
-		LogLevel: "info",
-		Port:     53,
+		CacheSize: 1000,
+		Env:       "prod",
+		LogLevel:  "info",
+		Port:      53,
 	}, "koanf"), nil)
 
 	// Load environment variables with prefix "UDNS_", using koanf/providers/env/v2 and Opt pattern.
