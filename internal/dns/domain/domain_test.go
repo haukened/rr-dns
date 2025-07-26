@@ -272,3 +272,86 @@ func TestRRTypeFromString(t *testing.T) {
 		}
 	}
 }
+
+func Test_RRFromAuthoritativeRecord(t *testing.T) {
+	authRR := AuthoritativeRecord{
+		Name:  "example.com.",
+		Type:  RRType(1),
+		Class: RRClass(1),
+		Data:  []byte{127, 0, 0, 1},
+		TTL:   3600,
+	}
+	err := authRR.Validate()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	rr := NewResourceRecordFromAuthoritative(authRR, time.Now())
+	if authRR.Name != rr.Name || authRR.Type != rr.Type || authRR.Class != rr.Class {
+		t.Errorf("AuthoritativeRecord does not match ResourceRecord")
+	}
+	if len(authRR.Data) != len(rr.Data) {
+		t.Errorf("expected Data length %d, got %d", len(rr.Data), len(authRR.Data))
+	}
+	for i := range rr.Data {
+		if authRR.Data[i] != rr.Data[i] {
+			t.Errorf("expected Data[%d] = %d, got %d", i, rr.Data[i], authRR.Data[i])
+		}
+	}
+	// Check that rr.ExpiresAt is approximately time.Now() + authRR.TTL seconds
+	expectedExpires := time.Now().Add(time.Duration(authRR.TTL) * time.Second)
+	diff := rr.ExpiresAt.Sub(expectedExpires)
+	if diff < -1*time.Second || diff > 1*time.Second {
+		t.Errorf("expected ExpiresAt ~%v, got %v (diff %v)", expectedExpires, rr.ExpiresAt, diff)
+	}
+}
+
+func Test_AuthRR_InvalidName(t *testing.T) {
+	authRR := AuthoritativeRecord{
+		Name:  "",
+		Type:  RRType(1),
+		Class: RRClass(1),
+		Data:  []byte{127, 0, 0, 1},
+		TTL:   3600,
+	}
+	err := authRR.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty name, got nil")
+	}
+	if want := "record name must not be empty"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func Test_AuthRR_InvalidRRType(t *testing.T) {
+	authRR := AuthoritativeRecord{
+		Name:  "example.com.",
+		Type:  RRType(9999),
+		Class: RRClass(1),
+		Data:  []byte{127, 0, 0, 1},
+		TTL:   3600,
+	}
+	err := authRR.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid RRType, got nil")
+	}
+	if want := "invalid RRType: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
+
+func Test_AuthRR_InvalidRRClass(t *testing.T) {
+	authRR := AuthoritativeRecord{
+		Name:  "example.com.",
+		Type:  RRType(1),
+		Class: RRClass(9999),
+		Data:  []byte{127, 0, 0, 1},
+		TTL:   3600,
+	}
+	err := authRR.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid RRClass, got nil")
+	}
+	if want := "invalid RRClass: 9999"; err.Error() != want {
+		t.Errorf("expected error %q, got %q", want, err.Error())
+	}
+}
