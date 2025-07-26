@@ -231,3 +231,44 @@ func TestResourceRecord_CacheKey(t *testing.T) {
 		}
 	}
 }
+func TestRRTypeFromString(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected RRType
+	}{
+		{"A", 1},
+		{"NS", 2},
+		{"CNAME", 5},
+		{"SOA", 6},
+		{"PTR", 12},
+		{"MX", 15},
+		{"TXT", 16},
+		{"AAAA", 28},
+		{"SRV", 33},
+		{"OPT", 41},
+		{"ANY", 255},
+		{"CAA", 257},
+		{"a", 1},
+		{"ns", 2},
+		{"cname", 5},
+		{"soa", 6},
+		{"ptr", 12},
+		{"mx", 15},
+		{"txt", 16},
+		{"aaaa", 28},
+		{"srv", 33},
+		{"opt", 41},
+		{"any", 255},
+		{"caa", 257},
+		{"", 0},
+		{"unknown", 0},
+		{"ZZZ", 0},
+		{"123", 0},
+	}
+	for _, tt := range tests {
+		got := RRTypeFromString(tt.input)
+		if got != tt.expected {
+			t.Errorf("RRTypeFromString(%q) = %d; want %d", tt.input, got, tt.expected)
+		}
+	}
+}

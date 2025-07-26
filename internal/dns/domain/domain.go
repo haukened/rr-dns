@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -141,4 +142,36 @@ func (q DNSQuery) CacheKey() string {
 // CacheKey returns a cache key string derived from the record's name, type, and class.
 func (rr ResourceRecord) CacheKey() string {
 	return generateCacheKey(rr.Name, rr.Type, rr.Class)
+}
+
+// RRTypeFromString converts a record type string to its corresponding RRType value.
+func RRTypeFromString(s string) RRType {
+	switch strings.ToUpper(s) {
+	case "A":
+		return 1
+	case "NS":
+		return 2
+	case "CNAME":
+		return 5
+	case "SOA":
+		return 6
+	case "PTR":
+		return 12
+	case "MX":
+		return 15
+	case "TXT":
+		return 16
+	case "AAAA":
+		return 28
+	case "SRV":
+		return 33
+	case "OPT":
+		return 41
+	case "ANY":
+		return 255
+	case "CAA":
+		return 257
+	default:
+		return 0 // invalid/unknown
+	}
 }
