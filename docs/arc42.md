@@ -85,17 +85,17 @@ graph TD
 graph TD
   UDPServer --> Resolver
   Resolver --> ZoneRepo
+  ZoneRepo --> ZoneData[ZoneData]
   Resolver --> CacheRepo
   CacheRepo --> MemCache
-  ZoneRepo --> ZoneData
   Resolver --> DNSResponse
   DNSResponse --> UDPServer
 ```
 
-Motivation  
+### Motivation  
 Maintain a modular, testable, and understandable DNS server architecture. Easy to extend with additional features like logging, metrics, blocklists.
 
-Contained Building Blocks  
+### Contained Building Blocks  
 - `UDPServer`: Listens and responds on port 53
 - `Resolver`: Interprets DNS queries and determines responses
 - `ZoneRepo`: In-memory lookup of static DNS records
@@ -103,7 +103,9 @@ Contained Building Blocks
 - `MemCache`: LRU cache for DNS resource records
 - `Logger`: Structured logging interface
 
-Important Interfaces  
+- `AuthoritativeRecord`: Immutable DNS record used for zone files, with TTL preserved for wire responses
+
+### Important Interfaces  
 - `QueryResolver`: main service interface for DNS query handling
 - `ZoneRepository`: abstraction over zone data (in-memory, later file or network)
 - `MemCache`: cache interface for storing and retrieving ResourceRecords
@@ -134,7 +136,7 @@ MemCache is optional but recommended for high-throughput or resource-constrained
 
 - **Responsibility**: Accepts parsed queries, performs resolution logic, returns DNS responses.
 - **Interfaces**: `QueryResolver`
-- **Uses**: `ZoneRepository`, domain models
+- **Uses**: `ZoneRepository`, `CacheRepository`, domain models
 - **Exposes**: `Resolve(query DNSQuery) (DNSResponse, error)`
 - **Location**: `internal/dns/service/resolver.go`
 
@@ -145,6 +147,14 @@ MemCache is optional but recommended for high-throughput or resource-constrained
 - **Uses**: In-memory data store, eventually file or DB
 - **Exposes**: `FindRecords(name string, qtype RRType) ([]ResourceRecord, error)`
 - **Location**: `internal/dns/repo/static_repo.go`
+
+### Black Box: AuthoritativeRecord
+
+- **Responsibility**: Represent static zone-file DNS records that persist in memory and are served directly by the authoritative resolver. These records preserve their TTL and are not subject to LRU eviction or expiration logic.
+- **Interfaces**: Used as a pure domain data structure
+- **Uses**: Constructed from YAML/TOML/JSON zone file data
+- **Exposes**: `Validate() error`, `TTL`, `Name`, `Type`, `Class`, `Data`
+- **Location**: `internal/dns/domain/domain.go`
 
 ### Black Box: Logger
 
@@ -171,6 +181,42 @@ MemCache is optional but recommended for high-throughput or resource-constrained
 - Resolver looks up name/type in ZoneRepository.
 - DNSResponse is created and encoded.
 - UDPServer sends response back to client.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant UDPServer
+    participant Resolver
+    participant ZoneRepo
+    participant CacheRepo
+    participant UpstreamClient
+    participant Domain as Domain Models
+
+    Client->>UDPServer: binary DNS packet
+    UDPServer->>Domain: decode to DNSQuery
+    UDPServer->>Resolver: Resolve(DNSQuery)
+
+    Resolver->>ZoneRepo: FindRecords(name, type)
+    ZoneRepo-->>Resolver: []AuthoritativeRecord (or nil)
+
+    alt records found in zone
+        Resolver->>Domain: to DNSResponse with TTLs
+    else
+        Resolver->>CacheRepo: Get(name, type, class)
+        CacheRepo-->>Resolver: []ResourceRecord (or nil)
+        alt records found in cache
+            Resolver->>Domain: to DNSResponse
+        else
+            Resolver->>UpstreamClient: Forward query
+            UpstreamClient-->>Resolver: DNSResponse
+            Resolver->>CacheRepo: Put(name, response)
+        end
+    end
+
+    Resolver->>Logger: log structured query event
+    Resolver-->>UDPServer: DNSResponse
+    UDPServer->>Client: encoded binary DNS response
+```
 
 # Deployment View
 
