@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/koanf v1.5.0
+	github.com/knadh/koanf/v2 v2.2.2
 )
 
 require (
@@ -13,6 +14,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	golang.org/x/crypto v0.40.0 // indirect

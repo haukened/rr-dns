@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/structs"
+	"github.com/knadh/koanf/v2"
 )
 
 // AppConfig holds configuration values parsed from environment variables.

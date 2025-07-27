@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/v2"
 )
 
 func TestLoad_Defaults(t *testing.T) {
