@@ -102,39 +102,191 @@ func TestLoadZoneDirectory_MalformedFile(t *testing.T) {
 	}
 }
 
-func TestExpandName(t *testing.T) {
-	cases := []struct {
-		label string
-		root  string
-		want  string
-	}{
-		{"@", "example.com.", "example.com."},
-		{"foo", "example.com.", "foo.example.com."},
-		{"bar.", "example.com.", "bar."},
+func TestLoadZoneFile_YAML(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.yaml")
+	content := `
+zone_root: example.com
+www:
+  A: "1.2.3.4"
+mail:
+  MX: "mail.example.com"
+`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
 	}
-	for _, tc := range cases {
-		got := expandName(tc.label, tc.root)
-		if got != tc.want {
-			t.Errorf("expandName(%q, %q) = %q, want %q", tc.label, tc.root, got, tc.want)
+
+	records, err := loadZoneFile(tmpFile, 300*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 2 {
+		t.Errorf("expected 2 records, got %d", len(records))
+	}
+	names := map[string]bool{}
+	types := map[string]bool{}
+	for _, r := range records {
+		names[r.Name] = true
+		types[r.Type.String()] = true
+	}
+	if !names["www.example.com"] || !names["mail.example.com"] {
+		t.Errorf("unexpected record names: %v", names)
+	}
+	if !types["A"] || !types["MX"] {
+		t.Errorf("unexpected record types: %v", types)
+	}
+}
+
+func TestLoadZoneFile_JSON(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.json")
+	content := `{
+	"zone_root": "example.org",
+	"api": {
+	"A": "5.6.7.8"
+	}
+}`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	records, err := loadZoneFile(tmpFile, 120*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Errorf("expected 1 record, got %d", len(records))
+	}
+	r := records[0]
+	if r.Name != "api.example.org" {
+		t.Errorf("unexpected name: %s", r.Name)
+	}
+	if r.Type.String() != "A" {
+		t.Errorf("unexpected type: %s", r.Type.String())
+	}
+	if string(r.Data) != "5.6.7.8" {
+		t.Errorf("unexpected data: %s", string(r.Data))
+	}
+	if r.TTL != 120 {
+		t.Errorf("unexpected TTL: %d", r.TTL)
+	}
+}
+
+func TestLoadZoneFile_TOML(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.toml")
+	content := `zone_root = "example.net"
+
+[web]
+A = "9.8.7.6"
+[mx]
+MX = "mx.example.net"
+`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	records, err := loadZoneFile(tmpFile, 180*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 2 {
+		t.Errorf("expected 2 records, got %d", len(records))
+	}
+	names := map[string]bool{}
+	types := map[string]bool{}
+	for _, r := range records {
+		names[r.Name] = true
+		types[r.Type.String()] = true
+	}
+	if !names["web.example.net"] || !names["mx.example.net"] {
+		t.Errorf("unexpected record names: %v", names)
+	}
+	if !types["A"] || !types["MX"] {
+		t.Errorf("unexpected record types: %v", types)
+	}
+	for _, r := range records {
+		if r.TTL != 180 {
+			t.Errorf("unexpected TTL: %d", r.TTL)
 		}
 	}
 }
 
-func TestNormalize(t *testing.T) {
-	cases := []struct {
-		input any
-		want  []string
-	}{
-		{"foo", []string{"foo"}},
-		{[]any{"bar", "baz"}, []string{"bar", "baz"}},
-		{123, nil},
-		{[]any{123, "x"}, []string{"x"}},
+func TestLoadZoneFile_UnsupportedExtension(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.txt")
+	if err := os.WriteFile(tmpFile, []byte("irrelevant"), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
 	}
-	for _, tc := range cases {
-		got := normalize(tc.input)
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("normalize(%v) = %v, want %v", tc.input, got, tc.want)
-		}
+
+	records, err := loadZoneFile(tmpFile, 60*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if records != nil {
+		t.Errorf("expected nil records for unsupported extension, got %v", records)
+	}
+}
+
+func TestLoadZoneFile_MissingZoneRoot(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.yaml")
+	content := `
+www:
+  A: "1.2.3.4"
+`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	_, err := loadZoneFile(tmpFile, 60*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "missing 'zone_root'") {
+		t.Errorf("expected missing zone_root error, got: %v", err)
+	}
+}
+
+func TestLoadZoneFile_InvalidFile(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.yaml")
+	content := `:invalid_yaml`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	_, err := loadZoneFile(tmpFile, 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for invalid file, got nil")
+	}
+}
+
+func TestLoadZoneFile_EmptyRawMap(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "testzone.yaml")
+	content := `
+zone_root: example.com
+www:
+`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	records, err := loadZoneFile(tmpFile, 60*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 0 {
+		t.Errorf("expected 0 records, got %d", len(records))
+	}
+}
+
+func TestLoadZoneFile_BadAuthoratativeRecord(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
+	content := `
+zone_root: example.com
+www:
+  INVALID: "1.2.3.4"`
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	records, err := loadZoneFile(tmpFile, 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for bad authoritative record, got nil")
+	}
+	if records != nil {
+		t.Errorf("expected nil records for bad authoritative record, got %v", records)
 	}
 }
 
@@ -196,190 +348,38 @@ func TestBuildAuthoritativeRecord_Multi(t *testing.T) {
 	}
 }
 
-func TestLoadZoneFile_YAML(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
-	content := `
-zone_root: example.com
-www:
-  A: "1.2.3.4"
-mail:
-  MX: "mail.example.com"
-`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
+func TestExpandName(t *testing.T) {
+	cases := []struct {
+		label string
+		root  string
+		want  string
+	}{
+		{"@", "example.com.", "example.com."},
+		{"foo", "example.com.", "foo.example.com."},
+		{"bar.", "example.com.", "bar."},
 	}
-
-	records, err := loadZoneFile(tmpFile, 300*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(records) != 2 {
-		t.Errorf("expected 2 records, got %d", len(records))
-	}
-	names := map[string]bool{}
-	types := map[string]bool{}
-	for _, r := range records {
-		names[r.Name] = true
-		types[r.Type.String()] = true
-	}
-	if !names["www.example.com"] || !names["mail.example.com"] {
-		t.Errorf("unexpected record names: %v", names)
-	}
-	if !types["A"] || !types["MX"] {
-		t.Errorf("unexpected record types: %v", types)
-	}
-}
-
-func TestLoadZoneFile_JSON(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.json")
-	content := `{
-	"zone_root": "example.org",
-	"api": {
-	"A": "5.6.7.8"
-	}
-}`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	records, err := loadZoneFile(tmpFile, 120*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(records) != 1 {
-		t.Errorf("expected 1 record, got %d", len(records))
-	}
-	r := records[0]
-	if r.Name != "api.example.org" {
-		t.Errorf("unexpected name: %s", r.Name)
-	}
-	if r.Type.String() != "A" {
-		t.Errorf("unexpected type: %s", r.Type.String())
-	}
-	if string(r.Data) != "5.6.7.8" {
-		t.Errorf("unexpected data: %s", string(r.Data))
-	}
-	if r.TTL != 120 {
-		t.Errorf("unexpected TTL: %d", r.TTL)
-	}
-}
-
-func TestLoadZoneFile_TOML(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.toml")
-	content := `zone_root = "example.net"
-
-[web]
-A = "9.8.7.6"
-[mx]
-MX = "mx.example.net"
-`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	records, err := loadZoneFile(tmpFile, 180*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(records) != 2 {
-		t.Errorf("expected 2 records, got %d", len(records))
-	}
-	names := map[string]bool{}
-	types := map[string]bool{}
-	for _, r := range records {
-		names[r.Name] = true
-		types[r.Type.String()] = true
-	}
-	if !names["web.example.net"] || !names["mx.example.net"] {
-		t.Errorf("unexpected record names: %v", names)
-	}
-	if !types["A"] || !types["MX"] {
-		t.Errorf("unexpected record types: %v", types)
-	}
-	for _, r := range records {
-		if r.TTL != 180 {
-			t.Errorf("unexpected TTL: %d", r.TTL)
+	for _, tc := range cases {
+		got := expandName(tc.label, tc.root)
+		if got != tc.want {
+			t.Errorf("expandName(%q, %q) = %q, want %q", tc.label, tc.root, got, tc.want)
 		}
 	}
 }
 
-func TestLoadZoneFile_UnsupportedExtension(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.txt")
-	if err := os.WriteFile(tmpFile, []byte("irrelevant"), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
+func TestNormalize(t *testing.T) {
+	cases := []struct {
+		input any
+		want  []string
+	}{
+		{"foo", []string{"foo"}},
+		{[]any{"bar", "baz"}, []string{"bar", "baz"}},
+		{123, nil},
+		{[]any{123, "x"}, []string{"x"}},
 	}
-
-	records, err := loadZoneFile(tmpFile, 60*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if records != nil {
-		t.Errorf("expected nil records for unsupported extension, got %v", records)
-	}
-}
-
-func TestLoadZoneFile_MissingZoneRoot(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
-	content := `
-www:
-  A: "1.2.3.4"
-`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	_, err := loadZoneFile(tmpFile, 60*time.Second)
-	if err == nil || !strings.Contains(err.Error(), "missing 'zone_root'") {
-		t.Errorf("expected missing zone_root error, got: %v", err)
-	}
-}
-
-func TestLoadZoneFile_InvalidFile(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
-	content := `:invalid_yaml`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	_, err := loadZoneFile(tmpFile, 60*time.Second)
-	if err == nil {
-		t.Errorf("expected error for invalid file, got nil")
-	}
-}
-
-func TestLoadZoneFile_EmptyRawMap(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
-	content := `
-zone_root: example.com
-www:
-`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	records, err := loadZoneFile(tmpFile, 60*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(records) != 0 {
-		t.Errorf("expected 0 records, got %d", len(records))
-	}
-}
-
-func TestLoadZoneFile_BadAuthoratativeRecord(t *testing.T) {
-	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
-	content := `
-zone_root: example.com
-www:
-  INVALID: "1.2.3.4"`
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-	records, err := loadZoneFile(tmpFile, 60*time.Second)
-	if err == nil {
-		t.Errorf("expected error for bad authoritative record, got nil")
-	}
-	if records != nil {
-		t.Errorf("expected nil records for bad authoritative record, got %v", records)
+	for _, tc := range cases {
+		got := normalize(tc.input)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("normalize(%v) = %v, want %v", tc.input, got, tc.want)
+		}
 	}
 }
