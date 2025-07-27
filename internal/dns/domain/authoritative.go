@@ -15,6 +15,22 @@ type AuthoritativeRecord struct {
 	Data  []byte
 }
 
+// NewAuthoritativeRecord creates a validated AuthoritativeRecord.
+// Returns an error if any field is invalid.
+func NewAuthoritativeRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (*AuthoritativeRecord, error) {
+	ar := &AuthoritativeRecord{
+		Name:  name,
+		Type:  rrtype,
+		Class: class,
+		TTL:   ttl,
+		Data:  data,
+	}
+	if err := ar.Validate(); err != nil {
+		return nil, err
+	}
+	return ar, nil
+}
+
 // Validate checks whether the AuthoritativeRecord fields are valid.
 func (ar AuthoritativeRecord) Validate() error {
 	if ar.Name == "" {
