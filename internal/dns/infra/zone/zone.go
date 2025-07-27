@@ -15,7 +15,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 
-	"github.com/haukened/udns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
 // LoadZoneDirectory walks the given directory, loading all supported zone files (YAML, JSON, TOML)

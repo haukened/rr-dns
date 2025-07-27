@@ -1,4 +1,4 @@
-module github.com/haukened/udns
+module github.com/haukened/rr-dns
 
 go 1.24.5
 

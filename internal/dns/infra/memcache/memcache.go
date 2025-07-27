@@ -4,7 +4,7 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/haukened/udns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
 // dnsCache is an in-memory TTL-aware cache using an LRU strategy to store DNS resource records.

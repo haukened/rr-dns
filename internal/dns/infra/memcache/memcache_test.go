@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/haukened/udns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
 func TestInvalidCacheSize(t *testing.T) {
