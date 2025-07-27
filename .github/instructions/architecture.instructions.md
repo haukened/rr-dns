@@ -4,7 +4,7 @@ applyTo: "*.go"
 
 # CLEAN Architecture in Go
 
-This guide defines how to implement CLEAN architecture in Golang for the uDNS project. It is intended to help GitHub Copilot produce consistent, idiomatic, and testable code aligned with the project's goals.
+This guide defines how to implement CLEAN architecture in Golang for the rr-dns project. It is intended to help GitHub Copilot produce consistent, idiomatic, and testable code aligned with the project's goals.
 
 ## Principles
 
@@ -19,7 +19,7 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
 ## Project Structure
 
 ```
-/cmd/udnsd             # Main program entrypoint
+/cmd/rr-dnsd            # Main program entrypoint
 
 /internal
   /dns
@@ -41,7 +41,7 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
 - Services (`service/`) may only depend on `domain` and `repo` interfaces.
 - Repos (`repo/`) define interfaces, not implementations.
 - Infra (`infra/`) implements repo interfaces and handles all external systems (e.g., networking, file IO).
-- Entry points (`cmd/udnsd`) wire everything together.
+- Entry points (`cmd/rr-dnsd`) wire everything together.
 
 
 ## Naming Conventions
@@ -60,9 +60,9 @@ When generating new code:
 - Add unit tests for each `service` method
 
 
-# Architecture Boundaries for uDNS
+# Architecture Boundaries for rr-dns
 
-This file describes the architectural boundaries enforced by the uDNS project. These constraints are essential for maintaining testability, maintainability, and the separation of concerns defined by the CLEAN architecture.
+This file describes the architectural boundaries enforced by the rr-dns project. These constraints are essential for maintaining testability, maintainability, and the separation of concerns defined by the CLEAN architecture.
 
 ---
 
@@ -70,7 +70,7 @@ This file describes the architectural boundaries enforced by the uDNS project. T
 
 ```
 cmd/
-  udnsd/             # Entrypoint, DI setup
+  rr-dnsd/           # Entrypoint, DI setup
 
 internal/
   dns/
@@ -91,7 +91,7 @@ internal/
 - `service` may import `domain` and `repo` interfaces.
 - `repo` may import `domain`, but not `infra` or `service`.
 - `infra` may implement `repo` interfaces, but must not import `service` or `cmd`.
-- `cmd/udnsd` is the only layer allowed to wire up dependencies across boundaries.
+- `cmd/rr-dnsd` is the only layer allowed to wire up dependencies across boundaries.
 
 ---
 
@@ -117,7 +117,7 @@ internal/
 - Handles UDP, config, file IO, logging
 - May import domain types, but not services
 
-### Cmd (`cmd/udnsd`)
+### Cmd (`cmd/rr-dnsd`)
 - Assembles the application
 - Responsible for constructing all layers
 
@@ -136,7 +136,7 @@ internal/
 
 - Services are initialized with interfaces from `repo` or `infra`
 - All shared data must pass through domain types (never raw maps or side effects)
-- Cross-layer interaction should be traceable via dependency injection in `cmd/udnsd`
+- Cross-layer interaction should be traceable via dependency injection in `cmd/rr-dnsd`
 
 ---
 

@@ -2,9 +2,9 @@
 applyTo: "*_test.go"
 ---
 
-# Testing Guidelines for uDNS
+# Testing Guidelines for rr-dns
 
-This guide defines how to structure and write tests for the uDNS project. It supports Copilot and contributors in producing high-quality, maintainable, and properly isolated tests.
+This guide defines how to structure and write tests for the rr-dns project. It supports Copilot and contributors in producing high-quality, maintainable, and properly isolated tests.
 
 ---
 
@@ -45,7 +45,7 @@ This guide defines how to structure and write tests for the uDNS project. It sup
 
 ### Mocking
 
-uDNS uses `github.com/stretchr/testify/mock` for mocking interfaces in tests.
+rr-dns uses `github.com/stretchr/testify/mock` for mocking interfaces in tests.
 
 To create a mock:
 ```go

@@ -4,7 +4,7 @@ applyTo: "*.go"
 
 # SOLID Principles in Go
 
-This guide describes how to apply the SOLID principles in the uDNS project using idiomatic Go. It supports Copilot and developers in writing modular, clean, and testable code.
+This guide describes how to apply the SOLID principles in the rr-dns project using idiomatic Go. It supports Copilot and developers in writing modular, clean, and testable code.
 
 ---
 
@@ -60,11 +60,11 @@ Clients should not be forced to depend on things they don’t use.
 
 High-level modules (like services) should not depend on low-level modules (like UDP). Both should depend on abstractions.
 
-✅ uDNS:
+✅ rr-dns:
 - The `resolverService` depends on `ZoneRepository` interface.
 - `udpServer` depends on `QueryResolver`.
 
-Concrete dependencies are injected from `cmd/udnsd`.
+Concrete dependencies are injected from `cmd/rr-dnsd`.
 
 ---
 

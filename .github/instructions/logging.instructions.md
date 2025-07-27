@@ -2,13 +2,13 @@
 applyTo: "**"
 ---
 
-# Logging Instructions for uDNS
+# Logging Instructions for rr-dns
 
-This guide defines how logging is implemented and should be used throughout the uDNS codebase.
+This guide defines how logging is implemented and should be used throughout the rr-dns codebase.
 
 ## Overview
 
-uDNS uses a singleton-style logger based on [`zap`](https://github.com/uber-go/zap) for structured, leveled logging. The logger is initialized once during startup and accessed globally via convenience functions.
+rr-dns uses a singleton-style logger based on [`zap`](https://github.com/uber-go/zap) for structured, leveled logging. The logger is initialized once during startup and accessed globally via convenience functions.
 
 ## Configuration
 
