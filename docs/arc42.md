@@ -1,10 +1,10 @@
-# uDNS
+# RR-DNS
 
 A lightweight, modern, CLEAN, and extensible golang DNS server.
 
 # Introduction and Goals
 
-uDNS is a lightweight, high-performance DNS server written in Go. It aims to provide a clean, testable implementation of a DNS resolver following the principles of CLEAN architecture and SOLID design. The project is suitable for local networks, containerized environments, embedded devices, and privacy-aware users seeking ad-blocking and custom resolution behavior.
+RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to provide a clean, testable implementation of a DNS resolver following the principles of CLEAN architecture and SOLID design. The project is suitable for local networks, containerized environments, embedded devices, and privacy-aware users seeking ad-blocking and custom resolution behavior.
 
 ## Requirements Overview
 
@@ -47,11 +47,11 @@ uDNS is a lightweight, high-performance DNS server written in Go. It aims to pro
 
 ```mermaid
 graph TD
-  Client[DNS Client] --> uDNS
-  uDNS --> Internet[Upstream DNS or Static Zone Data]
+  Client[DNS Client] --> RR-DNS
+  RR-DNS --> Internet[Upstream DNS or Static Zone Data]
 ```
 
-uDNS acts as a local DNS resolver for internal clients. It either serves DNS records from a local in-memory zone or passes through to upstream resolvers (future phase). It may also serve as a DNS sinkhole for ad/tracker blocking.
+RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS records from a local in-memory zone or passes through to upstream resolvers (future phase). It may also serve as a DNS sinkhole for ad/tracker blocking.
 
 ## Technical Context
 
@@ -77,7 +77,58 @@ graph TD
 
 # Building Block View
 
-## Whitebox Overall System
+## Zone File Support and Loading
+
+RR-DNS supports loading DNS zone records from files in YAML, JSON, and TOML formats. Zone files must specify a `zone_root` field and one or more record sections. All zone files in a configured directory are loaded at startup, and records are parsed into authoritative DNS records.
+
+
+**Zone File Structure Examples:**
+
+- Supported formats: `.yaml`, `.yml`, `.json`, `.toml`
+- Each file must contain a `zone_root` field and one or more record sections.
+- Labels are expanded to FQDNs using the zone root.
+- Files missing `zone_root` or with unsupported extensions are ignored or produce errors.
+
+**YAML Example:**
+```yaml
+zone_root: example.com
+www:
+  A: 
+    - "1.2.3.4"
+    - "5.6.7.8"
+mail:
+  MX: "mail.example.com"
+```
+
+**JSON Example:**
+```json
+{
+  "zone_root": "example.org",
+  "api": {
+    "A": "5.6.7.8"
+  },
+  "mail": {
+    "MX": "mail.example.org"
+  }
+}
+```
+
+**TOML Example:**
+```toml
+zone_root = "example.net"
+
+[web]
+A = "9.8.7.6"
+
+[mx]
+MX = "mx.example.net"
+```
+
+**Directory Loading:**
+
+- All supported zone files in a directory are loaded and parsed at startup.
+- Errors in individual files are logged and do not prevent loading of other files.
+- Records are mapped to immutable `AuthoritativeRecord` objects for serving.
 
 > For detailed information on the core domain types used throughout the architecture, see [`domain/domain.md`](../../internal/dns/domain/domain.md).
 
@@ -96,14 +147,18 @@ graph TD
 Maintain a modular, testable, and understandable DNS server architecture. Easy to extend with additional features like logging, metrics, blocklists.
 
 ### Contained Building Blocks  
-- `UDPServer`: Listens and responds on port 53
-- `Resolver`: Interprets DNS queries and determines responses
 - `ZoneRepo`: In-memory lookup of static DNS records
+- `ZoneData`: In-memory storage of `AuthoritativeRecord`s
+- `AuthoritativeRecord`: Immutable DNS record used for zone files, with TTL preserved for wire responses
+
+- `Resolver`: Interprets DNS queries and determines responses
+- `UDPServer`: Listens and responds on port 53
+
 - `CacheRepo`: In-Memory lookup of cached records
 - `MemCache`: LRU cache for DNS resource records
-- `Logger`: Structured logging interface
 
-- `AuthoritativeRecord`: Immutable DNS record used for zone files, with TTL preserved for wire responses
+- `Logger`: Structured logging interface
+- `Config`: Loads environment-based configuration
 
 ### Important Interfaces  
 - `QueryResolver`: main service interface for DNS query handling
@@ -224,12 +279,12 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-  Client --> uDNSD[udnsd Binary]
-  uDNSD --> HostOS
+  Client --> rrdnsd[rrdnsd Binary]
+  rrdnsd --> HostOS
 ```
 
 Motivation  
-uDNS should be easy to run on Linux, inside Docker, or on embedded systems. No root requirements beyond port binding.
+RR-DNS should be easy to run on Linux, inside Docker, or on embedded systems. No root requirements beyond port binding.
 
 Quality and/or Performance Features  
 - Fast startup
@@ -237,7 +292,7 @@ Quality and/or Performance Features
 - Concurrent query handling via goroutines
 
 Mapping of Building Blocks to Infrastructure  
-- All services are compiled into `udnsd` binary.
+- All services are compiled into `rrdnsd` binary.
 
 # Cross-cutting Concepts
 
@@ -268,8 +323,8 @@ Mapping of Building Blocks to Infrastructure
 
 ## Quality Scenarios
 
-- uDNS should respond to 1000 QPS without dropping queries.
-- uDNS should start in < 50ms.
+- RR-DNS should respond to 1000 QPS without dropping queries.
+- RR-DNS should start in < 50ms.
 - Zone records should be reloadable without restart (future).
 
 # Risks and Technical Debts

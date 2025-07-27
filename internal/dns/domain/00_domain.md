@@ -1,6 +1,6 @@
-# uDNS Domain Model
+# RR-DNS Domain Model
 
-This document defines the core domain entities used in uDNS. These types are pure Go structures representing validated DNS data and responses, free of infrastructure, protocol, or side effects. They form the core contracts across the system and are designed to support CLEAN architecture and testability.
+This document defines the core domain entities used in RR-DNS. These types are pure Go structures representing validated DNS data and responses, free of infrastructure, protocol, or side effects. They form the core contracts across the system and are designed to support CLEAN architecture and testability.
 
 ---
 
@@ -230,7 +230,7 @@ AuthoritativeRecord{
 
 ## RRType
 
-**Note:** uDNS currently supports a subset of defined RRTypes. For the full authoritative list, see [IANA RRTypes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4).
+**Note:** RR-DNS currently supports a subset of defined RRTypes. For the full authoritative list, see [IANA RRTypes](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4).
 
 DNS Resource Record Types as defined by [IANA](https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml#dns-parameters-4)
 

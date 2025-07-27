@@ -1,17 +1,18 @@
-# uDNS
-A small, lightning fast, local DNS caching resolver with Ad-Blocking. Written in Go.
+[![Static Badge](https://img.shields.io/badge/Arc42-Docs-blue)](docs/arc42.md) ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/haukened/rr-dns) 
 
-# uDNS
 
-**uDNS** (micro DNS) is a lightweight, fast, and modern DNS server written in Go. It is designed to be simple to operate, easy to extend, and highly testable — ideal for home networks, containers, embedded environments, and security-conscious setups.
+# RR-DNS
+A small, lightning fast, local DNS caching resolver with Ad-Blocking. Written in Go. RR is a [double entendre](https://en.wikipedia.org/wiki/Double_entendre) for "Rapid Resolver" (what it does) and "Resource Record" (the core object of DNS servers).
 
-> **Repo**: https://github.com/haukened/uDNS
+**RR-DNS** (Rapid Resolver DNS) is a lightweight, fast, and modern DNS server written in Go. It is designed to be simple to operate, easy to extend, and highly testable — ideal for home networks, containers, embedded environments, and security-conscious setups.
+
+> **Repo**: https://github.com/haukened/rr-dns
 
 ---
 
 ## 🚀 Purpose
 
-uDNS exists to provide a minimal but robust DNS server that:
+RR-DNS exists to provide a minimal but robust DNS server that:
 
 - Responds quickly and correctly to DNS queries
 - Is small and efficient enough to run anywhere
@@ -30,32 +31,32 @@ The DNS ecosystem is full of powerful resolvers — from BIND to Unbound, dnsmas
 - Come with large configuration surfaces or legacy constraints
 - Aren't optimized for simplicity, testability, or container-native workflows
 
-We built **uDNS** because we wanted something different:
+We built **RR-DNS** because we wanted something different:
 - A resolver focused on **local caching, speed, and blocking**
 - An implementation that is **cleanly architected**, **easy to reason about**, and **fun to work on**
 - A system that fits naturally into **modern deployment environments** like Docker, k8s sidecars, or embedded devices
 - A Go-based project where features like **ad-blocking**, **web admin**, and **logging** can evolve modularly over time
 
-In short: **uDNS fills the gap** between full-stack DNS suites and toy resolvers — with a maintainable, developer-friendly design.
+In short: **RR-DNS fills the gap** between full-stack DNS suites and toy resolvers — with a maintainable, developer-friendly design.
 ---
 
 ## 🛠️ Architecture
 
-uDNS is built with **CLEAN architecture** at its core:
+RR-DNS is built with **CLEAN architecture** at its core:
 
 ```
-cmd/udnsd            ← CLI entrypoint
-docs/                ← Project documentation (Arc42, design notes)
+cmd/rrdnsd            ← CLI entrypoint
+docs/                 ← Project documentation (Arc42, design notes)
 internal/
   dns/
-    domain/          ← Core types like DNSQuery, DNSResponse, ResourceRecord
+    domain/           ← Core types like DNSQuery, DNSResponse, ResourceRecord
     infra/
-      config/        ← Config loading via env or CLI
-      log/           ← Pluggable logging backend
-      udp/           ← UDP socket server
-    repo/            ← In-memory/static zone storage, later dynamic options
-    service/         ← Query resolution, orchestration logic
-pkg/                 ← Shared library code (if needed)
+      config/         ← Config loading via env or CLI
+      log/            ← Pluggable logging backend
+      udp/            ← UDP socket server
+    repo/             ← In-memory/static zone storage, later dynamic options
+    service/          ← Query resolution, orchestration logic
+pkg/                  ← Shared library code (if needed)
 ```
 
 ### Guiding Principles
@@ -71,7 +72,7 @@ For a detailed architectural breakdown, see the [Arc42 documentation](docs/arc42
 
 ## 📦 MVP Features
 
-The first version of `udnsd` will support:
+The first version of `rrdnsd` will support:
 
 - [x] Responding to A/AAAA queries over UDP
 - [x] Serving static zones from in-memory definitions
@@ -123,4 +124,4 @@ We’re inspired by the spirit of projects like
 - [Pi-hole](https://pi-hole.net/) 
 - [Technitium](https://technitium.com/dns/)
 
-but uDNS is built from the ground up with modern, maintainable Go in mind.
+but RR-DNS is built from the ground up with modern, maintainable Go in mind.
