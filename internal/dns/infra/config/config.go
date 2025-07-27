@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -22,6 +24,32 @@ type AppConfig struct {
 
 	// Port is the network port the DNS server will bind to.
 	Port int `koanf:"port" validate:"required,gte=1,lt=65535"`
+
+	// ZoneDir is the directory where zone files are located.
+	ZoneDir string `koanf:"zone_dir" validate:"required"`
+
+	// Servers is a list of upstream DNS servers in ip:port format.
+	Servers []string `koanf:"servers" validate:"required,dive,ip_port"`
+}
+
+// validIPPort validates whether the provided field value is a valid IP address and port combination.
+// It expects the value to be in the format "IP:Port". The function returns true if the IP address
+// is valid and both the IP and port are non-empty; otherwise, it returns false.
+func validIPPort(fl validator.FieldLevel) bool {
+	// stringify the field value to get the IP:Port format.
+	addr := fl.Field().String()
+	// Split the address into IP and port.
+	ip, port, err := net.SplitHostPort(addr)
+	if err != nil || ip == "" || port == "" {
+		return false
+	}
+	// Check if the IP address is valid.
+	if net.ParseIP(ip) == nil {
+		return false
+	}
+	// Check if the port is a valid number between 1 and 65535.
+	portNum, err := strconv.ParseUint(port, 10, 16)
+	return err == nil && portNum > 0 && portNum < 65536
 }
 
 // envLoader is a function that loads environment variables with the prefix "UDNS_".
@@ -32,9 +60,30 @@ var envLoader = func(k *koanf.Koanf) error {
 	return k.Load(env.Provider(".", env.Opt{
 		Prefix: "UDNS_",
 		TransformFunc: func(key, value string) (string, any) {
-			return strings.ToLower(strings.TrimPrefix(key, "UDNS_")), value
+			key = strings.ToLower(strings.TrimPrefix(key, "UDNS_"))
+			value = strings.TrimSpace(value)
+
+			if value == "" {
+				return key, value
+			}
+
+			if strings.Contains(value, " ") || strings.Contains(value, ",") {
+				parts := strings.FieldsFunc(value, func(r rune) bool {
+					return r == ' ' || r == ','
+				})
+				return key, parts
+			}
+
+			return key, value
 		},
 	}), nil)
+}
+
+// registerValidation registers a custom validation function "ip_port" with the provided validator.
+// It associates the "ip_port" tag with the validIPPort validation logic.
+// Returns an error if registration fails.
+var registerValidation = func(v *validator.Validate) error {
+	return v.RegisterValidation("ip_port", validIPPort)
 }
 
 // Load parses environment variables and returns an AppConfig instance.
@@ -48,6 +97,8 @@ func Load() (*AppConfig, error) {
 		Env:       "prod",
 		LogLevel:  "info",
 		Port:      53,
+		ZoneDir:   "/etc/rr-dns/zones/",
+		Servers:   []string{"1.1.1.1:53", "1.0.0.1:53"},
 	}, "koanf"), nil)
 
 	// Load environment variables with prefix "UDNS_", using koanf/providers/env/v2 and Opt pattern.
@@ -65,6 +116,12 @@ func Load() (*AppConfig, error) {
 
 	// Validate the configuration.
 	validate := validator.New(validator.WithRequiredStructEnabled())
+
+	// Register the custom validation function for IP:Port format.
+	err = registerValidation(validate)
+	if err != nil {
+		return nil, fmt.Errorf("error registering validation: %w", err)
+	}
 
 	err = validate.Struct(&cfg)
 	if err != nil {

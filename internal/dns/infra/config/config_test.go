@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/knadh/koanf/v2"
 )
 
@@ -14,6 +15,8 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Unsetenv("UDNS_LOG_LEVEL")
 	os.Unsetenv("UDNS_PORT")
 	os.Unsetenv("UDNS_CACHE_SIZE")
+	os.Unsetenv("UDNS_ZONE_DIR")
+	os.Unsetenv("UDNS_SERVERS")
 
 	cfg, err := Load()
 	if err != nil {
@@ -28,6 +31,19 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Port != 53 {
 		t.Errorf("expected Port=53, got %d", cfg.Port)
 	}
+	if cfg.ZoneDir != "/etc/rr-dns/zones/" {
+		t.Errorf("expected ZoneDir=/etc/rr-dns/zones/, got %q", cfg.ZoneDir)
+	}
+	wantUpstream := []string{"1.1.1.1:53", "1.0.0.1:53"}
+	if len(cfg.Servers) != len(wantUpstream) {
+		t.Errorf("expected Upstream length %d, got %d", len(wantUpstream), len(cfg.Servers))
+	} else {
+		for i, v := range wantUpstream {
+			if cfg.Servers[i] != v {
+				t.Errorf("expected Upstream[%d]=%q, got %q", i, v, cfg.Servers[i])
+			}
+		}
+	}
 }
 
 func TestLoad_ValidOverrides(t *testing.T) {
@@ -35,6 +51,8 @@ func TestLoad_ValidOverrides(t *testing.T) {
 	t.Setenv("UDNS_LOG_LEVEL", "info")
 	t.Setenv("UDNS_PORT", "9953")
 	t.Setenv("UDNS_CACHE_SIZE", "2000")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_SERVERS", "8.8.8.8:53,8.8.4.4:53")
 
 	cfg, err := Load()
 	if err != nil {
@@ -49,7 +67,21 @@ func TestLoad_ValidOverrides(t *testing.T) {
 	if cfg.Port != 9953 {
 		t.Errorf("expected Port=9953, got %d", cfg.Port)
 	}
+	if cfg.ZoneDir != "/tmp/zones/" {
+		t.Errorf("expected ZoneDir=/tmp/zones/, got %q", cfg.ZoneDir)
+	}
+	wantUpstream := []string{"8.8.8.8:53", "8.8.4.4:53"}
+	if len(cfg.Servers) != len(wantUpstream) {
+		t.Errorf("expected Upstream length %d, got %d", len(wantUpstream), len(cfg.Servers))
+	} else {
+		for i, v := range wantUpstream {
+			if cfg.Servers[i] != v {
+				t.Errorf("expected Upstream[%d]=%q, got %q", i, v, cfg.Servers[i])
+			}
+		}
+	}
 }
+
 func TestLoad_WhenKoanfLoadFails(t *testing.T) {
 	orig := envLoader
 	envLoader = func(k *koanf.Koanf) error {
@@ -63,11 +95,26 @@ func TestLoad_WhenKoanfLoadFails(t *testing.T) {
 	}
 }
 
+func TestLoad_RegisterValidationFails(t *testing.T) {
+	orig := registerValidation
+	registerValidation = func(v *validator.Validate) error {
+		return errors.New("mocked validation error")
+	}
+	defer func() { registerValidation = orig }()
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "mocked validation error") {
+		t.Fatal("expected error when registering validation, got nil")
+	}
+}
+
 func TestLoad_InvalidEnv(t *testing.T) {
 	t.Setenv("UDNS_ENV", "staging")
 	t.Setenv("UDNS_LOG_LEVEL", "info")
 	t.Setenv("UDNS_PORT", "53")
 	t.Setenv("UDNS_CACHE_SIZE", "1000")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -80,6 +127,8 @@ func TestLoad_InvalidLogLevel(t *testing.T) {
 	t.Setenv("UDNS_LOG_LEVEL", "trace")
 	t.Setenv("UDNS_PORT", "53")
 	t.Setenv("UDNS_CACHE_SIZE", "1000")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -92,6 +141,8 @@ func TestLoad_InvalidPort(t *testing.T) {
 	t.Setenv("UDNS_LOG_LEVEL", "info")
 	t.Setenv("UDNS_PORT", "99999")
 	t.Setenv("UDNS_CACHE_SIZE", "1000")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -103,6 +154,8 @@ func TestLoad_PortNaN(t *testing.T) {
 	t.Setenv("UDNS_ENV", "dev")
 	t.Setenv("UDNS_LOG_LEVEL", "info")
 	t.Setenv("UDNS_PORT", "not_a_number")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -115,9 +168,78 @@ func TestLoad_InvalidCacheSize(t *testing.T) {
 	t.Setenv("UDNS_LOG_LEVEL", "info")
 	t.Setenv("UDNS_PORT", "53")
 	t.Setenv("UDNS_CACHE_SIZE", "-1")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid CACHE_SIZE, got nil")
+	}
+}
+
+func TestLoad_InvalidZoneDir(t *testing.T) {
+	t.Setenv("UDNS_ENV", "dev")
+	t.Setenv("UDNS_LOG_LEVEL", "info")
+	t.Setenv("UDNS_PORT", "53")
+	t.Setenv("UDNS_CACHE_SIZE", "1000")
+	t.Setenv("UDNS_ZONE_DIR", "") // required
+	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for empty ZoneDir, got nil")
+	}
+}
+
+func TestLoad_InvalidUpstream(t *testing.T) {
+	t.Setenv("UDNS_ENV", "dev")
+	t.Setenv("UDNS_LOG_LEVEL", "info")
+	t.Setenv("UDNS_PORT", "53")
+	t.Setenv("UDNS_CACHE_SIZE", "1000")
+	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("UDNS_SERVERS", "not_a_server") // invalid format
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid Servers, got nil")
+	}
+}
+
+func TestValidIPPort(t *testing.T) {
+	type testCase struct {
+		input    string
+		expected bool
+	}
+
+	cases := []testCase{
+		{"1.2.3.4:53", true},
+		{"127.0.0.1:5353", true},
+		{"::1:53", false}, // missing brackets for IPv6
+		{"[::1]:53", true},
+		{"192.168.1.1:", false},
+		{":53", false},
+		{"not_an_ip:53", false},
+		{"1.2.3.4:notaport", false},
+		{"", false},
+		{"1.2.3.4", false},
+		{"[::1]", false},
+	}
+
+	validate := validator.New()
+	_ = validate.RegisterValidation("ip_port", validIPPort)
+
+	for _, tc := range cases {
+		// Use a struct to test the validator
+		type S struct {
+			Addr string `validate:"ip_port"`
+		}
+		s := S{Addr: tc.input}
+		err := validate.Struct(s)
+		if tc.expected && err != nil {
+			t.Errorf("validIPPort(%q) = false, want true", tc.input)
+		}
+		if !tc.expected && err == nil {
+			t.Errorf("validIPPort(%q) = true, want false", tc.input)
+		}
 	}
 }
