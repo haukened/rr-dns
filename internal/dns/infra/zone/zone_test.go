@@ -104,10 +104,24 @@ func TestLoadZoneDirectory_MalformedFile(t *testing.T) {
 
 func TestLoadZoneFile_YAML(t *testing.T) {
 	tmpFile := filepath.Join(os.TempDir(), "testzone.yaml")
+	/*
+		* We will load multiple A records for the same FQDN
+		* to ensure that the parser can handle multiple values correctly.
+		* per RFC 1035, Secion 3.4.1 "A RDATA format":
+
+		> Hosts that have multiple Internet addresses will have multiple A records.
+		> The RDATA section of an A line in a master file is an Internet address expressed as four
+		> decimal numbers separated by dots without any imbedded spaces (e.g., "10.2.0.52" or "192.0.5.6").
+
+		* Therefore, we expect 3 records to be created.
+	*/
+
 	content := `
 zone_root: example.com
 www:
-  A: "1.2.3.4"
+  A: 
+    - "1.2.3.4"
+    - "5.6.7.8"
 mail:
   MX: "mail.example.com"
 `
@@ -119,8 +133,8 @@ mail:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(records) != 2 {
-		t.Errorf("expected 2 records, got %d", len(records))
+	if len(records) != 3 {
+		t.Errorf("expected 3 records, got %d", len(records))
 	}
 	names := map[string]bool{}
 	types := map[string]bool{}
