@@ -100,13 +100,30 @@ Per [RFC 1035 §3.2.4](https://datatracker.ietf.org/doc/html/rfc1035#section-3.2
 
 Represents the entire response to a DNS query, as defined in [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1).
 
-
 **Fields:**
 - `ID`: Must match `DNSQuery.ID`
-- `RCode`: DNS response code
-- `Answers`: Answer records
+- `RCode`: DNS response code (see RCode section)
+- `Answers`: Answer records that directly answer the query
 - `Authority`: Records describing the authoritative source
-- `Additional`: Additional helpful records (e.g. glue)
+- `Additional`: Additional helpful records (e.g. glue records)
+
+**Constructor:**
+```go
+func NewDNSResponse(id uint16, rcode RCode, answers, authority, additional []ResourceRecord) (DNSResponse, error)
+```
+
+**Validation:**
+- Validates that RCode is within supported range
+- Validates all ResourceRecord entries in each section (Answers, Authority, Additional)
+- Returns detailed error messages for invalid records with section and index information
+
+**Utility Methods:**
+- `Validate()`: Validates the entire response structure
+- `IsError()`: Returns true if RCode indicates an error condition (non-zero)
+- `HasAnswers()`: Returns true if the response contains answer records
+- `AnswerCount()`: Returns the number of answer records
+- `AuthorityCount()`: Returns the number of authority records  
+- `AdditionalCount()`: Returns the number of additional records
 
 **Field Details:**
 
@@ -133,29 +150,32 @@ Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 | NOTAUTH   | 9    | Server not authoritative         |
 | NOTZONE   | 10   | Name not inside zone             |
 
--**Constraints:**
+**Constraints:**
 - Response must conform to RFC 1035 structure
-- Answers must match the query name and type
-- RCode must be one of the values listed above
+- All ResourceRecord entries must be valid
+- RCode must be one of the supported values listed above
+- ID should match the corresponding DNSQuery ID
 
 **Example:**
 
 ```go
-DNSResponse{
-  ID: 12345,
-  RCode: NOERROR,
-  Answers: []ResourceRecord{
-    {
-      Name: "example.com.",
-      Type: A,
-      Class: IN,
-      TTL: 300,
-      Data: []byte{192, 0, 2, 1}, // 192.0.2.1
-    },
-  },
-  Authority: nil,
-  Additional: nil,
+// Create resource record for answer
+rr, _ := NewResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1})
+
+// Create DNS response
+resp, err := NewDNSResponse(12345, 0, []ResourceRecord{rr}, nil, nil)
+if err != nil {
+    // Handle validation error
 }
+
+// The response structure:
+// DNSResponse{
+//   ID: 12345,
+//   RCode: 0, // NOERROR
+//   Answers: []ResourceRecord{rr},
+//   Authority: []ResourceRecord{},
+//   Additional: []ResourceRecord{},
+// }
 ```
 
 ---
@@ -350,6 +370,12 @@ classDiagram
         +Answers []ResourceRecord
         +Authority []ResourceRecord
         +Additional []ResourceRecord
+        +Validate() error
+        +IsError() bool
+        +HasAnswers() bool
+        +AnswerCount() int
+        +AuthorityCount() int
+        +AdditionalCount() int
     }
 
     %% Associations
