@@ -106,7 +106,7 @@ We welcome contributions! Please:
 
 ## 📜 License
 
-- [GNU GPL v3](LICENSE)
+- [MIT](LICENSE)
 
 ---
 
