@@ -2,7 +2,7 @@
 
 A lightweight, modern, CLEAN, and extensible golang DNS server.
 
-# Introduction and Goals
+# 1. Introduction and Goals
 
 RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to provide a clean, testable implementation of a DNS resolver following the principles of CLEAN architecture and SOLID design. The project is suitable for local networks, containerized environments, embedded devices, and privacy-aware users seeking ad-blocking and custom resolution behavior.
 
@@ -33,7 +33,7 @@ RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to p
 | Home users       | n/a                        | Simple DNS setup, privacy features, ad blocking   |
 | DevOps Engineers | n/a                        | Lightweight resolver for container-based platforms |
 
-# Architecture Constraints
+# 2. Architecture Constraints
 
 - Must be written in Go.
 - Must build into a single statically-linked binary.
@@ -41,9 +41,9 @@ RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to p
 - Must not pull in large runtime dependencies or DNS libraries.
 - Logging must be structured and human-readable (`logger.Info({...}, "msg")`).
 
-# Context and Scope
+# 3. Context and Scope
 
-## Business Context
+## 3.1 Business Context
 
 ```mermaid
 graph TD
@@ -53,7 +53,7 @@ graph TD
 
 RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS records from a local in-memory zone or passes through to upstream resolvers (future phase). It may also serve as a DNS sinkhole for ad/tracker blocking.
 
-## Technical Context
+## 3.2 Technical Context
 
 ```mermaid
 graph TD
@@ -68,28 +68,198 @@ graph TD
 - Resolver queries zone records from a repository.
 - Result is formatted into a DNS response and returned.
 
-# Solution Strategy
+# 4. Solution Strategy
 
 - Use CLEAN architecture to separate domain logic, services, and infrastructure.
 - All DNS logic is implemented in-house; no reliance on external parsing libraries.
 - Minimal binary using Go's standard tooling.
 - Use Go interfaces and DI for mockability and testability.
 
-# Building Block View
+# 5. Building Block View
 
-## Zone File Support and Loading
+This section shows the static decomposition of RR-DNS into building blocks and their dependencies. The view follows a hierarchical structure showing the system at different levels of detail.
 
-RR-DNS supports loading DNS zone records from files in YAML, JSON, and TOML formats. Zone files must specify a `zone_root` field and one or more record sections. All zone files in a configured directory are loaded at startup, and records are parsed into authoritative DNS records.
+## 5.1 Whitebox Overall System
 
+***Overview Diagram***
 
-**Zone File Structure Examples:**
+```mermaid
+graph TD
+    subgraph "RR-DNS System"
+        subgraph "Domain Layer"
+            Domain[Domain Models<br/>DNSQuery, DNSResponse<br/>ResourceRecord, etc.]
+        end
+        
+        subgraph "Service Layer"
+            Resolver[Query Resolver]
+        end
+        
+        subgraph "Infrastructure Layer"
+            UDPServer[UDP Server]
+            ZoneLoader[Zone Loader]
+            DNSCache[DNS Cache]
+            Logger[Logger]
+            Config[Configuration]
+        end
+        
+        subgraph "Data"
+            ZoneFiles[Zone Files<br/>YAML/JSON/TOML]
+        end
+    end
+    
+    Client[DNS Client] --> UDPServer
+    UDPServer --> Resolver
+    Resolver --> Domain
+    Resolver --> DNSCache
+    Resolver --> Logger
+    ZoneLoader --> Domain
+    ZoneLoader --> ZoneFiles
+    Config --> Logger
+    UDPServer --> Domain
+```
 
+***Motivation***
+
+RR-DNS follows CLEAN architecture principles with clear separation between domain logic, application services, and infrastructure concerns. This ensures testability, maintainability, and allows for easy extension with additional features.
+
+***Contained Building Blocks***
+
+| **Building Block** | **Responsibility** |
+|--------------------|--------------------|
+| Domain Models | Pure domain entities representing DNS concepts (queries, responses, records) |
+| Query Resolver | Core business logic for DNS query resolution |
+| UDP Server | Network protocol handling and packet parsing |
+| Zone Loader | Loading and parsing zone files from disk |
+| DNS Cache | In-memory LRU cache for performance optimization |
+| Logger | Structured logging across all components |
+| Configuration | Environment-based configuration management |
+
+***Important Interfaces***
+
+- `QueryResolver` interface: Main service contract for DNS resolution
+- `ZoneRepository` interface: Abstraction for zone data access
+- `CacheRepository` interface: Abstraction for cached record storage
+
+## 5.2 Level 2
+
+### 5.2.1 White Box: Domain Layer
+
+***Overview Diagram***
+
+```mermaid
+graph TD
+    subgraph "Domain Layer"
+        DNSQuery[DNSQuery]
+        DNSResponse[DNSResponse]
+        ResourceRecord[ResourceRecord]
+        AuthoritativeRecord[AuthoritativeRecord]
+        RRType[RRType]
+        RRClass[RRClass]
+        RCode[RCode]
+        Utils[Domain Utils]
+    end
+    
+    DNSQuery --> RRType
+    DNSQuery --> RRClass
+    DNSResponse --> RCode
+    DNSResponse --> ResourceRecord
+    ResourceRecord --> RRType
+    ResourceRecord --> RRClass
+    AuthoritativeRecord --> RRType
+    AuthoritativeRecord --> RRClass
+    AuthoritativeRecord --> ResourceRecord
+```
+
+***Motivation***
+
+The domain layer contains pure business entities free from infrastructure concerns. These types serve as contracts between layers and ensure type safety across the system.
+
+***Contained Building Blocks***
+
+| **Name** | **Responsibility** |
+|----------|-------------------|
+| DNSQuery | Represents incoming DNS questions from clients |
+| DNSResponse | Complete DNS response with answers, authority, and additional sections |
+| ResourceRecord | Cached DNS records with expiration timestamps |
+| AuthoritativeRecord | Zone file records with TTL for authoritative responses |
+| RRType | DNS record types (A, AAAA, MX, etc.) |
+| RRClass | DNS classes (typically IN) |
+| RCode | DNS response codes (NOERROR, NXDOMAIN, etc.) |
+
+> For detailed domain model documentation, see [`internal/dns/domain/00_domain.md`](../../internal/dns/domain/00_domain.md)
+
+### 5.2.2 White Box: Infrastructure Layer
+
+***Overview Diagram***
+
+```mermaid
+graph TD
+    subgraph "Infrastructure Layer"
+        subgraph "Network"
+            UDP[UDP Server]
+        end
+        
+        subgraph "Storage"
+            ZoneLoader[Zone Loader]
+            DNSCache[DNS Cache]
+        end
+        
+        subgraph "Cross-cutting"
+            Logger[Logger]
+            Config[Configuration]
+        end
+    end
+    
+    UDP --> Config
+    UDP --> Logger
+    ZoneLoader --> Logger
+    DNSCache --> Logger
+    Config --> Logger
+```
+
+***Motivation***
+
+Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are designed to be replaceable and testable through interfaces.
+
+***Contained Building Blocks***
+
+| **Name** | **Responsibility** |
+|----------|-------------------|
+| UDP Server | Listen for DNS packets, parse protocol, delegate to resolver |
+| Zone Loader | Load and parse zone files (YAML/JSON/TOML) into domain objects |
+| DNS Cache | LRU cache for DNS records to improve query performance |
+| Logger | Structured logging with configurable levels and output formats |
+| Configuration | Load and validate configuration from environment variables |
+
+## 5.3 Level 3
+
+### 5.3.1 Black Box: Zone Loader
+
+***Purpose/Responsibility***
+- Load DNS zone files from a configured directory
+- Support multiple formats: YAML, JSON, TOML
+- Parse zone data into `AuthoritativeRecord` domain objects
+- Handle file format validation and error reporting
+
+***Interface***
+```go
+func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.AuthoritativeRecord, error)
+```
+
+***Quality/Performance Characteristics***
+- Loads all zone files at startup (not runtime)
+- Fails fast on invalid zone files
+- Memory efficient parsing using streaming where possible
+
+***Directory/File Location***
+`internal/dns/infra/zone/zone.go`
+
+***Zone File Format***
+- Each file must contain a `zone_root` field
+- Labels are expanded to FQDNs using the zone root
 - Supported formats: `.yaml`, `.yml`, `.json`, `.toml`
-- Each file must contain a `zone_root` field and one or more record sections.
-- Labels are expanded to FQDNs using the zone root.
-- Files missing `zone_root` or with unsupported extensions are ignored or produce errors.
 
-**YAML Example:**
+**Example YAML:**
 ```yaml
 zone_root: example.com
 www:
@@ -100,136 +270,109 @@ mail:
   MX: "mail.example.com"
 ```
 
-**JSON Example:**
-```json
-{
-  "zone_root": "example.org",
-  "api": {
-    "A": "5.6.7.8"
-  },
-  "mail": {
-    "MX": "mail.example.org"
-  }
+### 5.3.2 Black Box: DNS Cache
+
+***Purpose/Responsibility***
+- Provide fast, in-memory LRU cache for DNS resource records
+- Reduce lookup latency and zone file access
+- Thread-safe operations for concurrent queries
+- Automatic expiration based on TTL
+
+***Interface***
+```go
+type Cache interface {
+    Get(key string) ([]domain.ResourceRecord, bool)
+    Put(key string, records []domain.ResourceRecord, ttl time.Duration)
+    Delete(key string)
+    Clear()
+    Size() int
 }
 ```
 
-**TOML Example:**
-```toml
-zone_root = "example.net"
+***Quality/Performance Characteristics***
+- LRU eviction policy
+- Configurable cache size
+- Thread-safe for concurrent access
+- O(1) average case performance
 
-[web]
-A = "9.8.7.6"
+***Directory/File Location***
+`internal/dns/infra/dnscache/dnscache.go`
 
-[mx]
-MX = "mx.example.net"
+***Uses***
+- [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU implementation
+
+### 5.3.3 Black Box: Configuration
+
+***Purpose/Responsibility***
+- Load configuration from environment variables
+- Validate configuration values using struct tags
+- Provide defaults for optional settings
+- Support multiple data types (strings, integers, arrays)
+
+***Interface***
+```go
+type AppConfig struct {
+    CacheSize uint     `koanf:"cache_size" validate:"required,gte=1"`
+    Env       string   `koanf:"env" validate:"required,oneof=dev prod"`
+    LogLevel  string   `koanf:"log_level" validate:"required,oneof=debug info warn error"`
+    Port      int      `koanf:"port" validate:"required,gte=1,lt=65535"`
+    ZoneDir   string   `koanf:"zone_dir" validate:"required"`
+    Upstream  []string `koanf:"upstream" validate:"required,dive,hostname_port"`
+}
+
+func Load() (*AppConfig, error)
 ```
 
-**Directory Loading:**
+***Quality/Performance Characteristics***
+- Validation on load with clear error messages
+- Environment variable prefix: `UDNS_`
+- Case-insensitive key transformation
 
-- All supported zone files in a directory are loaded and parsed at startup.
-- Errors in individual files are logged and do not prevent loading of other files.
-- Records are mapped to immutable `AuthoritativeRecord` objects for serving.
+***Directory/File Location***
+`internal/dns/infra/config/config.go`
 
-> For detailed information on the core domain types used throughout the architecture, see [`domain/domain.md`](../../internal/dns/domain/domain.md).
+***Configuration Options***
+- `UDNS_CACHE_SIZE`: DNS cache size (default: 1000)
+- `UDNS_ENV`: Runtime environment "dev" or "prod" (default: "prod")
+- `UDNS_LOG_LEVEL`: Log level (default: "info")
+- `UDNS_PORT`: DNS server port (default: 53)
+- `UDNS_ZONE_DIR`: Zone files directory (default: "/etc/rr-dns/zones/")
+- `UDNS_UPSTREAM`: Upstream DNS servers (default: "1.1.1.1:53,1.0.0.1:53")
 
-```mermaid
-graph TD
-  UDPServer --> Resolver
-  Resolver --> ZoneRepo
-  ZoneRepo --> ZoneData[ZoneData]
-  Resolver --> CacheRepo
-  CacheRepo --> MemCache
-  Resolver --> DNSResponse
-  DNSResponse --> UDPServer
+### 5.3.4 Black Box: Logger
+
+***Purpose/Responsibility***
+- Provide structured logging across all components
+- Support multiple log levels and output formats
+- Configure logging based on environment (dev/prod)
+- Thread-safe logging operations
+
+***Interface***
+```go
+func Configure(env, logLevel string)
+func Info(fields map[string]any, msg string)
+func Error(fields map[string]any, msg string)
+func Debug(fields map[string]any, msg string)
+func Warn(fields map[string]any, msg string)
+func Panic(fields map[string]any, msg string)
+func Fatal(fields map[string]any, msg string)
 ```
 
-### Motivation  
-Maintain a modular, testable, and understandable DNS server architecture. Easy to extend with additional features like logging, metrics, blocklists.
+***Quality/Performance Characteristics***
+- Structured JSON logging in production
+- Human-readable console logging in development
+- High performance with minimal allocations
+- Non-blocking log operations
 
-### Contained Building Blocks  
-- `ZoneRepo`: In-memory lookup of static DNS records
-- `ZoneData`: In-memory storage of `AuthoritativeRecord`s
-- `AuthoritativeRecord`: Immutable DNS record used for zone files, with TTL preserved for wire responses
+***Directory/File Location***
+`internal/dns/infra/log/log.go`
 
-- `Resolver`: Interprets DNS queries and determines responses
-- `UDPServer`: Listens and responds on port 53
+***Uses***
+- [`go.uber.org/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-- `CacheRepo`: In-Memory lookup of cached records
-- `MemCache`: LRU cache for DNS resource records
+# 6. Runtime View
 
-- `Logger`: Structured logging interface
-- `Config`: Loads environment-based configuration
-
-### Important Interfaces  
-- `QueryResolver`: main service interface for DNS query handling
-- `ZoneRepository`: abstraction over zone data (in-memory, later file or network)
-- `MemCache`: cache interface for storing and retrieving ResourceRecords
-
-# Black Box: MemCache
-
-- **Responsibility**: Provide a fast, in-memory LRU cache for DNS resource records to reduce lookup latency and avoid redundant computation or zone file access. Used primarily by the resolver layer, and optionally the repository layer, to store recently accessed ResourceRecords keyed by query parameters (e.g., name+type).
-- **Interfaces**: Exposes cache operations (`Get(key string) ([]ResourceRecord, bool)`, `Put(key string, records []ResourceRecord, ttl time.Duration)`, `Delete(key string)`, etc.)
-- **Uses**: [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU cache implementation
-- **Exposes**: `New(size int) (*dnsCache, error)` and cache methods
-- **Location**: `internal/dns/infra/memcache/memcache.go`
-
-## Architectural Context
-
-The MemCache component is part of the infrastructure layer and is responsible for caching DNS resource records in memory using an LRU eviction policy. This reduces the load on the static zone repository and improves response times for frequently requested records. The cache is designed to be thread-safe and efficient, leveraging a proven third-party LRU implementation. It is not responsible for persistence or zone management, but acts as a performance optimization for the resolver and, optionally, the repository layers.
-
-MemCache is optional but recommended for high-throughput or resource-constrained deployments. Its size and usage can be configured at startup. The cache stores domain-layer `ResourceRecord` objects and is agnostic to the source of the records (static, dynamic, etc.).
-
-### Black Box: UDPServer
-
-- **Responsibility**: Listen for incoming DNS packets over UDP and forward them to the Resolver.
-- **Interfaces**: None (entrypoint handler)
-- **Uses**: `Resolver`, `DNSQuery`, `DNSResponse`
-- **Exposes**: `StartListening()`
-- **Location**: `internal/dns/infra/udp/server.go`
-
-### Black Box: Resolver
-
-- **Responsibility**: Accepts parsed queries, performs resolution logic, returns DNS responses.
-- **Interfaces**: `QueryResolver`
-- **Uses**: `ZoneRepository`, `CacheRepository`, domain models
-- **Exposes**: `Resolve(query DNSQuery) (DNSResponse, error)`
-- **Location**: `internal/dns/service/resolver.go`
-
-### Black Box: ZoneRepository
-
-- **Responsibility**: Provide read access to zone records for a given query.
-- **Interfaces**: `ZoneRepository`
-- **Uses**: In-memory data store, eventually file or DB
-- **Exposes**: `FindRecords(name string, qtype RRType) ([]ResourceRecord, error)`
-- **Location**: `internal/dns/repo/static_repo.go`
-
-### Black Box: AuthoritativeRecord
-
-- **Responsibility**: Represent static zone-file DNS records that persist in memory and are served directly by the authoritative resolver. These records preserve their TTL and are not subject to LRU eviction or expiration logic.
-- **Interfaces**: Used as a pure domain data structure
-- **Uses**: Constructed from YAML/TOML/JSON zone file data
-- **Exposes**: `Validate() error`, `TTL`, `Name`, `Type`, `Class`, `Data`
-- **Location**: `internal/dns/domain/domain.go`
-
-### Black Box: Logger
-
-- **Responsibility**: Emit structured, leveled logs for query lifecycle and system activity.
-- **Interfaces**: `Logger` interface (`Info`, `Error`, `Debug`, `Warn`, `Panic`, `Fatal`)
-- **Uses**: `zap` for production logging backend
-- **Exposes**: `Configure(env, level)`, `SetLogger()`, and global logging functions (`Info`, `Warn`, etc.)
-- **Location**: `internal/dns/infra/log/log.go`
-
-### Black Box: Config
-
-- **Responsibility**: Load environment-based configuration and apply schema validation.
-- **Interfaces**: None (invoked directly during startup)
-- **Uses**: `koanf` for env parsing, `validator` for field validation
-- **Exposes**: `Load() (*AppConfig, error)`
-- **Location**: `internal/dns/infra/config/config.go`
-
-# Runtime View
-
-## Incoming A/AAAA query
+## 6.1 Incoming A/AAAA query
 
 - UDPServer receives binary query.
 - Parsed into a DNSQuery domain object.
@@ -273,9 +416,9 @@ sequenceDiagram
     UDPServer->>Client: encoded binary DNS response
 ```
 
-# Deployment View
+# 7. Deployment View
 
-## Infrastructure Level 1
+## 7.1 Infrastructure Level 1
 
 ```mermaid
 graph TD
@@ -294,47 +437,47 @@ Quality and/or Performance Features
 Mapping of Building Blocks to Infrastructure  
 - All services are compiled into `rrdnsd` binary.
 
-# Cross-cutting Concepts
+# 8. Cross-cutting Concepts
 
-## Logging
+## 8.1 Logging
 
 - Use structured logging via `logger.Info(map[string]any{ "field": value }, "message")`
 
-## Configuration
+## 8.2 Configuration
 
 - Config loaded from env or CLI flags (e.g. `--zone-file`)
 
-## Testability
+## 8.3 Testability
 
 - Domain and service layers are fully unit tested.
 - Mock ZoneRepository in resolver tests.
 
-# Architecture Decisions
+# 9. Architecture Decisions
 
 - Chose Go for speed, simplicity, concurrency, and static binary builds.
 - Implemented custom DNS parsing to maintain full control.
 - Adopted CLEAN architecture for long-term maintainability and clarity.
 
-# Quality Requirements
+# 10. Quality Requirements
 
-## Quality Tree
+## 10.1 Quality Tree
 
 (tbd — can be added later as a Mermaid tree)
 
-## Quality Scenarios
+## 10.2 Quality Scenarios
 
 - RR-DNS should respond to 1000 QPS without dropping queries.
 - RR-DNS should start in < 50ms.
 - Zone records should be reloadable without restart (future).
 
-# Risks and Technical Debts
+# 11. Risks and Technical Debts
 
 - Current version does not validate malformed DNS messages.
 - Does not support TCP fallback.
 - In-memory zone is not reloadable yet.
 - No privacy features yet for upstream resolvers, like DoH or DNS over TLS.
 
-# Glossary
+# 12. Glossary
 
 | Term             | Definition                                          |
 |------------------|-----------------------------------------------------|
