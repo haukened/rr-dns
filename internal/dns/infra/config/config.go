@@ -32,6 +32,18 @@ type AppConfig struct {
 	Servers []string `koanf:"servers" validate:"required,dive,ip_port"`
 }
 
+// DEFAULT_APP_CONFIG defines the default application configuration settings for the DNS service.
+// It includes default values for cache size, environment, log level, listening port, zone directory,
+// and upstream DNS servers.
+var DEFAULT_APP_CONFIG = AppConfig{
+	CacheSize: 1000,
+	Env:       "prod",
+	LogLevel:  "info",
+	Port:      53,
+	ZoneDir:   "/etc/rr-dns/zones/",
+	Servers:   []string{"1.1.1.1:53", "1.0.0.1:53"},
+}
+
 // validIPPort validates whether the provided field value is a valid IP address and port combination.
 // It expects the value to be in the format "IP:Port". The function returns true if the IP address
 // is valid and both the IP and port are non-empty; otherwise, it returns false.
@@ -92,14 +104,7 @@ func Load() (*AppConfig, error) {
 	k := koanf.New(".")
 
 	// Load default values using structs provider.
-	k.Load(structs.Provider(AppConfig{
-		CacheSize: 1000,
-		Env:       "prod",
-		LogLevel:  "info",
-		Port:      53,
-		ZoneDir:   "/etc/rr-dns/zones/",
-		Servers:   []string{"1.1.1.1:53", "1.0.0.1:53"},
-	}, "koanf"), nil)
+	k.Load(structs.Provider(DEFAULT_APP_CONFIG, "koanf"), nil)
 
 	// Load environment variables with prefix "UDNS_", using koanf/providers/env/v2 and Opt pattern.
 	err := envLoader(k)
