@@ -4,7 +4,7 @@ A lightweight, modern, CLEAN, and extensible golang DNS server.
 
 # 1. Introduction and Goals
 
-RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to provide a clean, testable implementation of a DNS resolver following the principles of CLEAN architecture and SOLID design. The project is suitable for local networks, containerized environments, embedded devices, and privacy-aware users seeking ad-blocking and custom resolution behavior.
+RR-DNS is a lightweight, high-performance DNS server written in Go. It aims to provide a clean, testable implementation of a DNS resolver following the principles of CLEAN architecture and SOLID design. The project is suitable for local networks, containerized environments, and privacy-aware users seeking ad-blocking and custom resolution behavior.
 
 ## Requirements Overview
 
@@ -59,14 +59,36 @@ RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS r
 graph TD
   Subsystem1[UDP Server] --> Resolver[Query Resolver]
   Resolver --> ZoneRepo[Static Zone Repository]
+  Resolver --> BlockList[DNS Block List]
+  Resolver --> dnscache[DNS Cache]
+  Resolver --> UpstreamResolver[Upstream Resolver]
   Resolver --> Logger
-  ZoneRepo --> ZoneFile
+  UpstreamResolver --> Internet[Upstream DNS Servers]
+  ZoneRepo --> ZoneFile[Zone Files]
+  BlockList --> BlockCache[Block Cache]
+  BlockCache --> BlockDB[Block Database]
 ```
 
 - UDP server receives and parses requests.
 - Query is forwarded to a Resolver service.
-- Resolver queries zone records from a repository.
-- Result is formatted into a DNS response and returned.
+- Resolver first checks local zone records from repository.
+- If not found locally, resolver checks DNS block list for blocked domains.
+- If not blocked and not in zones, resolver checks DNS cache.
+- If cache miss, resolver forwards query to upstream DNS servers via upstream resolver.
+- Resolver receives upstream response and caches it before returning to client.
+- All query processing steps are logged for monitoring and debugging.
+- Response is returned to client with optimal latency.
+
+Since mermaid diagrams don't guarantee ordering, to eliminate ambiguity, the query resolver orders steps:
+```mermaid
+graph LR
+  Query --> Zone
+  Zone --> Block
+  Block --> dnscache[DNS Cache]
+  dnscache --> Upstream
+  Upstream --> Response
+  Response --> Log
+```
 
 # 4. Solution Strategy
 
@@ -98,6 +120,8 @@ graph TD
             UDPServer[UDP Server]
             ZoneLoader[Zone Loader]
             DNSCache[DNS Cache]
+            UpstreamResolver[Upstream Resolver]
+            BlockList[DNS Block List]
             Logger[Logger]
             Config[Configuration]
         end
@@ -111,9 +135,12 @@ graph TD
     UDPServer --> Resolver
     Resolver --> Domain
     Resolver --> DNSCache
+    Resolver --> UpstreamResolver
+    Resolver --> BlockList
     Resolver --> Logger
     ZoneLoader --> Domain
     ZoneLoader --> ZoneFiles
+    UpstreamResolver --> Internet[Upstream DNS Servers]
     Config --> Logger
     UDPServer --> Domain
 ```
@@ -131,6 +158,8 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 | UDP Server | Network protocol handling and packet parsing |
 | Zone Loader | Loading and parsing zone files from disk |
 | DNS Cache | In-memory LRU cache for performance optimization |
+| Upstream Resolver | Forward queries to external DNS servers when no local data available |
+| DNS Block List | Block malicious/unwanted domains using cached database lookups |
 | Logger | Structured logging across all components |
 | Configuration | Environment-based configuration management |
 
@@ -139,6 +168,7 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 - `QueryResolver` interface: Main service contract for DNS resolution
 - `ZoneRepository` interface: Abstraction for zone data access
 - `CacheRepository` interface: Abstraction for cached record storage
+- `BlockListRepository` interface: Abstraction for domain blocking decisions
 
 ## 5.2 Level 2
 
@@ -192,34 +222,35 @@ The domain layer contains pure business entities free from infrastructure concer
 
 ***Overview Diagram***
 
+> Note: The infrastructure layer is intentionally disconnected. Infrastucture is stitched together at the service layer, and should have no cross dependencies.
+
 ```mermaid
 graph TD
     subgraph "Infrastructure Layer"
         subgraph "Network"
-            UDP[UDP Server]
+            direction TB
+            udp[UDP Server]
+            udpclient[Upstream Client]
         end
         
         subgraph "Storage"
-            ZoneLoader[Zone Loader]
-            DNSCache[DNS Cache]
+            direction TB
+            ZoneLoader[Zone Loader] --> ZoneFiles[Zone Files]
+            DNSCache[DNS Cache] --> lru[LRU Cache]
+            BlockList[DNS Block List] --> lru
         end
         
         subgraph "Cross-cutting"
+            direction TB
             Logger[Logger]
             Config[Configuration]
         end
     end
-    
-    UDP --> Config
-    UDP --> Logger
-    ZoneLoader --> Logger
-    DNSCache --> Logger
-    Config --> Logger
 ```
 
 ***Motivation***
 
-Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are designed to be replaceable and testable through interfaces.
+Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are designed to be replaceable and testable through interfaces. Configuration and logging are orchestrated by the service layer to maintain clean architectural boundaries.
 
 ***Contained Building Blocks***
 
@@ -228,6 +259,7 @@ Infrastructure components handle external concerns like networking, file I/O, ca
 | UDP Server | Listen for DNS packets, parse protocol, delegate to resolver |
 | Zone Loader | Load and parse zone files (YAML/JSON/TOML) into domain objects |
 | DNS Cache | LRU cache for DNS records to improve query performance |
+| DNS Block List | Domain blocking with LRU cache over lightweight database |
 | Logger | Structured logging with configurable levels and output formats |
 | Configuration | Load and validate configuration from environment variables |
 
@@ -370,6 +402,44 @@ func Fatal(fields map[string]any, msg string)
 ***Uses***
 - [`go.uber.org/zap`](https://github.com/uber-go/zap) for high-performance logging
 
+##### 5.3.5 Black Box: Upstream Resolver
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Resolves DNS queries for domains not served locally by forwarding to upstream DNS servers |
+| **Interface** | • Input: DNS query (name, type, class)<br>• Output: DNS response or resolution failure |
+| **Location** | Implements the interface defined in the Domain Layer for external DNS resolution |
+
+The Upstream Resolver implements the forwarding logic for queries that cannot be satisfied by local zones, providing the bridge to the wider DNS infrastructure.
+
+##### 5.3.6 Black Box: DNS Block List
+
+| Aspect | Description |
+|--------|-------------|
+| **Purpose** | Provides domain blocking functionality for ad-blocking, malware protection, and content filtering |
+| **Interface** | • Input: Domain name to check<br>• Output: Boolean blocked status with optional block reason |
+| **Architecture** | Two-tier storage: LRU cache for hot domains over lightweight database for complete block lists |
+
+***Storage Strategy***
+- **L1 Cache**: In-memory LRU cache for frequently queried domains (blocked and allowed)
+- **L2 Storage**: Lightweight embedded database (SQLite/BadgerDB) for complete block lists
+- **Cache-aside pattern**: Check cache first, fallback to database, populate cache with result
+
+***Performance Characteristics***
+- Sub-millisecond lookup for cached domains
+- Configurable cache size to balance memory vs hit ratio
+- Asynchronous block list updates without service interruption
+- Batch database operations for efficient block list loading
+
+***Block List Sources***
+- Support for multiple block list formats (hosts files, domain lists, wildcards)
+- Periodic updates from external sources (URLs, files)
+- Local custom block/allow lists with higher precedence
+- Category-based blocking (ads, trackers, malware, adult content)
+
+***Directory/File Location***
+`internal/dns/infra/blocklist/blocklist.go`
+
 # 6. Runtime View
 
 ## 6.1 Incoming A/AAAA query
@@ -385,6 +455,7 @@ sequenceDiagram
     participant Client
     participant UDPServer
     participant Resolver
+    participant BlockList
     participant ZoneRepo
     participant CacheRepo
     participant UpstreamClient
@@ -394,20 +465,27 @@ sequenceDiagram
     UDPServer->>Domain: decode to DNSQuery
     UDPServer->>Resolver: Resolve(DNSQuery)
 
-    Resolver->>ZoneRepo: FindRecords(name, type)
-    ZoneRepo-->>Resolver: []AuthoritativeRecord (or nil)
+    Resolver->>BlockList: IsBlocked(domain)
+    BlockList-->>Resolver: blocked status
+    
+    alt domain is blocked
+        Resolver->>Domain: create NXDOMAIN response
+    else domain not blocked
+        Resolver->>ZoneRepo: FindRecords(name, type)
+        ZoneRepo-->>Resolver: []AuthoritativeRecord (or nil)
 
-    alt records found in zone
-        Resolver->>Domain: to DNSResponse with TTLs
-    else
-        Resolver->>CacheRepo: Get(name, type, class)
-        CacheRepo-->>Resolver: []ResourceRecord (or nil)
-        alt records found in cache
-            Resolver->>Domain: to DNSResponse
+        alt records found in zone
+            Resolver->>Domain: to DNSResponse with TTLs
         else
-            Resolver->>UpstreamClient: Forward query
-            UpstreamClient-->>Resolver: DNSResponse
-            Resolver->>CacheRepo: Put(name, response)
+            Resolver->>CacheRepo: Get(name, type, class)
+            CacheRepo-->>Resolver: []ResourceRecord (or nil)
+            alt records found in cache
+                Resolver->>Domain: to DNSResponse
+            else
+                Resolver->>UpstreamClient: Forward query
+                UpstreamClient-->>Resolver: DNSResponse
+                Resolver->>CacheRepo: Put(name, response)
+            end
         end
     end
 
@@ -439,18 +517,208 @@ Mapping of Building Blocks to Infrastructure
 
 # 8. Cross-cutting Concepts
 
-## 8.1 Logging
+This section describes overall principles and solution patterns that are relevant across multiple building blocks of RR-DNS. These concepts ensure consistency, quality, and maintainability throughout the system.
 
-- Use structured logging via `logger.Info(map[string]any{ "field": value }, "message")`
+## 8.1 Domain Model Concepts
 
-## 8.2 Configuration
+### DNS-Specific Domain Rules
+- All domain names must be fully qualified (end with `.`)
+- TTL values are preserved from authoritative records and converted to expiration timestamps for cached records
+- Resource records are immutable once created
+- Query matching is case-insensitive for domain names
+- All DNS wire format parsing and generation follows RFC 1035 specifications
 
-- Config loaded from env or CLI flags (e.g. `--zone-file`)
+### Domain Layer Principles
+- Pure domain entities with no infrastructure dependencies
+- Validation occurs at domain boundaries
+- Domain types serve as contracts between architectural layers
+- No side effects (logging, networking) in domain logic
 
-## 8.3 Testability
+### Entity Relationships
+```go
+// Example: Converting authoritative to cached records
+func NewResourceRecordFromAuthoritative(ar *AuthoritativeRecord, now time.Time) *ResourceRecord {
+    return &ResourceRecord{
+        Name:      ar.Name,
+        Type:      ar.Type,
+        Class:     ar.Class,
+        ExpiresAt: now.Add(time.Duration(ar.TTL) * time.Second),
+        Data:      ar.Data,
+    }
+}
+```
 
-- Domain and service layers are fully unit tested.
-- Mock ZoneRepository in resolver tests.
+## 8.2 Security Concepts
+
+### Input Validation
+- All DNS queries are validated for proper format before processing
+- Domain names are sanitized and normalized
+- Query types and classes are validated against supported values
+- Maximum query size limits are enforced
+
+### DNS Security Measures
+- Rate limiting per client IP to prevent DoS attacks
+- Query logging for security monitoring and auditing
+- Validation of upstream DNS responses before caching
+- Protection against DNS cache poisoning through strict response validation
+
+### Error Information Disclosure
+- Error messages do not expose internal system details
+- DNS errors are mapped to appropriate RCodes (SERVFAIL, NXDOMAIN, etc.)
+- Detailed error information is logged but not returned to clients
+
+## 8.3 Error Handling and Resilience
+
+### Error Handling Strategy
+- **Domain Layer**: Returns validation errors for invalid inputs
+- **Service Layer**: Converts domain errors to appropriate DNS response codes
+- **Infrastructure Layer**: Handles network errors, file I/O errors, and external dependencies
+
+### Error Types and Responses
+| Error Type | DNS RCode | Action |
+|------------|-----------|---------|
+| Invalid query format | FORMERR | Log and respond with error |
+| Unsupported query type | NOTIMP | Log and respond with error |
+| Zone lookup failure | SERVFAIL | Log error, attempt upstream if configured |
+| Non-existent domain | NXDOMAIN | Return negative response |
+| Internal system error | SERVFAIL | Log detailed error, return generic failure |
+
+### Fallback Mechanisms
+- Cache miss → Zone lookup → Upstream query (if configured)
+- Zone file parsing errors → Log error, continue with other files
+- Upstream DNS failure → Return SERVFAIL, cache failure for short period
+
+## 8.4 Logging and Monitoring
+
+### Structured Logging Pattern
+```go
+log.Info(map[string]any{
+    "query_id":    query.ID,
+    "client_ip":   clientIP,
+    "query_name":  query.Name,
+    "query_type":  query.Type.String(),
+    "response_code": response.RCode.String(),
+    "duration_ms": duration.Milliseconds(),
+}, "DNS query processed")
+```
+
+### Logging Levels
+- **Debug**: Internal state, cache hits/misses, detailed flow
+- **Info**: Successful operations, query processing, startup/shutdown
+- **Warn**: Recoverable errors, fallbacks, configuration issues
+- **Error**: System failures, invalid configurations, unrecoverable errors
+- **Fatal**: Critical errors that require process termination
+
+### Monitoring Points
+- Query response times and throughput
+- Cache hit/miss ratios
+- Upstream DNS response times
+- Error rates by type
+- Memory usage and cache size
+
+## 8.5 Configuration Management
+
+### Environment-Based Configuration
+- All configuration through environment variables with `UDNS_` prefix
+- Configuration validation at startup with clear error messages
+- Immutable configuration during runtime (no hot reloading)
+- Sensible defaults for all optional settings
+
+### Configuration Categories
+```go
+type AppConfig struct {
+    // Server Configuration
+    Port      int      `koanf:"port" validate:"required,gte=1,lt=65535"`
+    
+    // Performance Configuration  
+    CacheSize uint     `koanf:"cache_size" validate:"required,gte=1"`
+    
+    // Operational Configuration
+    Env       string   `koanf:"env" validate:"required,oneof=dev prod"`
+    LogLevel  string   `koanf:"log_level" validate:"required,oneof=debug info warn error"`
+    
+    // Zone Configuration
+    ZoneDir   string   `koanf:"zone_dir" validate:"required"`
+    
+    // Upstream Configuration
+    Upstream  []string `koanf:"upstream" validate:"required,dive,hostname_port"`
+}
+```
+
+## 8.6 Performance and Caching
+
+### Caching Strategy
+- **L1 Cache**: In-memory LRU cache for frequently accessed records
+- **Cache Keys**: Generated from query name, type, and class
+- **TTL Handling**: Respect original TTL values, expire based on timestamps
+- **Cache Size**: Configurable limit with LRU eviction
+
+### Memory Management
+- Avoid unnecessary allocations in hot paths
+- Reuse byte buffers for DNS packet parsing
+- Efficient string operations for domain name processing
+- Bounded cache size to prevent memory exhaustion
+
+### Concurrency Patterns
+```go
+// DNS Cache uses hashicorp/golang-lru/v2 which is already thread-safe
+func (c *dnsCache) Get(key string) ([]domain.ResourceRecord, bool) {
+    // No manual locking needed - LRU cache handles concurrency internally
+    return c.cache.Get(key)
+}
+
+// Other concurrency patterns in the system
+func (s *UDPServer) handleQuery(conn *net.UDPConn, addr *net.UDPAddr, data []byte) {
+    // Each query handled in its own goroutine for concurrent processing
+    go func() {
+        query, err := parseQuery(data)
+        if err != nil {
+            // Handle error
+            return
+        }
+        response := s.resolver.Resolve(query)
+        sendResponse(conn, addr, response)
+    }()
+}
+```
+
+## 8.7 Testing Concepts
+
+### Testing Strategy
+- **Unit Tests**: All domain logic and individual components
+- **Integration Tests**: Component interactions and external dependencies
+- **Mock Interfaces**: Infrastructure dependencies are mockable
+- **Test Data**: Consistent test zone files and DNS queries
+
+### Testing Patterns
+```go
+// Example: Mocking external dependencies
+type MockZoneRepository struct {
+    records map[string][]domain.AuthoritativeRecord
+}
+
+func (m *MockZoneRepository) FindRecords(name string, qtype domain.RRType) ([]domain.AuthoritativeRecord, error) {
+    // Mock implementation
+}
+```
+
+### Test Coverage Requirements
+- Domain layer: 100% test coverage (pure logic)
+- Service layer: >95% test coverage including error paths
+- Infrastructure layer: Integration tests for external dependencies
+
+## 8.8 Development and Build Concepts
+
+### Code Organization
+- **Clean Architecture**: Strict dependency direction (Infra → Service → Domain)
+- **Interface Segregation**: Small, focused interfaces
+- **Dependency Injection**: Constructor injection for testability
+
+### Build and Deployment
+- Single statically-linked binary
+- No runtime dependencies beyond the Go standard library
+- Cross-platform compilation support
+- Minimal Docker image based on scratch or distroless
 
 # 9. Architecture Decisions
 
@@ -462,7 +730,71 @@ Mapping of Building Blocks to Infrastructure
 
 ## 10.1 Quality Tree
 
-(tbd — can be added later as a Mermaid tree)
+The quality tree shows the hierarchical breakdown of quality requirements for RR-DNS, with the most important qualities at the top level and specific attributes as branches.
+
+```mermaid
+graph TD
+    Quality[RR-DNS Quality]
+    
+    Quality --> Performance[Performance<br/>🔥 High Priority]
+    Quality --> Reliability[Reliability<br/>🔥 High Priority] 
+    Quality --> Usability[Usability<br/>🟡 Medium Priority]
+    Quality --> Maintainability[Maintainability<br/>🟡 Medium Priority]
+    Quality --> Security[Security<br/>🟢 Important]
+    Quality --> Portability[Portability<br/>🟢 Important]
+    
+    Performance --> ResponseTime[Response Time<br/>< 5ms average]
+    Performance --> Throughput[Throughput<br/>1000+ QPS]
+    Performance --> MemoryUsage[Memory Usage<br/>< 50MB RAM]
+    Performance --> StartupTime[Startup Time<br/>< 50ms]
+    Performance --> CacheEfficiency[Cache Hit Ratio<br/>> 80%]
+    
+    Reliability --> Availability[Availability<br/>99.9% uptime]
+    Reliability --> ErrorHandling[Error Recovery<br/>Graceful degradation]
+    Reliability --> DataIntegrity[Data Integrity<br/>Correct DNS responses]
+    Reliability --> Resilience[Fault Tolerance<br/>Continue on zone errors]
+    
+    Usability --> Configuration[Configuration<br/>Environment variables]
+    Usability --> Logging[Observability<br/>Structured logs]
+    Usability --> Documentation[Documentation<br/>Clear setup guide]
+    Usability --> Deployment[Easy Deployment<br/>Single binary]
+    
+    Maintainability --> Testability[Testability<br/>95%+ test coverage]
+    Maintainability --> Modularity[Clean Architecture<br/>SOLID principles]
+    Maintainability --> CodeQuality[Code Quality<br/>Linting, formatting]
+    Maintainability --> Extensibility[Extensibility<br/>Plugin interfaces]
+    
+    Security --> InputValidation[Input Validation<br/>DNS packet validation]
+    Security --> RateLimiting[Rate Limiting<br/>DoS protection]
+    Security --> AuditLogging[Audit Logging<br/>Query tracking]
+    Security --> MinimalAttackSurface[Attack Surface<br/>No external deps]
+    
+    Portability --> CrossPlatform[Cross Platform<br/>Linux, macOS, Windows]
+    Portability --> ContainerSupport[Containers<br/>Docker, Kubernetes]
+    Portability --> EmbeddedSystems[Embedded<br/>ARM, low resource]
+    Portability --> StaticBinary[Static Binary<br/>No runtime deps]
+```
+
+### Quality Priorities
+
+**🔥 High Priority (Critical for DNS server operation)**
+- **Performance**: DNS queries must be answered quickly and efficiently
+- **Reliability**: DNS service must be consistently available and accurate
+
+**🟡 Medium Priority (Important for operational success)**
+- **Usability**: Easy to deploy, configure, and monitor
+- **Maintainability**: Long-term code sustainability and evolution
+
+**🟢 Important (Enabling deployment scenarios)**
+- **Security**: Protection against common DNS attacks and threats
+- **Portability**: Support for diverse deployment environments
+
+### Quality Attribute Relationships
+
+- **Performance ↔ Security**: Rate limiting may impact performance but improves security
+- **Reliability ↔ Performance**: Error handling overhead vs response time optimization
+- **Maintainability ↔ Performance**: Clean code structure vs micro-optimizations
+- **Usability ↔ Security**: Simple configuration vs comprehensive security options
 
 ## 10.2 Quality Scenarios
 
