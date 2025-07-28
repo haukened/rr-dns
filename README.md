@@ -1,5 +1,4 @@
-[![Static Badge](https://img.shields.io/badge/Arc42-Docs-blue)](docs/arc42.md) ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/haukened/rr-dns) ![GitHub License](https://img.shields.io/github/license/haukened/rr-dns)
-
+[![Static Badge](https://img.shields.io/badge/Arc42-Docs-blue)](docs/arc42.md) ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/haukened/rr-dns) ![GitHub License](https://img.shields.io/github/license/haukened/rr-dns?color=blue) ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/haukened/rr-dns?color=blue)
 
 
 # RR-DNS
