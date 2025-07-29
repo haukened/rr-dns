@@ -20,7 +20,7 @@ The `log` package handles:
 package main
 
 import (
-    "github.com/haukened/rr-dns/internal/dns/infra/log"
+    "github.com/haukened/rr-dns/internal/dns/common/log"
 )
 
 func main() {

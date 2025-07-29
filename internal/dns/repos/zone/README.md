@@ -92,7 +92,7 @@ package main
 import (
     "time"
     
-    "github.com/haukened/rr-dns/internal/dns/infra/zone"
+    "github.com/haukened/rr-dns/internal/dns/repos/zone"
 )
 
 func main() {
@@ -219,7 +219,7 @@ The package includes comprehensive tests covering:
 
 Run tests with:
 ```bash
-go test ./internal/dns/infra/zone/
+go test ./internal/dns/repos/zone/
 ```
 
 ## Dependencies

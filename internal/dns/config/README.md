@@ -33,7 +33,7 @@ package main
 import (
     "log"
     
-    "github.com/haukened/rr-dns/internal/dns/infra/config"
+    "github.com/haukened/rr-dns/internal/dns/config"
 )
 
 func main() {
@@ -137,7 +137,7 @@ The package includes comprehensive tests covering:
 
 Run tests with:
 ```bash
-go test ./internal/dns/infra/config/
+go test ./internal/dns/config/
 ```
 
 ## Dependencies

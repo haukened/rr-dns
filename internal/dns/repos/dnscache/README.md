@@ -41,7 +41,7 @@ import (
     "time"
     
     "github.com/haukened/rr-dns/internal/dns/domain"
-    "github.com/haukened/rr-dns/internal/dns/infra/dnscache"
+    "github.com/haukened/rr-dns/internal/dns/repos/dnscache"
 )
 
 func main() {
@@ -247,7 +247,7 @@ The package includes comprehensive tests covering:
 
 Run tests with:
 ```bash
-go test ./internal/dns/infra/dnscache/
+go test ./internal/dns/repos/dnscache/
 ```
 
 ## Dependencies

@@ -93,7 +93,7 @@ Parses a binary DNS response message, validating the response ID.
 ```go
 import (
     "github.com/haukened/rr-dns/internal/dns/domain"
-    "github.com/haukened/rr-dns/internal/dns/infra/wire"
+    "github.com/haukened/rr-dns/internal/dns/gateways/wire"
 )
 
 query := domain.DNSQuery{
@@ -237,7 +237,7 @@ DNS names use label compression where repeated domain suffixes are replaced with
 The package includes comprehensive tests with 100% statement coverage:
 
 ```bash
-cd internal/dns/infra/wire
+cd internal/dns/gateways/wire
 go test -v ./
 go test -cover ./
 ```

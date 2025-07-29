@@ -45,7 +45,7 @@ import (
     "time"
     
     "github.com/haukened/rr-dns/internal/dns/domain"
-    "github.com/haukened/rr-dns/internal/dns/infra/upstream"
+    "github.com/haukened/rr-dns/internal/dns/gateways/upstream"
 )
 
 func main() {
@@ -273,10 +273,10 @@ Run tests with:
 
 ```bash
 # Unit tests only
-go test ./internal/dns/infra/upstream/ -short
+go test ./internal/dns/gateways/upstream/ -short
 
 # Include integration tests (requires network)
-go test ./internal/dns/infra/upstream/ -v
+go test ./internal/dns/gateways/upstream/ -v
 ```
 
 ### Test Categories
