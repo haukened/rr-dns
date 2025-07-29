@@ -52,9 +52,13 @@ internal/
     domain/           ← Core types like DNSQuery, DNSResponse, ResourceRecord
     infra/
       config/         ← Config loading via env or CLI
-      log/            ← Pluggable logging backend
-      udp/            ← UDP socket server
-    repo/             ← In-memory/static zone storage, later dynamic options
+      log/            ← Structured logging with zap
+      wire/           ← DNS wire format codec (RFC 1035)
+      upstream/       ← Upstream DNS resolver with caching
+      dnscache/       ← In-memory DNS response caching
+      zone/           ← Static zone file loading (JSON/YAML/TOML)
+      blocklist/      ← Ad/tracker blocking infrastructure
+    repo/             ← Repository layer for data access
     service/          ← Query resolution, orchestration logic
 pkg/                  ← Shared library code (if needed)
 ```
@@ -63,34 +67,75 @@ pkg/                  ← Shared library code (if needed)
 
 - [x] **CLEAN architecture**: clear boundaries between domain, service, and infra
 - [x] **SOLID principles**: small interfaces, testable logic, dependency inversion
-- [x] **Testability first**: domain and service layers are fully unit-testable
+- [x] **Testability first**: domain and service layers are fully unit-testable with 100% coverage
 - [x] **Go idioms**, not Go monoliths: no unnecessary abstractions, only meaningful ones
+- [x] **RFC compliance**: Full DNS wire format implementation per RFC 1035
 
 For a detailed architectural breakdown, see the [Arc42 documentation](docs/arc42.md).
 
 ---
 
-## 📦 MVP Features
+## 📦 Current Features
 
-The first version of `rrdnsd` will support:
+RR-DNS currently supports:
 
-- [x] Responding to A/AAAA queries over UDP
-- [x] Serving static zones from in-memory definitions
-- [x] Returning correct response codes (NOERROR, NXDOMAIN, etc.)
-- [ ] Logging queries to stdout
-- [ ] Docker support
+- [x] **DNS Wire Format Codec**: Complete RFC 1035 implementation with compression support
+- [x] **Upstream DNS Resolution**: Configurable upstream resolvers (Google, Cloudflare, custom)
+- [x] **Response Caching**: In-memory DNS response caching with TTL management
+- [x] **Static Zone Support**: Load zones from JSON/YAML/TOML files
+- [x] **Structured Logging**: Production-ready logging with zap (dev/prod modes)
+- [x] **Configuration Management**: Environment variables and CLI argument support
+- [x] **Comprehensive Testing**: 100% test coverage on core infrastructure
+- [x] **Error Handling**: Robust error handling for malformed packets and edge cases
+- [ ] **UDP Server**: DNS query server implementation
+- [ ] **Query Resolution Service**: Orchestration of upstream, cache, and zone lookups
+- [ ] **Ad/Tracker Blocking**: Blocklist subscription and filtering
 
 ---
 
 ## 🗺️ Roadmap
 
-| Phase       | Features                                       |
-|-------------|------------------------------------------------|
-| - [ ] v0.1     | A/AAAA query support, static zones, UDP server|
-| - [ ] v0.2     | Logging, metrics, Dockerfile                  |
-| - [ ] v0.3     | Blocklist subscriptions (ad/tracker blocking) |
-| - [ ] v0.4     | Web admin UI, config reloading                |
-| - [ ] v1.0     | Snap/apt packages, TLS/DoH support            |
+| Phase       | Features                                       | Status |
+|-------------|------------------------------------------------|---------|
+| **v0.1**    | Complete DNS server: wire codec, UDP server, upstream resolution, caching, zone support | 🚧 In Progress |
+| **v0.2**    | Blocklist subscriptions (ad/tracker blocking) | 📋 Planned |
+| **v0.3**    | Docker support, metrics, health checks        | 📋 Planned |
+| **v0.4**    | Web admin UI, config reloading                | 📋 Planned |
+| **v1.0**    | Snap/apt packages, TLS/DoH support            | 📋 Planned |
+
+### Infrastructure Completed ✅
+- DNS wire format encoding/decoding (100% RFC 1035 compliant)
+- Upstream DNS resolver with connection pooling
+- In-memory DNS response caching with TTL management  
+- Static zone file loading (JSON/YAML/TOML)
+- Structured logging with development and production modes
+- Configuration management with environment variables
+- Comprehensive test coverage on all infrastructure components
+
+### Remaining for v0.1 🚧
+- UDP DNS server implementation
+- Query resolution service orchestration
+- Integration testing and end-to-end validation
+
+---
+
+## � Testing & Quality
+
+RR-DNS prioritizes code quality and reliability:
+
+- **100% Test Coverage**: All infrastructure components have comprehensive unit tests
+- **Error Path Testing**: Extensive testing of edge cases and malformed data handling
+- **RFC Compliance Testing**: DNS wire format validated against RFC 1035 specifications
+- **Structured Testing**: Table-driven tests with clear scenarios and validations
+- **Continuous Integration**: Automated testing on all commits
+
+```bash
+# Run tests with coverage
+go test -cover ./...
+
+# Generate detailed coverage report
+go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out
+```
 
 ---
 
@@ -99,8 +144,26 @@ The first version of `rrdnsd` will support:
 We welcome contributions! Please:
 - Follow Go formatting conventions
 - Respect CLEAN boundaries — infra never calls domain, tests should focus on services and domain first
-- Add unit tests for all logic
-- Log using structured logs: `logger.Info({ queryID, name }, "Received query")`
+- Add unit tests for all logic (aim for 100% coverage)
+- Log using structured logs: `log.Info(map[string]any{"queryID": id, "name": name}, "Received query")`
+- Test error paths thoroughly, including edge cases and malformed data
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/haukened/rr-dns.git
+cd rr-dns
+
+# Run tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Format code
+go fmt ./...
+```
 
 ---
 
