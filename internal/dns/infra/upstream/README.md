@@ -1,18 +1,41 @@
 # Upstream DNS Resolver
 
-This package provides the infrastructure implementation for forwarding DNS queries to upstream DNS servers when local resolution fails.
+This package provides a highly configurable upstream DNS resolver infrastructure component for forwarding DNS queries to external DNS servers. The implementation follows CLEAN architecture principles with comprehensive dependency injection for maximum testability.
 
 ## Overview
 
-The `upstream.Resolver` implements the DNS forwarding functionality required by the RR-DNS architecture. It handles:
+The `upstream.Resolver` implements DNS forwarding functionality with:
 
-- **UDP-based DNS communication** with external DNS servers
-- **Query encoding/decoding** following RFC 1035 DNS wire format
-- **Multiple upstream servers** with failover capability
-- **Configurable timeouts** and context-based cancellation
-- **Health checking** for monitoring upstream connectivity
+- **Configurable Resolution Strategies** - Serial or parallel server attempts
+- **Complete Dependency Injection** - All external dependencies injectable for testing
+- **Context-Aware Operations** - Full context cancellation and timeout support
+- **Standardized Error Handling** - Consistent error messages and wrapping
+- **Production-Ready Design** - Handles network failures, timeouts, and edge cases
+
+## Architecture
+
+### CLEAN Architecture Compliance
+
+- **Infrastructure Layer**: Handles low-level networking and DNS wire protocol
+- **Domain Dependencies**: Only depends on `domain.DNSCodec` interface
+- **No Upward Dependencies**: Zero dependencies on service or application layers
+- **Testable Design**: All external interactions are injectable and mockable
+
+### Key Components
+
+```go
+type Resolver struct {
+    servers  []string        // Upstream DNS servers
+    timeout  time.Duration   // Default query timeout
+    codec    domain.DNSCodec // DNS encoding/decoding
+    parallel bool            // Resolution strategy
+    dial     DialFunc        // Network connection function
+}
+```
 
 ## Usage
+
+### Basic Usage
 
 ```go
 package main
@@ -26,14 +49,20 @@ import (
 )
 
 func main() {
-    // Create resolver with custom upstream servers
-    resolver := upstream.NewResolver(
-        []string{"1.1.1.1:53", "1.0.0.1:53"}, // Cloudflare DNS
-        5 * time.Second, // 5-second timeout
-    )
+    // Create resolver with minimal configuration
+    resolver, err := upstream.NewResolver(upstream.Options{
+        Servers:  []string{"1.1.1.1:53", "1.0.0.1:53"},
+        Timeout:  5 * time.Second,
+        Parallel: true, // Enable parallel resolution
+        Codec:    myDNSCodec, // Implement domain.DNSCodec
+    })
+    if err != nil {
+        // Handle configuration error
+        return
+    }
     
-    // Create a DNS query
-    query, _ := domain.NewDNSQuery(1234, "example.com.", 1, 1) // A record query
+    // Create DNS query
+    query, _ := domain.NewDNSQuery(1234, "example.com.", 1, 1)
     
     // Resolve with context
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -41,73 +70,220 @@ func main() {
     
     response, err := resolver.Resolve(ctx, query)
     if err != nil {
-        // Handle error
+        // Handle resolution error
         return
     }
     
     // Process response
-    if response.HasAnswers() {
-        // Handle successful resolution
-    }
+    fmt.Printf("Query resolved with %d answers\n", len(response.Answers))
 }
 ```
 
-## Architecture Integration
+### Advanced Configuration
 
-This implementation follows CLEAN architecture principles:
+```go
+// Custom dial function for testing or special network requirements
+customDial := func(ctx context.Context, network, address string) (net.Conn, error) {
+    // Custom connection logic
+    return net.DialTimeout(network, address, 2*time.Second)
+}
 
-- **Infrastructure Layer**: Handles external DNS communication concerns
-- **Interface Segregation**: Implements the `repo.UpstreamResolver` interface
-- **Dependency Inversion**: Service layer depends on interface, not implementation
-- **Testability**: Fully unit tested with mocked network calls
+resolver, err := upstream.NewResolver(upstream.Options{
+    Servers:  []string{"192.168.1.1:53", "10.0.0.1:53"},
+    Timeout:  3 * time.Second,
+    Parallel: false, // Use serial resolution
+    Codec:    myCodec,
+    Dial:     customDial, // Custom network behavior
+})
+```
 
-## Configuration
+## Configuration Options
 
-The resolver accepts:
+### Required Parameters
 
-- **Servers**: List of upstream DNS servers in `host:port` format
-- **Timeout**: Default timeout for DNS queries
-- **Context**: For cancellation and deadline management
+- **`Servers`**: List of upstream DNS servers in `host:port` format
+- **`Codec`**: Implementation of `domain.DNSCodec` for DNS message handling
+
+### Optional Parameters
+
+- **`Timeout`**: Query timeout duration (default: 5 seconds)
+- **`Parallel`**: Enable parallel resolution strategy (default: false)
+- **`Dial`**: Custom network dial function (default: standard UDP dialer)
+
+## Resolution Strategies
+
+### Serial Resolution (`Parallel: false`)
+
+Queries servers sequentially until one succeeds:
+
+```
+Server1 → fail → Server2 → fail → Server3 → success
+```
+
+**Benefits**: Lower network usage, predictable server precedence  
+**Use Case**: When server order matters or network resources are limited
+
+### Parallel Resolution (`Parallel: true`)
+
+Queries all servers simultaneously:
+
+```
+Server1 ┐
+Server2 ├─> First success wins
+Server3 ┘
+```
+
+**Benefits**: Faster response times, better fault tolerance  
+**Use Case**: When speed is critical and network resources are available
 
 ## Error Handling
 
-The resolver handles various error conditions:
+### Standardized Error Messages
 
-- **Network failures**: Connection timeouts, unreachable servers
-- **DNS protocol errors**: Malformed responses, ID mismatches
-- **Multiple server failures**: Tries all configured servers before failing
-- **Context cancellation**: Respects context deadlines and cancellation
+All errors use consistent, predefined messages:
 
-## DNS Wire Format
-
-The implementation includes basic DNS wire format encoding/decoding:
-
-- **Query encoding**: Converts `domain.DNSQuery` to RFC 1035 binary format
-- **Response decoding**: Parses binary DNS responses to `domain.DNSResponse`
-- **Label compression**: Basic support for DNS name compression
-- **Standard compliance**: Follows RFC 1035 DNS message format
-
-## Testing
-
-The package includes comprehensive tests:
-
-- **Unit tests**: All encoding/decoding logic
-- **Error handling**: Various failure scenarios
-- **Integration tests**: Real network connectivity (skipped by default)
-- **Interface compliance**: Verifies implementation matches interface
-
-Run tests with:
-```bash
-go test ./internal/dns/infra/upstream/
+```go
+const (
+    errNoServersProvided = "no upstream DNS servers provided"
+    errCodecRequired     = "DNS codec is required"
+    errServerFailed      = "server %s: %w"
+    errAllServersFailed  = "all %d upstream servers failed"
+    errQueryTimeout      = "query timeout after %v"
+    errFailedToConnect   = "failed to connect: %w"
+    errEncodeFailed      = "encode failed: %w"
+    errWriteFailed       = "write failed: %w"
+    errReadFailed        = "read failed: %w"
+)
 ```
+
+### Error Scenarios
+
+- **Configuration Errors**: Invalid options during construction
+- **Network Failures**: Connection timeouts, unreachable servers
+- **Protocol Errors**: DNS encoding/decoding failures
+- **Context Cancellation**: Timeout or manual cancellation
+- **All Servers Failed**: No upstream server could resolve the query
+
+## Dependency Injection
+
+### Testing Interface
+
+The resolver is designed for comprehensive testing through dependency injection:
+
+```go
+// Mock codec for testing
+type mockCodec struct {
+    encodeFunc func(domain.DNSQuery) ([]byte, error)
+    decodeFunc func([]byte, uint16) (domain.DNSResponse, error)
+}
+
+func (m *mockCodec) EncodeQuery(q domain.DNSQuery) ([]byte, error) {
+    return m.encodeFunc(q)
+}
+
+func (m *mockCodec) DecodeResponse(data []byte, id uint16) (domain.DNSResponse, error) {
+    return m.decodeFunc(data, id)
+}
+
+// Mock dial function for network testing
+func mockDial(ctx context.Context, network, address string) (net.Conn, error) {
+    return &mockConn{}, nil // Return controllable connection
+}
+
+// Test with complete control
+resolver, _ := upstream.NewResolver(upstream.Options{
+    Servers:  []string{"test:53"},
+    Codec:    &mockCodec{...},
+    Dial:     mockDial,
+    Parallel: true,
+})
+```
+
+### Testable Scenarios
+
+- ✅ **Constructor validation**: Empty servers, missing codec
+- ✅ **Network failures**: Connection errors, timeouts
+- ✅ **Protocol failures**: Encoding/decoding errors
+- ✅ **Context handling**: Cancellation, deadlines
+- ✅ **Strategy testing**: Serial vs parallel behavior
+- ✅ **Error aggregation**: Multiple server failures
+
+## Performance Characteristics
+
+### Context Management
+
+- **Automatic Timeout**: Applies default timeout if context has no deadline
+- **Deadline Preservation**: Respects existing context deadlines
+- **Proper Cleanup**: Cancels operations when context is done
+
+### Memory Efficiency
+
+- **Minimal Allocations**: Reuses buffers where possible
+- **Bounded Goroutines**: Goroutine count limited by server count
+- **Channel Cleanup**: Proper cleanup prevents goroutine leaks
+
+### Network Efficiency
+
+- **UDP Transport**: Lightweight DNS communication protocol
+- **Connection Reuse**: Efficient connection management per query
+- **Concurrent Safety**: Thread-safe for multiple simultaneous queries
+
+## Integration
+
+### Service Layer Integration
+
+```go
+// Service layer depends on interface, not implementation
+type QueryResolver interface {
+    Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+}
+
+// Resolver implements the interface
+var _ QueryResolver = (*upstream.Resolver)(nil)
+```
+
+### Repository Pattern
+
+The resolver implements the upstream resolution interface defined in the repository layer, maintaining clean architectural boundaries.
 
 ## Limitations
 
-Current implementation limitations:
+### Current Scope
 
-- **Basic wire format**: Simplified DNS encoding/decoding
-- **UDP only**: No TCP fallback for large responses
-- **IPv4 only**: No IPv6 transport support
-- **No EDNS0**: No extended DNS features
+- **UDP Only**: No TCP fallback for truncated responses
+- **Single Protocol**: IPv4 UDP transport only
+- **Basic Features**: Core DNS resolution without extensions
 
-These limitations are acceptable for the MVP phase and can be extended as needed.
+### Future Enhancements
+
+These limitations are by design for the current implementation scope. Future versions may include:
+
+- TCP fallback for large responses
+- IPv6 transport support
+- EDNS0 extension support
+- Connection pooling and reuse
+
+The architecture supports these enhancements through the existing injection points without breaking changes.
+
+## Testing
+
+### Test Coverage
+
+Run tests with:
+
+```bash
+# Unit tests only
+go test ./internal/dns/infra/upstream/ -short
+
+# Include integration tests (requires network)
+go test ./internal/dns/infra/upstream/ -v
+```
+
+### Test Categories
+
+- **Unit Tests**: Constructor validation, error handling, strategy logic
+- **Integration Tests**: Real network connectivity (skipped with `-short`)
+- **Mock Tests**: Complete isolation using dependency injection
+- **Error Path Tests**: Comprehensive failure scenario coverage
+
+The dependency injection design enables 100% test coverage of all code paths and error conditions.

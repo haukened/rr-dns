@@ -2,319 +2,563 @@ package upstream
 
 import (
 	"context"
+	"errors"
+	"net"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
+// MockCodec implements domain.DNSCodec for testing
+type MockCodec struct {
+	mock.Mock
+}
+
+func (m *MockCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+	args := m.Called(query)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockCodec) DecodeResponse(data []byte, queryID uint16) (domain.DNSResponse, error) {
+	args := m.Called(data, queryID)
+	return args.Get(0).(domain.DNSResponse), args.Error(1)
+}
+
+func (m *MockCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
+	args := m.Called(data)
+	return args.Get(0).(domain.DNSQuery), args.Error(1)
+}
+
+func (m *MockCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
+	args := m.Called(resp)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+// MockConn implements net.Conn for testing
+type MockConn struct {
+	mock.Mock
+	readData  []byte
+	writeData []byte
+}
+
+func (m *MockConn) Read(b []byte) (n int, err error) {
+	args := m.Called(b)
+	if m.readData != nil {
+		copy(b, m.readData)
+		return len(m.readData), args.Error(1)
+	}
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockConn) Write(b []byte) (n int, err error) {
+	args := m.Called(b)
+	m.writeData = make([]byte, len(b))
+	copy(m.writeData, b)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockConn) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockConn) LocalAddr() net.Addr                { return nil }
+func (m *MockConn) RemoteAddr() net.Addr               { return nil }
+func (m *MockConn) SetDeadline(t time.Time) error      { return nil }
+func (m *MockConn) SetReadDeadline(t time.Time) error  { return nil }
+func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// Helper functions for creating test data
+func createTestQuery() domain.DNSQuery {
+	return domain.DNSQuery{
+		ID:    12345,
+		Name:  "example.com.",
+		Type:  1, // A record
+		Class: 1, // IN class
+	}
+}
+
+func createTestResponse() domain.DNSResponse {
+	return domain.DNSResponse{
+		ID:    12345,
+		RCode: 0, // NOERROR
+		Answers: []domain.ResourceRecord{
+			{
+				Name:      "example.com.",
+				Type:      1, // A record
+				Class:     1, // IN class
+				ExpiresAt: time.Now().Add(time.Hour),
+				Data:      []byte("1.2.3.4"),
+			},
+		},
+	}
+}
+
 func TestNewResolver(t *testing.T) {
 	tests := []struct {
-		name            string
-		servers         []string
-		timeout         time.Duration
-		expectedLen     int
-		expectedFirst   string
-		expectedTimeout time.Duration
+		name    string
+		opts    Options
+		wantErr string
 	}{
 		{
-			name:            "default servers and timeout",
-			servers:         nil,
-			timeout:         0,
-			expectedLen:     2,
-			expectedFirst:   "1.1.1.1:53",
-			expectedTimeout: 5 * time.Second,
+			name: "valid options",
+			opts: Options{
+				Servers: []string{"1.1.1.1:53"},
+				Timeout: 5 * time.Second,
+				Codec:   &MockCodec{},
+			},
+			wantErr: "",
 		},
 		{
-			name:            "custom servers and timeout",
-			servers:         []string{"8.8.8.8:53", "8.8.4.4:53"},
-			timeout:         3 * time.Second,
-			expectedLen:     2,
-			expectedFirst:   "8.8.8.8:53",
-			expectedTimeout: 3 * time.Second,
+			name: "no servers provided",
+			opts: Options{
+				Codec: &MockCodec{},
+			},
+			wantErr: errNoServersProvided,
 		},
 		{
-			name:            "empty servers with custom timeout",
-			servers:         []string{},
-			timeout:         10 * time.Second,
-			expectedLen:     2,
-			expectedFirst:   "1.1.1.1:53",
-			expectedTimeout: 10 * time.Second,
+			name: "no codec provided",
+			opts: Options{
+				Servers: []string{"1.1.1.1:53"},
+			},
+			wantErr: errCodecRequired,
+		},
+		{
+			name: "default timeout applied",
+			opts: Options{
+				Servers: []string{"1.1.1.1:53"},
+				Timeout: 0, // Should get default 5s
+				Codec:   &MockCodec{},
+			},
+			wantErr: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolver := NewResolver(tt.servers, tt.timeout)
+			resolver, err := NewResolver(tt.opts)
 
-			if len(resolver.servers) != tt.expectedLen {
-				t.Errorf("expected %d servers, got %d", tt.expectedLen, len(resolver.servers))
-			}
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Nil(t, resolver)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, resolver)
 
-			if len(resolver.servers) > 0 && resolver.servers[0] != tt.expectedFirst {
-				t.Errorf("expected first server %q, got %q", tt.expectedFirst, resolver.servers[0])
-			}
+				// Verify defaults are applied
+				if tt.opts.Timeout <= 0 {
+					assert.Equal(t, 5*time.Second, resolver.timeout)
+				} else {
+					assert.Equal(t, tt.opts.Timeout, resolver.timeout)
+				}
 
-			if resolver.timeout != tt.expectedTimeout {
-				t.Errorf("expected timeout %v, got %v", tt.expectedTimeout, resolver.timeout)
-			}
-		})
-	}
-}
-
-func TestResolver_encodeDNSQuery(t *testing.T) {
-	resolver := NewResolver([]string{"8.8.8.8:53"}, 5*time.Second)
-
-	query, err := domain.NewDNSQuery(12345, "example.com.", 1, 1)
-	if err != nil {
-		t.Fatalf("failed to create test query: %v", err)
-	}
-
-	encoded, err := resolver.encodeDNSQuery(query)
-	if err != nil {
-		t.Fatalf("failed to encode query: %v", err)
-	}
-
-	// Verify basic structure
-	if len(encoded) < 12 {
-		t.Errorf("encoded query too short: %d bytes", len(encoded))
-	}
-
-	// Verify transaction ID
-	id := uint16(encoded[0])<<8 | uint16(encoded[1])
-	if id != 12345 {
-		t.Errorf("expected ID 12345, got %d", id)
-	}
-
-	// Verify flags (recursion desired)
-	if encoded[2] != 0x01 {
-		t.Errorf("expected RD flag set, got 0x%02x", encoded[2])
-	}
-
-	// Verify question count
-	qdcount := uint16(encoded[4])<<8 | uint16(encoded[5])
-	if qdcount != 1 {
-		t.Errorf("expected 1 question, got %d", qdcount)
-	}
-}
-
-func TestResolver_encodeQuestion(t *testing.T) {
-	resolver := NewResolver([]string{"8.8.8.8:53"}, 5*time.Second)
-
-	tests := []struct {
-		name     string
-		domain   string
-		qtype    domain.RRType
-		qclass   domain.RRClass
-		minBytes int
-	}{
-		{
-			name:     "simple domain",
-			domain:   "example.com.",
-			qtype:    1,  // A
-			qclass:   1,  // IN
-			minBytes: 16, // 7+7+1+2+2 = domain labels + null + type + class
-		},
-		{
-			name:     "subdomain",
-			domain:   "www.example.com.",
-			qtype:    28, // AAAA
-			qclass:   1,  // IN
-			minBytes: 20, // 3+7+3+1+2+2 = domain labels + null + type + class
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			encoded, err := resolver.encodeQuestion(tt.domain, tt.qtype, tt.qclass)
-			if err != nil {
-				t.Fatalf("failed to encode question: %v", err)
-			}
-
-			if len(encoded) < tt.minBytes {
-				t.Errorf("encoded question too short: expected at least %d bytes, got %d", tt.minBytes, len(encoded))
-			}
-
-			// Verify null terminator exists
-			found := false
-			for i := 0; i < len(encoded)-4; i++ {
-				if encoded[i] == 0x00 {
-					found = true
-					break
+				if tt.opts.Dial == nil {
+					assert.NotNil(t, resolver.dial)
 				}
 			}
-			if !found {
-				t.Errorf("null terminator not found in encoded domain name")
-			}
 		})
 	}
 }
 
-func TestResolver_encodeQuestion_InvalidDomain(t *testing.T) {
-	resolver := NewResolver([]string{"8.8.8.8:53"}, 5*time.Second)
+func TestResolver_ensureContextDeadline(t *testing.T) {
+	codec := &MockCodec{}
+	resolver, err := NewResolver(Options{
+		Servers: []string{"1.1.1.1:53"},
+		Timeout: 2 * time.Second,
+		Codec:   codec,
+	})
+	assert.NoError(t, err)
 
-	// Test with a label that's too long (>63 characters)
-	longLabel := ""
-	for i := 0; i < 64; i++ {
-		longLabel += "a"
-	}
-	invalidDomain := longLabel + ".example.com."
+	t.Run("context without deadline", func(t *testing.T) {
+		ctx := context.Background()
+		resultCtx, cancel := resolver.ensureContextDeadline(ctx)
 
-	_, err := resolver.encodeQuestion(invalidDomain, 1, 1)
-	if err == nil {
-		t.Errorf("expected error for domain with label >63 characters, got nil")
-	}
+		assert.NotNil(t, cancel, "cancel function should be provided when timeout is added")
+		_, hasDeadline := resultCtx.Deadline()
+		assert.True(t, hasDeadline, "context should have deadline")
+		cancel()
+	})
+
+	t.Run("context with existing deadline", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		resultCtx, cancelFunc := resolver.ensureContextDeadline(ctx)
+
+		assert.Nil(t, cancelFunc, "cancel function should be nil when deadline already exists")
+		assert.Equal(t, ctx, resultCtx, "context should be unchanged")
+	})
 }
 
-func TestResolver_decodeDNSResponse(t *testing.T) {
-	resolver := NewResolver([]string{"8.8.8.8:53"}, 5*time.Second)
-
-	// Create a minimal valid DNS response (NXDOMAIN)
-	response := []byte{
-		// Header (12 bytes)
-		0x30, 0x39, // ID: 12345
-		0x81, 0x83, // Flags: response, NXDOMAIN
-		0x00, 0x01, // QDCOUNT: 1
-		0x00, 0x00, // ANCOUNT: 0
-		0x00, 0x00, // NSCOUNT: 0
-		0x00, 0x00, // ARCOUNT: 0
-		// Question section (minimal)
-		0x07, 'e', 'x', 'a', 'm', 'p', 'l', 'e',
-		0x03, 'c', 'o', 'm',
-		0x00,       // null terminator
-		0x00, 0x01, // type A
-		0x00, 0x01, // class IN
-	}
-
-	decoded, err := resolver.decodeDNSResponse(response, 12345)
-	if err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if decoded.ID != 12345 {
-		t.Errorf("expected ID 12345, got %d", decoded.ID)
-	}
-
-	if decoded.RCode != 3 { // NXDOMAIN
-		t.Errorf("expected RCODE 3 (NXDOMAIN), got %d", decoded.RCode)
-	}
-
-	if len(decoded.Answers) != 0 {
-		t.Errorf("expected 0 answers, got %d", len(decoded.Answers))
-	}
-}
-
-func TestResolver_decodeDNSResponse_Errors(t *testing.T) {
-	resolver := NewResolver([]string{"8.8.8.8:53"}, 5*time.Second)
+func TestResolver_Resolve_Serial(t *testing.T) {
+	query := createTestQuery()
+	response := createTestResponse()
+	queryBytes := []byte("query")
+	responseBytes := []byte("response")
 
 	tests := []struct {
 		name       string
-		data       []byte
-		expectedID uint16
-		expectErr  bool
+		servers    []string
+		setupMocks func(*MockCodec, *MockConn)
+		wantErr    string
+		wantResp   domain.DNSResponse
 	}{
 		{
-			name:       "too short",
-			data:       []byte{0x30, 0x39}, // Only 2 bytes
-			expectedID: 12345,
-			expectErr:  true,
+			name:    "successful query first server",
+			servers: []string{"1.1.1.1:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
+				conn.On("Close").Return(nil)
+				conn.readData = responseBytes
+			},
+			wantResp: response,
 		},
 		{
-			name: "ID mismatch",
-			data: []byte{
-				0x99, 0x99, // Wrong ID
-				0x81, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			name:    "encode error",
+			servers: []string{"1.1.1.1:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return([]byte(nil), errors.New("encode failed"))
+				conn.On("Close").Return(nil)
 			},
-			expectedID: 12345,
-			expectErr:  true,
+			wantErr: "encode failed",
+		},
+		{
+			name:    "connection error",
+			servers: []string{"1.1.1.1:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				// Dial will fail, so codec won't be called
+			},
+			wantErr: "failed to connect",
+		},
+		{
+			name:    "write error",
+			servers: []string{"1.1.1.1:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				conn.On("Write", queryBytes).Return(0, errors.New("write failed"))
+				conn.On("Close").Return(nil)
+			},
+			wantErr: "write failed",
+		},
+		{
+			name:    "read error",
+			servers: []string{"1.1.1.1:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(0, errors.New("read failed"))
+				conn.On("Close").Return(nil)
+			},
+			wantErr: "read failed",
+		},
+		{
+			name:    "multiple servers - first fails, second succeeds",
+			servers: []string{"1.1.1.1:53", "8.8.8.8:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				// First server call will fail at dial level (handled by test dial func)
+				// Second server call succeeds
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
+				conn.On("Close").Return(nil)
+				conn.readData = responseBytes
+			},
+			wantResp: response,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := resolver.decodeDNSResponse(tt.data, tt.expectedID)
-			if tt.expectErr && err == nil {
-				t.Errorf("expected error but got none")
+			codec := &MockCodec{}
+			conn := &MockConn{}
+
+			tt.setupMocks(codec, conn)
+
+			callCount := 0
+			dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+				callCount++
+				if tt.name == "connection error" {
+					return nil, errors.New("connection refused")
+				}
+				if tt.name == "multiple servers - first fails, second succeeds" && callCount == 1 {
+					return nil, errors.New("first server failed")
+				}
+				return conn, nil
 			}
-			if !tt.expectErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
+
+			resolver, err := NewResolver(Options{
+				Servers:  tt.servers,
+				Timeout:  time.Second,
+				Parallel: false, // Serial mode
+				Codec:    codec,
+				Dial:     dial,
+			})
+			assert.NoError(t, err)
+
+			ctx := context.Background()
+			resp, err := resolver.Resolve(ctx, query)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantResp, resp)
 			}
+
+			codec.AssertExpectations(t)
+			conn.AssertExpectations(t)
 		})
 	}
 }
 
-func TestResolver_ResolveWithTimeout(t *testing.T) {
-	// Note: This test requires network connectivity and may be slow
-	// In a real project, you'd want to mock the network calls
-	t.Skip("Integration test - requires network connectivity")
+func TestResolver_Resolve_Parallel(t *testing.T) {
+	query := createTestQuery()
+	response := createTestResponse()
+	queryBytes := []byte("query")
+	responseBytes := []byte("response")
 
-	resolver := NewResolver([]string{"1.1.1.1:53"}, 5*time.Second)
-
-	query, err := domain.NewDNSQuery(1, "cloudflare.com.", 1, 1) // A record
-	if err != nil {
-		t.Fatalf("failed to create test query: %v", err)
+	tests := []struct {
+		name         string
+		servers      []string
+		setupMocks   func(*MockCodec, *MockConn)
+		dialBehavior func(address string) error // nil means success
+		wantErr      string
+		wantResp     domain.DNSResponse
+	}{
+		{
+			name:    "parallel success from first responding server",
+			servers: []string{"1.1.1.1:53", "8.8.8.8:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
+				conn.On("Close").Return(nil)
+				conn.readData = responseBytes
+			},
+			dialBehavior: func(address string) error {
+				return nil // All connections succeed
+			},
+			wantResp: response,
+		},
+		{
+			name:    "parallel all servers fail",
+			servers: []string{"1.1.1.1:53", "8.8.8.8:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				// No codec calls expected since dial fails
+			},
+			dialBehavior: func(address string) error {
+				return errors.New("connection failed")
+			},
+			wantErr: "all 2 upstream servers failed",
+		},
+		{
+			name:    "parallel context timeout during wait",
+			servers: []string{"1.1.1.1:53", "8.8.8.8:53"},
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				// Set up mocks for successful connection but slow response
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				// Simulate slow read that will be interrupted by context timeout
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Run(func(args mock.Arguments) {
+					// Simulate a slow operation that takes longer than the context timeout
+					time.Sleep(50 * time.Millisecond)
+				}).Return(0, errors.New("read timeout"))
+				conn.On("Close").Return(nil)
+			},
+			dialBehavior: func(address string) error {
+				return nil // Connections succeed but responses are slow
+			},
+			wantErr: "query timeout after",
+		},
 	}
 
-	response, err := resolver.ResolveWithTimeout(query, 10*time.Second)
-	if err != nil {
-		t.Fatalf("failed to resolve query: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			codec := &MockCodec{}
+			conn := &MockConn{}
 
-	if response.ID != 1 {
-		t.Errorf("expected response ID 1, got %d", response.ID)
-	}
+			tt.setupMocks(codec, conn)
 
-	if response.RCode != 0 { // NOERROR
-		t.Errorf("expected RCODE 0 (NOERROR), got %d", response.RCode)
+			dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+				if err := tt.dialBehavior(address); err != nil {
+					return nil, err
+				}
+				return conn, nil
+			}
+
+			resolver, err := NewResolver(Options{
+				Servers:  tt.servers,
+				Timeout:  time.Second,
+				Parallel: true, // Parallel mode
+				Codec:    codec,
+				Dial:     dial,
+			})
+			assert.NoError(t, err)
+
+			ctx := context.Background()
+			// Use a short timeout for the context timeout test case
+			if tt.name == "parallel context timeout during wait" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)
+				defer cancel()
+			}
+
+			resp, err := resolver.Resolve(ctx, query)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantResp, resp)
+			}
+
+			codec.AssertExpectations(t)
+			conn.AssertExpectations(t)
+		})
 	}
 }
 
-func TestResolver_Health(t *testing.T) {
-	// Note: This test requires network connectivity
-	t.Skip("Integration test - requires network connectivity")
+func TestResolver_Resolve_ContextCancellation(t *testing.T) {
+	query := createTestQuery()
+	queryBytes := []byte("query")
 
-	resolver := NewResolver([]string{"1.1.1.1:53"}, 5*time.Second)
+	codec := &MockCodec{}
+	conn := &MockConn{}
 
-	err := resolver.Health()
-	if err != nil {
-		t.Errorf("health check failed: %v", err)
+	codec.On("EncodeQuery", query).Return(queryBytes, nil)
+	conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+	conn.On("Close").Return(nil)
+	// Simulate slow read that will be cancelled
+	conn.On("Read", mock.AnythingOfType("[]uint8")).Return(0, errors.New("read timeout"))
+
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		return conn, nil
 	}
-}
 
-func TestResolver_Resolve_WithContext(t *testing.T) {
-	resolver := NewResolver([]string{"invalid.server:53"}, 1*time.Second)
+	resolver, err := NewResolver(Options{
+		Servers:  []string{"1.1.1.1:53"},
+		Timeout:  time.Second,
+		Parallel: false,
+		Codec:    codec,
+		Dial:     dial,
+	})
+	assert.NoError(t, err)
 
-	// Test with cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	query, err := domain.NewDNSQuery(1, "example.com.", 1, 1)
-	if err != nil {
-		t.Fatalf("failed to create test query: %v", err)
-	}
+	// Create context that cancels quickly
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
 
 	_, err = resolver.Resolve(ctx, query)
-	if err == nil {
-		t.Errorf("expected error with cancelled context, got nil")
-	}
+	assert.Error(t, err)
+
+	codec.AssertExpectations(t)
+	conn.AssertExpectations(t)
 }
 
-func TestResolver_Resolve_AllServersFail(t *testing.T) {
-	// Use invalid servers to force failure
-	resolver := NewResolver([]string{"192.0.2.1:53", "192.0.2.2:53"}, 1*time.Second)
+func TestResolver_setTimeout(t *testing.T) {
+	codec := &MockCodec{}
+	resolver, err := NewResolver(Options{
+		Servers: []string{"1.1.1.1:53"},
+		Timeout: time.Second,
+		Codec:   codec,
+	})
+	assert.NoError(t, err)
 
-	query, err := domain.NewDNSQuery(1, "example.com.", 1, 1)
-	if err != nil {
-		t.Fatalf("failed to create test query: %v", err)
+	// Test setting valid timeout
+	resolver.setTimeout(2 * time.Second)
+	assert.Equal(t, 2*time.Second, resolver.timeout)
+
+	// Test setting invalid timeout (should be ignored)
+	originalTimeout := resolver.timeout
+	resolver.setTimeout(0)
+	assert.Equal(t, originalTimeout, resolver.timeout)
+
+	resolver.setTimeout(-time.Second)
+	assert.Equal(t, originalTimeout, resolver.timeout)
+}
+
+func TestResolver_queryServerWithContext(t *testing.T) {
+	query := createTestQuery()
+	response := createTestResponse()
+	queryBytes := []byte("query")
+	responseBytes := []byte("response")
+
+	tests := []struct {
+		name       string
+		setupMocks func(*MockCodec, *MockConn)
+		wantErr    string
+		wantResp   domain.DNSResponse
+	}{
+		{
+			name: "successful query",
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
+				conn.On("Close").Return(nil)
+				conn.readData = responseBytes
+			},
+			wantResp: response,
+		},
+		{
+			name: "decode error",
+			setupMocks: func(codec *MockCodec, conn *MockConn) {
+				codec.On("EncodeQuery", query).Return(queryBytes, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID).Return(domain.DNSResponse{}, errors.New("decode failed"))
+				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
+				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
+				conn.On("Close").Return(nil)
+				conn.readData = responseBytes
+			},
+			wantErr: "decode failed",
+		},
 	}
 
-	_, err = resolver.ResolveWithTimeout(query, 2*time.Second)
-	if err == nil {
-		t.Errorf("expected error when all servers fail, got nil")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			codec := &MockCodec{}
+			conn := &MockConn{}
 
-	// Verify error message mentions all servers failed
-	if err != nil && len(err.Error()) == 0 {
-		t.Errorf("error message should not be empty")
+			tt.setupMocks(codec, conn)
+
+			dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+				return conn, nil
+			}
+
+			resolver, err := NewResolver(Options{
+				Servers: []string{"1.1.1.1:53"},
+				Timeout: time.Second,
+				Codec:   codec,
+				Dial:    dial,
+			})
+			assert.NoError(t, err)
+
+			ctx := context.Background()
+			resp, err := resolver.queryServerWithContext(ctx, "1.1.1.1:53", query)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantResp, resp)
+			}
+
+			codec.AssertExpectations(t)
+			conn.AssertExpectations(t)
+		})
 	}
 }
