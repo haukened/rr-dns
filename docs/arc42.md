@@ -286,6 +286,8 @@ func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.Authorit
 ***Directory/File Location***
 `internal/dns/infra/zone/zone.go`
 
+> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/infra/zone/README.md)
+
 ***Zone File Format***
 - Each file must contain a `zone_root` field
 - Labels are expanded to FQDNs using the zone root
@@ -332,6 +334,8 @@ type Cache interface {
 
 ***Uses***
 - [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU implementation
+
+> 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/infra/dnscache/README.md)
 
 ### 5.3.3 Black Box: Configuration
 
@@ -394,42 +398,75 @@ func Fatal(fields map[string]any, msg string)
 - Structured JSON logging in production
 - Human-readable console logging in development
 - High performance with minimal allocations
-- Non-blocking log operations
 
 ***Directory/File Location***
 `internal/dns/infra/log/log.go`
 
 ***Uses***
-- [`go.uber.org/zap`](https://github.com/uber-go/zap) for high-performance logging
+- [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-##### 5.3.5 Black Box: Upstream Resolver
+> 📖 **Detailed Documentation**: [Logger README](../internal/dns/infra/log/README.md)
 
-| Aspect | Description |
-|--------|-------------|
-| **Purpose** | Resolves DNS queries for domains not served locally by forwarding to upstream DNS servers |
-| **Interface** | • Input: DNS query (name, type, class)<br>• Output: DNS response or resolution failure |
-| **Location** | Implements the interface defined in the Domain Layer for external DNS resolution |
+### 5.3.5 Black Box: Upstream Resolver
 
-The Upstream Resolver implements the forwarding logic for queries that cannot be satisfied by local zones, providing the bridge to the wider DNS infrastructure.
+***Purpose/Responsibility***
+- Forward DNS queries to upstream servers for non-local domains
+- Implement RFC 1035 DNS wire format encoding/decoding
+- Provide failover across multiple upstream servers
+- Handle network timeouts and connection failures
 
-##### 5.3.6 Black Box: DNS Block List
+***Interface***
+```go
+type UpstreamResolver interface {
+    Resolve(ctx context.Context, query *domain.DNSQuery) (*domain.DNSResponse, error)
+    ResolveWithTimeout(query *domain.DNSQuery, timeout time.Duration) (*domain.DNSResponse, error)
+    Health() error
+}
+```
 
-| Aspect | Description |
-|--------|-------------|
-| **Purpose** | Provides domain blocking functionality for ad-blocking, malware protection, and content filtering |
-| **Interface** | • Input: Domain name to check<br>• Output: Boolean blocked status with optional block reason |
-| **Architecture** | Two-tier storage: LRU cache for hot domains over lightweight database for complete block lists |
+***Quality/Performance Characteristics***
+- UDP-based communication for low latency
+- Configurable timeouts and retry logic
+- Multiple server support with automatic failover
+- Proper DNS wire format compliance
+
+***Directory/File Location***
+`internal/dns/infra/upstream/resolver.go`
+
+***Uses***
+- Standard library `net` package for UDP communication
+- RFC 1035 wire format encoding/decoding
+
+> 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/infra/upstream/README.md)
+
+### 5.3.6 Black Box: DNS Block List
+
+***Purpose/Responsibility***
+- Provide domain blocking functionality for ad-blocking, malware protection, and content filtering
+- Support multiple block list formats and sources
+- High-performance lookups with two-tier storage architecture
+- Asynchronous updates without service interruption
+
+***Interface***
+```go
+type BlockList interface {
+    IsBlocked(domain string) (bool, string, error)
+    UpdateBlockLists() error
+    Stats() BlockListStats
+}
+```
+
+***Quality/Performance Characteristics***
+- Sub-millisecond lookup for cached domains
+- Two-tier storage: LRU cache over lightweight database
+- Configurable cache size to balance memory vs hit ratio
+- Batch database operations for efficient block list loading
+- Asynchronous block list updates without service interruption
 
 ***Storage Strategy***
 - **L1 Cache**: In-memory LRU cache for frequently queried domains (blocked and allowed)
 - **L2 Storage**: Lightweight embedded database (SQLite/BadgerDB) for complete block lists
 - **Cache-aside pattern**: Check cache first, fallback to database, populate cache with result
-
-***Performance Characteristics***
-- Sub-millisecond lookup for cached domains
-- Configurable cache size to balance memory vs hit ratio
-- Asynchronous block list updates without service interruption
-- Batch database operations for efficient block list loading
 
 ***Block List Sources***
 - Support for multiple block list formats (hosts files, domain lists, wildcards)
