@@ -51,7 +51,7 @@ graph TD
   RR-DNS --> Internet[Upstream DNS or Static Zone Data]
 ```
 
-RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS records from a local in-memory zone or passes through to upstream resolvers (future phase). It may also serve as a DNS sinkhole for ad/tracker blocking.
+RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS records from a local in-memory zone or forwards queries to upstream DNS servers. It may also serve as a DNS sinkhole for ad/tracker blocking.
 
 ## 3.2 Technical Context
 
@@ -267,6 +267,8 @@ Infrastructure components handle external concerns like networking, file I/O, ca
 
 ### 5.3.1 Black Box: Zone Loader
 
+> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/infra/zone/README.md)
+
 ***Purpose/Responsibility***
 - Load DNS zone files from a configured directory
 - Support multiple formats: YAML, JSON, TOML
@@ -286,8 +288,6 @@ func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.Authorit
 ***Directory/File Location***
 `internal/dns/infra/zone/zone.go`
 
-> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/infra/zone/README.md)
-
 ***Zone File Format***
 - Each file must contain a `zone_root` field
 - Labels are expanded to FQDNs using the zone root
@@ -305,6 +305,8 @@ mail:
 ```
 
 ### 5.3.2 Black Box: DNS Cache
+
+> 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/infra/dnscache/README.md)
 
 ***Purpose/Responsibility***
 - Provide fast, in-memory LRU cache for DNS resource records
@@ -335,9 +337,9 @@ type Cache interface {
 ***Uses***
 - [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU implementation
 
-> 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/infra/dnscache/README.md)
-
 ### 5.3.3 Black Box: Configuration
+
+> 📖 **Detailed Documentation**: [Config README](../internal/dns/infra/config/README.md)
 
 ***Purpose/Responsibility***
 - Load configuration from environment variables
@@ -377,6 +379,8 @@ func Load() (*AppConfig, error)
 
 ### 5.3.4 Black Box: Logger
 
+> 📖 **Detailed Documentation**: [Log README](../internal/dns/infra/log/README.md)
+
 ***Purpose/Responsibility***
 - Provide structured logging across all components
 - Support multiple log levels and output formats
@@ -405,39 +409,56 @@ func Fatal(fields map[string]any, msg string)
 ***Uses***
 - [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-> 📖 **Detailed Documentation**: [Logger README](../internal/dns/infra/log/README.md)
-
 ### 5.3.5 Black Box: Upstream Resolver
 
+> 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/infra/upstream/README.md)
+
 ***Purpose/Responsibility***
-- Forward DNS queries to upstream servers for non-local domains
-- Implement RFC 1035 DNS wire format encoding/decoding
-- Provide failover across multiple upstream servers
-- Handle network timeouts and connection failures
+- Forward DNS queries to upstream servers when local resolution fails
+- Provide configurable resolution strategies (serial vs parallel)
+- Complete dependency injection for maximum testability
+- Handle network failures, timeouts, and context cancellation
+- Maintain CLEAN architecture compliance with zero upward dependencies
 
 ***Interface***
 ```go
-type UpstreamResolver interface {
-    Resolve(ctx context.Context, query *domain.DNSQuery) (*domain.DNSResponse, error)
-    ResolveWithTimeout(query *domain.DNSQuery, timeout time.Duration) (*domain.DNSResponse, error)
-    Health() error
+// Public API - follows repository interface
+func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+
+// Constructor with dependency injection
+func NewResolver(opts Options) (*Resolver, error)
+
+// Configuration structure
+type Options struct {
+    Servers  []string        // Required: upstream DNS servers
+    Timeout  time.Duration   // Optional: query timeout (default: 5s)
+    Parallel bool            // Optional: resolution strategy
+    Codec    domain.DNSCodec // Required: DNS encoding/decoding
+    Dial     DialFunc        // Optional: network connection function
 }
 ```
 
 ***Quality/Performance Characteristics***
-- UDP-based communication for low latency
-- Configurable timeouts and retry logic
-- Multiple server support with automatic failover
-- Proper DNS wire format compliance
+- **Resolution Strategies**: Serial (predictable) or parallel (fast) server attempts
+- **Complete Testability**: All dependencies injectable via Options pattern
+- **Context Awareness**: Full support for cancellation and deadline management
+- **Standardized Errors**: Consistent error messages with proper wrapping
+- **Network Efficiency**: UDP transport with configurable timeouts
+- **Concurrent Safety**: Thread-safe for multiple simultaneous queries
+
+***Architecture Features***
+- **Dependency Injection**: `DNSCodec` and `DialFunc` injection for testing
+- **Strategy Pattern**: Configurable serial vs parallel resolution
+- **Error Standardization**: Predefined error constants for consistency
+- **Context Management**: Automatic timeout application and deadline handling
 
 ***Directory/File Location***
 `internal/dns/infra/upstream/resolver.go`
 
 ***Uses***
-- Standard library `net` package for UDP communication
-- RFC 1035 wire format encoding/decoding
-
-> 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/infra/upstream/README.md)
+- `domain.DNSCodec` interface for DNS message encoding/decoding
+- Standard library `net` package for UDP communication via injectable `DialFunc`
+- Go context package for cancellation and timeout management
 
 ### 5.3.6 Black Box: DNS Block List
 
@@ -495,7 +516,7 @@ sequenceDiagram
     participant BlockList
     participant ZoneRepo
     participant CacheRepo
-    participant UpstreamClient
+    participant UpstreamResolver
     participant Domain as Domain Models
 
     Client->>UDPServer: binary DNS packet
@@ -519,8 +540,8 @@ sequenceDiagram
             alt records found in cache
                 Resolver->>Domain: to DNSResponse
             else
-                Resolver->>UpstreamClient: Forward query
-                UpstreamClient-->>Resolver: DNSResponse
+                Resolver->>UpstreamResolver: Resolve(ctx, query)
+                UpstreamResolver-->>Resolver: DNSResponse
                 Resolver->>CacheRepo: Put(name, response)
             end
         end
