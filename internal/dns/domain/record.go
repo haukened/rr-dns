@@ -46,7 +46,11 @@ func (rr ResourceRecord) Validate() error {
 
 // TTLRemaining returns the remaining TTL duration until the record expires.
 func (rr ResourceRecord) TTLRemaining() time.Duration {
-	return time.Until(rr.ExpiresAt)
+	ttl := time.Until(rr.ExpiresAt)
+	if ttl < 0 {
+		return 0
+	}
+	return ttl
 }
 
 // CacheKey returns a cache key string derived from the record's name, type, and class.

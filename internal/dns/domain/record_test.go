@@ -104,6 +104,14 @@ func TestResourceRecord_TTLRemaining(t *testing.T) {
 	}
 }
 
+func TestResourceRecord_TTL_Underflow(t *testing.T) {
+	rr := ResourceRecord{ExpiresAt: time.Now().Add(-60 * time.Second)}
+	ttl := rr.TTLRemaining()
+	if ttl != 0 {
+		t.Errorf("TTLRemaining() = %v, want 0 for expired record", ttl)
+	}
+}
+
 func TestResourceRecord_CacheKey(t *testing.T) {
 	rr := ResourceRecord{Name: "example.com.", Type: 1, Class: 1}
 	want := "example.com.:1:1"
