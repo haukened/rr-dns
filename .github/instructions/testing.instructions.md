@@ -28,20 +28,33 @@ This guide defines how to structure and write tests for the rr-dns project. It s
 
 ### Services (`internal/dns/service`)
 
-- Services (e.g. `resolverService`) must be fully tested using mocks for repo interfaces.
+- Services (e.g. `resolverService`) must be fully tested using mocks for repository and gateway interfaces.
 - Use Go interfaces to inject mocks or fakes.
 - Test edge cases: NXDOMAIN, multiple answers, empty result.
 
-### Repos (`internal/dns/repo`)
+### Common (`internal/dns/common`)
 
-- Interfaces don’t require tests.
-- Implementations (e.g. `staticZoneRepo`) should be covered with focused tests.
-- Validate logic like record filtering and matching.
+- Shared utilities and infrastructure components should have unit tests.
+- Test logging configuration, utility functions, and cross-cutting concerns.
+- Keep tests isolated from external dependencies.
 
-### Infra (`internal/dns/infra`)
+### Config (`internal/dns/config`)
 
-- Infra components (e.g. `udpServer`) should be tested using integration tests.
-- Simulate actual UDP traffic to verify packet receipt and response.
+- Test configuration parsing, validation, and default value handling.
+- Test environment variable loading and type conversion.
+- Verify error handling for invalid configurations.
+
+### Gateways (`internal/dns/gateways`)
+
+- Test external system integrations with both unit and integration tests.
+- Use mocks for unit testing of transport, upstream, and wire format logic.
+- Integration tests should verify real network communication (with skip flags).
+
+### Repos (`internal/dns/repos`)
+
+- Repository implementations (e.g. `zoneRepo`, `cacheRepo`) should be covered with focused tests.
+- Test data access patterns, caching behavior, and persistence logic.
+- Validate logic like record filtering, matching, and TTL handling.
 
 ### Mocking
 
@@ -64,7 +77,7 @@ To use in a test:
 repo := new(MockZoneRepo)
 repo.On("FindRecords", "example.com.", A).Return([]ResourceRecord{...}, nil)
 
-resolver := resolverService{repo: repo}
+resolver := resolverService{zoneRepo: repo}
 resp := resolver.Resolve(query)
 repo.AssertExpectations(t)
 ```
@@ -111,7 +124,10 @@ func TestResolver_Resolve(t *testing.T) {
 When writing tests:
 - Use table-driven tests for all services.
 - Keep test cases short and focused.
-- Use mocks for interfaces in `service/`.
-- Avoid depending on real infrastructure in `domain` or `service` tests.
+- Use mocks for repository and gateway interfaces in `service/` tests.
+- Avoid depending on real infrastructure in `domain`, `service`, or `common` tests.
+- Test configuration parsing and validation in `config/` tests.
+- Use integration tests for `gateways/` components with real external systems.
+- Test data access patterns and caching behavior in `repos/` tests.
 - Name your test inputs and assert outcomes explicitly.
-- Use `testify/mock` to mock interfaces like `ZoneRepository` in unit tests.
+- Use `testify/mock` to mock interfaces like `ZoneRepository` and `ServerTransport` in unit tests.
