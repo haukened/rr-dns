@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 // udpCodec implements the DNSCodec interface for standard DNS over UDP messages.
@@ -234,4 +235,4 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16) (domain.DNSRes
 	}, nil
 }
 
-var UDP domain.DNSCodec = &udpCodec{}
+var UDP resolver.DNSCodec = &udpCodec{}

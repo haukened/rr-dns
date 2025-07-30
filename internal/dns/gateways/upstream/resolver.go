@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 // Error message constants for consistent error handling
@@ -26,11 +27,11 @@ const (
 // It handles the low-level networking concerns of DNS over UDP while maintaining clean
 // separation from the service layer business logic.
 type Resolver struct {
-	servers  []string        // List of upstream DNS servers (e.g., "1.1.1.1:53")
-	timeout  time.Duration   // Default timeout for DNS queries
-	codec    domain.DNSCodec // Codec for encoding/decoding DNS messages
-	parallel bool            // Whether to resolve queries in parallel
-	dial     DialFunc        // Dial function to create network connections
+	servers  []string          // List of upstream DNS servers (e.g., "1.1.1.1:53")
+	timeout  time.Duration     // Default timeout for DNS queries
+	codec    resolver.DNSCodec // Codec for encoding/decoding DNS messages
+	parallel bool              // Whether to resolve queries in parallel
+	dial     DialFunc          // Dial function to create network connections
 }
 
 // DialFunc defines a function type for establishing a network connection.
@@ -47,8 +48,8 @@ type Options struct {
 	Servers  []string
 	Timeout  time.Duration
 	Parallel bool
-	// optins to inject for testing purposes
-	Codec domain.DNSCodec
+	// options to inject for testing purposes
+	Codec resolver.DNSCodec
 	Dial  DialFunc
 }
 

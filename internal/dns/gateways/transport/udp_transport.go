@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/haukened/rr-dns/internal/dns/common/log"
-	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 // UDPTransport implements ServerTransport for standard DNS over UDP (RFC 1035).
@@ -16,7 +16,7 @@ import (
 type UDPTransport struct {
 	addr  string
 	conn  *net.UDPConn
-	codec domain.DNSCodec
+	codec resolver.DNSCodec
 
 	// Synchronization for graceful shutdown
 	mu      sync.RWMutex
@@ -25,7 +25,7 @@ type UDPTransport struct {
 }
 
 // NewUDPTransport creates a new UDP transport instance.
-func NewUDPTransport(addr string, codec domain.DNSCodec) *UDPTransport {
+func NewUDPTransport(addr string, codec resolver.DNSCodec) *UDPTransport {
 	return &UDPTransport{
 		addr:   addr,
 		codec:  codec,
