@@ -102,6 +102,7 @@ RR-DNS currently supports:
 | **v0.3**    | Docker support, metrics, health checks        | 📋 Planned |
 | **v0.4**    | Web admin UI, config reloading                | 📋 Planned |
 | **v1.0**    | Snap/apt packages, TLS/DoH support            | 📋 Planned |
+| **v1.1**    | TLS/DoH support                               | 📋 Planned |
 
 ### Infrastructure Completed ✅
 - DNS wire format encoding/decoding (100% RFC 1035 compliant)
