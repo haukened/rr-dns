@@ -69,3 +69,17 @@ func ParseRCode(s string) RCode {
 		return 0
 	}
 }
+
+const (
+	NOERROR  RCode = 0  // No error
+	FORMERR  RCode = 1  // Format error
+	SERVFAIL RCode = 2  // Server failure
+	NXDOMAIN RCode = 3  // Non-existent domain
+	NOTIMP   RCode = 4  // Not implemented
+	REFUSED  RCode = 5  // Query refused
+	YXDOMAIN RCode = 6  // Name exists when it shouldn't
+	YXRRSET  RCode = 7  // RR set exists when it shouldn't
+	NXRRSET  RCode = 8  // RR set does not exist when it should
+	NOTAUTH  RCode = 9  // Not authoritative for the zone
+	NOTZONE  RCode = 10 // Name not in zone
+)
