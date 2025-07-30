@@ -25,11 +25,10 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
   /dns
     /domain            # Core types like DNSQuery, DNSResponse
     /service           # Business logic, e.g. Resolver
-    /repo              # Interfaces for data access
-    /infra
-      /udp             # UDP socket implementation
-      /log             # Logging adapter
-      /config          # Environment/config loading
+    /common            # Shared infrastructure (logging, utilities)
+    /config            # Configuration management
+    /gateways          # External system integrations (transport, upstream, wire)
+    /repos             # Data repositories (cache, zones, blocklist)
 
 /docs                  # Architecture, design, and planning
 /pkg                   # Shared libraries (optional)
@@ -38,16 +37,18 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
 ## Rules for CLEAN Code in Go
 
 - Domain objects (`domain/`) must be pure Go structs with no external dependencies.
-- Services (`service/`) may only depend on `domain` and `repo` interfaces.
-- Repos (`repo/`) define interfaces, not implementations.
-- Infra (`infra/`) implements repo interfaces and handles all external systems (e.g., networking, file IO).
+- Services (`service/`) may only depend on `domain` and repository interfaces.
+- Common (`common/`) provides shared infrastructure used across layers.
+- Config (`config/`) handles environment-based configuration management.
+- Gateways (`gateways/`) implement interfaces for external system communication.
+- Repos (`repos/`) implement repository patterns for data access.
 - Entry points (`cmd/rr-dnsd`) wire everything together.
 
 
 ## Naming Conventions
 
-- Interface: `ZoneRepository`, `QueryResolver`
-- Implementation: `staticZoneRepo`, `resolverService`
+- Interface: `ZoneRepository`, `QueryResolver`, `ServerTransport`
+- Implementation: `staticZoneRepo`, `resolverService`, `udpTransport`
 - Package names are lowercase, no underscores.
 
 ## Copilot Guidance
@@ -55,8 +56,9 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
 When generating new code:
 - Place domain models in `internal/dns/domain`
 - Place resolver logic in `internal/dns/service`
-- Define interfaces in `repo`, and implementations in `infra`
-- Avoid importing `infra` into `service` or `domain`
+- Put shared utilities in `common`, configuration in `config`
+- Implement external integrations in `gateways`, data access in `repos`
+- Avoid importing infrastructure into `service` or `domain`
 - Add unit tests for each `service` method
 
 
@@ -76,11 +78,10 @@ internal/
   dns/
     domain/          # Pure domain models and value types
     service/         # Application logic (resolvers, orchestration)
-    repo/            # Interfaces to domain-level data access
-    infra/
-      udp/           # Wire protocol handlers (UDP listener)
-      config/        # Environment + runtime configuration
-      log/           # Logging implementation
+    common/          # Shared infrastructure (logging, utilities)
+    config/          # Configuration management 
+    gateways/        # External system integrations (transport, upstream, wire)
+    repos/           # Data repositories (cache, zones, blocklist)
 ```
 
 ---
@@ -88,9 +89,11 @@ internal/
 ## Import and Dependency Rules
 
 - `domain` may not import anything.
-- `service` may import `domain` and `repo` interfaces.
-- `repo` may import `domain`, but not `infra` or `service`.
-- `infra` may implement `repo` interfaces, but must not import `service` or `cmd`.
+- `service` may import `domain` and repository interfaces from `repos`.
+- `common` may import `domain` and standard library only.
+- `config` may import `domain` and validation libraries.
+- `gateways` may import `domain` and implement external communication interfaces.
+- `repos` may import `domain` and implement data access interfaces.
 - `cmd/rr-dnsd` is the only layer allowed to wire up dependencies across boundaries.
 
 ---
@@ -104,18 +107,28 @@ internal/
 
 ### Service (`internal/dns/service`)
 - Implements business rules and coordination
-- Depends only on `domain` and `repo` interfaces
-- Must be fully testable without infra
+- Depends only on `domain` and repository interfaces
+- Must be fully testable without infrastructure dependencies
 
-### Repo (`internal/dns/repo`)
-- Defines interfaces for data access
-- No concrete knowledge of infrastructure
-- Example: `ZoneRepository`
+### Common (`internal/dns/common`)
+- Shared infrastructure components (logging, utilities)
+- Cross-cutting concerns used by multiple layers
+- No business logic or domain knowledge
 
-### Infra (`internal/dns/infra`)
-- Implements side effects and adapters
-- Handles UDP, config, file IO, logging
-- May import domain types, but not services
+### Config (`internal/dns/config`)
+- Environment-based configuration management
+- Validation and type conversion of configuration values
+- No runtime state changes
+
+### Gateways (`internal/dns/gateways`)
+- External system integrations (network transports, upstream DNS, wire formats)
+- Implements interfaces for communicating with external systems
+- Protocol-specific implementations
+
+### Repos (`internal/dns/repos`)
+- Data access patterns (caching, zone files, blocklists)
+- Repository pattern implementations
+- Data persistence and retrieval logic
 
 ### Cmd (`cmd/rr-dnsd`)
 - Assembles the application
@@ -127,22 +140,28 @@ internal/
 
 - ❌ Logging in domain types
 - ❌ Environment parsing inside services
-- ❌ Service methods reaching into config or logger packages
-- ❌ Infra importing anything above its layer
+- ❌ Service methods reaching into config or logger packages directly
+- ❌ Infrastructure components importing service layer
+- ❌ Cross-dependencies between gateways and repos
+- ❌ Business logic in common, config, gateways, or repos
 
 ---
 
 ## Communication Between Layers
 
-- Services are initialized with interfaces from `repo` or `infra`
+- Services are initialized with interfaces from `repos` and `gateways`
 - All shared data must pass through domain types (never raw maps or side effects)
 - Cross-layer interaction should be traceable via dependency injection in `cmd/rr-dnsd`
+- Common services (logging) are injected where needed
+- Configuration is loaded once and passed to components that need it
 
 ---
 
 ## Testing by Layer
 
 - Domain: fully unit tested and deterministic
-- Service: tested with mocks/fakes for `repo` interfaces
-- Repo: test implementation logic, but isolate from infra
-- Infra: integration tests with real side effects (e.g. UDP, file system)
+- Service: tested with mocks/fakes for repository and gateway interfaces
+- Common: unit tested for utilities, integration tested for shared services
+- Config: unit tested for validation and parsing logic
+- Gateways: integration tests with real external systems (network, upstream DNS)
+- Repos: unit tests for data access logic, integration tests for storage mechanisms
