@@ -16,6 +16,14 @@ type UpstreamClient interface {
 	Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
 }
 
+// Blocklist defines an interface for checking whether a DNS query is blocked.
+// Implementations should provide logic to determine if a given DNSQuery
+// should be considered blocked, typically for filtering or security purposes.
+type Blocklist interface {
+	// current no-op. Future roadmap for blocking will expand this interface.
+	IsBlocked(q domain.DNSQuery) bool
+}
+
 // Cache defines the interface for a DNS resource record cache.
 // It provides methods to create a new cache, store, retrieve, and delete records,
 // as well as to query cache statistics and keys.
