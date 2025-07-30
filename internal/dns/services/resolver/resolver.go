@@ -1,5 +1,6 @@
 package resolver
 
 type Service struct {
-	upstream UpstreamClient
+	upstream  UpstreamClient
+	transport ServerTransport
 }
