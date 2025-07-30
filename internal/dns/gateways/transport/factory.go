@@ -3,13 +3,13 @@ package transport
 import (
 	"fmt"
 
-	"github.com/haukened/rr-dns/internal/dns/services/resolver"
+	"github.com/haukened/rr-dns/internal/dns/gateways/wire"
 )
 
 // NewTransport creates a new transport instance based on the specified type.
 // This factory function allows for easy extension to support additional transport
 // protocols in the future while maintaining a consistent interface.
-func NewTransport(transportType TransportType, addr string, codec resolver.DNSCodec) (ServerTransport, error) {
+func NewTransport(transportType TransportType, addr string, codec wire.DNSCodec) (ServerTransport, error) {
 	switch transportType {
 	case TransportUDP:
 		return NewUDPTransport(addr, codec), nil

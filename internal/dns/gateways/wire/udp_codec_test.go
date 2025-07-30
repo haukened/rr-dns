@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
-	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 func TestUdpCodec_EncodeQuery(t *testing.T) {
@@ -695,6 +694,6 @@ func TestUDP_Variable(t *testing.T) {
 	assert.IsType(t, &udpCodec{}, UDP)
 
 	// Test that it implements the DNSCodec interface
-	var codec resolver.DNSCodec = UDP
+	var codec DNSCodec = UDP
 	assert.NotNil(t, codec)
 }
