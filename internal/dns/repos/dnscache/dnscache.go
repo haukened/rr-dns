@@ -5,6 +5,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 // dnsCache is an in-memory TTL-aware cache using an LRU strategy to store DNS resource records.
@@ -53,3 +54,5 @@ func (c *dnsCache) Len() int {
 func (c *dnsCache) Keys() []string {
 	return c.lru.Keys()
 }
+
+var _ resolver.Cache = (*dnsCache)(nil)
