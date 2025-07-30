@@ -15,9 +15,10 @@ import (
 // It handles UDP socket management, packet reception/transmission, and wire format
 // conversion while delegating DNS logic to the service layer.
 type UDPTransport struct {
-	addr  string
-	conn  *net.UDPConn
-	codec wire.DNSCodec
+	addr   string
+	conn   *net.UDPConn
+	codec  wire.DNSCodec
+	logger log.Logger
 
 	// Synchronization for graceful shutdown
 	mu      sync.RWMutex
@@ -26,10 +27,11 @@ type UDPTransport struct {
 }
 
 // NewUDPTransport creates a new UDP transport instance.
-func NewUDPTransport(addr string, codec wire.DNSCodec) *UDPTransport {
+func NewUDPTransport(addr string, codec wire.DNSCodec, logger log.Logger) *UDPTransport {
 	return &UDPTransport{
 		addr:   addr,
 		codec:  codec,
+		logger: logger,
 		stopCh: make(chan struct{}),
 	}
 }
@@ -58,7 +60,7 @@ func (t *UDPTransport) Start(ctx context.Context, handler resolver.DNSResponder)
 	t.conn = conn
 	t.running = true
 
-	log.Info(map[string]any{
+	t.logger.Info(map[string]any{
 		"transport": "udp",
 		"address":   t.addr,
 	}, "DNS transport started")
@@ -83,7 +85,7 @@ func (t *UDPTransport) Stop() error {
 
 	if t.conn != nil {
 		if err := t.conn.Close(); err != nil {
-			log.Warn(map[string]any{
+			t.logger.Warn(map[string]any{
 				"error": err.Error(),
 			}, "Error closing UDP connection")
 		}
@@ -91,7 +93,7 @@ func (t *UDPTransport) Stop() error {
 
 	t.running = false
 
-	log.Info(map[string]any{
+	t.logger.Info(map[string]any{
 		"transport": "udp",
 		"address":   t.addr,
 	}, "DNS transport stopped")
@@ -111,10 +113,10 @@ func (t *UDPTransport) listenLoop(ctx context.Context, handler resolver.DNSRespo
 	for {
 		select {
 		case <-ctx.Done():
-			log.Debug(nil, "UDP transport stopping due to context cancellation")
+			t.logger.Debug(nil, "UDP transport stopping due to context cancellation")
 			return
 		case <-t.stopCh:
-			log.Debug(nil, "UDP transport stopping due to stop signal")
+			t.logger.Debug(nil, "UDP transport stopping due to stop signal")
 			return
 		default:
 			// Read incoming packet
@@ -129,7 +131,7 @@ func (t *UDPTransport) listenLoop(ctx context.Context, handler resolver.DNSRespo
 					return // Normal shutdown
 				}
 
-				log.Warn(map[string]any{
+				t.logger.Warn(map[string]any{
 					"error": err.Error(),
 				}, "Failed to read UDP packet")
 				continue
@@ -146,7 +148,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	// Decode wire format to domain object
 	query, err := t.codec.DecodeQuery(data)
 	if err != nil {
-		log.Warn(map[string]any{
+		t.logger.Warn(map[string]any{
 			"client": clientAddr.String(),
 			"error":  err.Error(),
 			"size":   len(data),
@@ -154,7 +156,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 		return
 	}
 
-	log.Debug(map[string]any{
+	t.logger.Debug(map[string]any{
 		"client":   clientAddr.String(),
 		"query_id": query.ID,
 		"name":     query.Name,
@@ -167,7 +169,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	// Encode domain object back to wire format
 	responseData, err := t.codec.EncodeResponse(response)
 	if err != nil {
-		log.Error(map[string]any{
+		t.logger.Error(map[string]any{
 			"client":   clientAddr.String(),
 			"query_id": query.ID,
 			"error":    err.Error(),
@@ -178,7 +180,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	// Send response back to client
 	_, err = t.conn.WriteToUDP(responseData, clientAddr)
 	if err != nil {
-		log.Error(map[string]any{
+		t.logger.Error(map[string]any{
 			"client":   clientAddr.String(),
 			"query_id": response.ID,
 			"error":    err.Error(),
@@ -186,7 +188,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 		return
 	}
 
-	log.Debug(map[string]any{
+	t.logger.Debug(map[string]any{
 		"client":   clientAddr.String(),
 		"query_id": response.ID,
 		"rcode":    response.RCode,
