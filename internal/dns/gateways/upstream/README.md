@@ -233,18 +233,19 @@ resolver, _ := upstream.NewResolver(upstream.Options{
 ### Service Layer Integration
 
 ```go
-// Service layer depends on interface, not implementation
-type QueryResolver interface {
-    Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
-}
+// Interface defined in service layer (e.g., internal/dns/services/resolver)
+// Upstream resolver implements this interface:
 
-// Resolver implements the interface
-var _ QueryResolver = (*upstream.Resolver)(nil)
+// UpstreamClient interface (defined in service layer)
+// - Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+
+// Resolver implements the interface (Dependency Inversion Principle)
+var _ resolver.UpstreamClient = (*upstream.Resolver)(nil)
 ```
 
 ### Repository Pattern
 
-The resolver implements the upstream resolution interface defined in the repository layer, maintaining clean architectural boundaries.
+The resolver implements the upstream resolution interface defined in the service layer, maintaining clean architectural boundaries and following the Dependency Inversion Principle.
 
 ## Limitations
 

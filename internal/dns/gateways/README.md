@@ -16,7 +16,7 @@ The `gateways` package provides:
 In the CLEAN architecture, gateways serve as:
 
 - **Infrastructure Layer**: Handle external system communication
-- **Dependency Inversion**: Implement interfaces defined in domain layer
+- **Interface Implementation**: Implement interfaces defined in service layer (Dependency Inversion Principle)
 - **Protocol Abstraction**: Hide protocol details from business logic
 - **External Boundaries**: Manage interactions with external systems
 
@@ -94,12 +94,15 @@ type DNSService struct {
 ```
 
 ### Interface-Based Architecture
-All gateways implement domain-defined interfaces:
+All gateways implement interfaces defined in the service layer:
 
 ```go
-// Domain defines the interface
+// Interfaces defined in service layer (e.g., internal/dns/services/resolver)
+// Gateways implement these contracts following Dependency Inversion Principle
+
+// Example: ServerTransport interface (defined in service layer)
 type ServerTransport interface {
-    Start(ctx context.Context, handler RequestHandler) error
+    Start(ctx context.Context, handler DNSResponder) error
     Stop() error
     Address() string
 }

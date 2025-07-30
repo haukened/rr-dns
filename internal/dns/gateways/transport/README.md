@@ -17,24 +17,23 @@ Network Packets → Transport Layer → Service Layer (Domain Objects)
 - **Protocol Abstraction**: Service layer is unaware of transport protocol details
 - **Wire Format Handling**: Transport layer handles encoding/decoding using domain codecs
 - **Extensibility**: New transport protocols can be added without changing service logic
-- **Clean Interfaces**: Simple, focused interfaces for easy testing and mocking
+- **Interface Compliance**: Implements interfaces defined in the service layer (Dependency Inversion Principle)
 
-## Core Interfaces
+## Implementation Details
 
-### ServerTransport
+The transport package implements interfaces defined in the service layer:
+
 ```go
-type ServerTransport interface {
-    Start(ctx context.Context, handler RequestHandler) error
-    Stop() error
-    Address() string
-}
-```
+// Interfaces defined in service layer (e.g., internal/dns/services/resolver)
+// Transport implementations comply with these contracts:
 
-### RequestHandler
-```go
-type RequestHandler interface {
-    HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
-}
+// ServerTransport interface (defined in service layer)
+// - Start(ctx context.Context, handler DNSResponder) error
+// - Stop() error  
+// - Address() string
+
+// DNSResponder interface (defined in service layer)
+// - HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
 ```
 
 ## Current Implementation
@@ -57,10 +56,13 @@ The architecture is designed to support additional protocols:
 ## Usage Example
 
 ```go
-// Create transport
+// Import the service layer interface definitions
+import "github.com/haukened/rr-dns/internal/dns/services/resolver"
+
+// Create transport (implements resolver.ServerTransport)
 transport := transport.NewUDPTransport(":53", wire.UDP)
 
-// Create service handler (implements RequestHandler)
+// Create service handler (implements resolver.DNSResponder)
 handler := &dnsService{...}
 
 // Start transport

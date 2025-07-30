@@ -79,22 +79,22 @@ Planned DNS blocklist functionality for domain filtering.
 
 ## Repository Pattern
 
-All repositories implement consistent interfaces defined in the domain layer:
+All repositories implement interfaces defined in the service layer following the Dependency Inversion Principle:
 
 ```go
-// Example repository interface
-type ZoneRepository interface {
-    FindRecord(name string, recordType uint16) (*domain.ResourceRecord, error)
-    LoadZones(directory string) error
-    GetAuthoritative(domain string) ([]domain.ResourceRecord, error)
-}
+// Interfaces defined in service layer (e.g., internal/dns/services/resolver)
+// Repository implementations comply with these contracts:
 
-// Cache repository interface
-type CacheRepository interface {
-    Get(key string) (*domain.ResourceRecord, bool)
-    Set(record *domain.ResourceRecord)
-    Len() int
-}
+// Example repository interfaces (defined in service layer)
+// ZoneRepository interface:
+// - FindRecord(name string, recordType uint16) (*domain.ResourceRecord, error)
+// - LoadZones(directory string) error
+// - GetAuthoritative(domain string) ([]domain.ResourceRecord, error)
+
+// CacheRepository interface:
+// - Get(key string) (*domain.ResourceRecord, bool)
+// - Set(record *domain.ResourceRecord)
+// - Len() int
 ```
 
 ## Design Principles
@@ -136,10 +136,13 @@ Repositories optimize for common DNS access patterns:
 
 ### Service Layer Integration
 ```go
+// Import service layer interfaces
+import "github.com/haukened/rr-dns/internal/dns/services/resolver"
+
 type DNSResolver struct {
-    zones     repos.ZoneRepository
-    cache     repos.CacheRepository  
-    upstream  gateways.UpstreamResolver
+    zones     resolver.ZoneRepository      // Interface defined in service layer
+    cache     resolver.CacheRepository     // Interface defined in service layer
+    upstream  resolver.UpstreamClient      // Interface defined in service layer
 }
 
 func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
