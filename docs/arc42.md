@@ -222,52 +222,55 @@ The domain layer contains pure business entities free from infrastructure concer
 
 ***Overview Diagram***
 
-> Note: The infrastructure layer is intentionally disconnected. Infrastucture is stitched together at the service layer, and should have no cross dependencies.
+> Note: The infrastructure layer is organized into focused directories. Components within each directory work together but maintain loose coupling across directories.
 
 ```mermaid
 graph TD
     subgraph "Infrastructure Layer"
-        subgraph "Network"
-            direction TB
-            udp[UDP Server]
-            udpclient[Upstream Client]
-        end
-        
-        subgraph "Storage"
-            direction TB
-            ZoneLoader[Zone Loader] --> ZoneFiles[Zone Files]
-            DNSCache[DNS Cache] --> lru[LRU Cache]
-            BlockList[DNS Block List] --> lru
-        end
-        
-        subgraph "Cross-cutting"
+        subgraph "Common"
             direction TB
             Logger[Logger]
+        end
+        
+        subgraph "Config"
+            direction TB
             Config[Configuration]
+        end
+        
+        subgraph "Gateways"
+            direction TB
+            Transport[Transport Layer]
+            Upstream[Upstream Resolver]  
+            Wire[Wire Format Codec]
+        end
+        
+        subgraph "Repositories"
+            direction TB
+            ZoneLoader[Zone Repository] --> ZoneFiles[Zone Files]
+            DNSCache[DNS Cache] --> lru[LRU Cache]
+            BlockList[Blocklist Repository] --> lru
         end
     end
 ```
 
 ***Motivation***
 
-Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are designed to be replaceable and testable through interfaces. Configuration and logging are orchestrated by the service layer to maintain clean architectural boundaries.
+Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are organized into focused directories that group related functionality while maintaining clean architectural boundaries. The new structure separates common services, configuration, gateways to external systems, and data repositories.
 
 ***Contained Building Blocks***
 
-| **Name** | **Responsibility** |
-|----------|-------------------|
-| UDP Server | Listen for DNS packets, parse protocol, delegate to resolver |
-| Zone Loader | Load and parse zone files (YAML/JSON/TOML) into domain objects |
-| DNS Cache | LRU cache for DNS records to improve query performance |
-| DNS Block List | Domain blocking with LRU cache over lightweight database |
-| Logger | Structured logging with configurable levels and output formats |
-| Configuration | Load and validate configuration from environment variables |
+| **Directory** | **Components** | **Responsibility** |
+|---------------|----------------|-------------------|
+| **Common** | Logger | Structured logging with configurable levels and output formats |
+| **Config** | Configuration | Load and validate configuration from environment variables |
+| **Gateways** | Transport, Upstream, Wire | Network protocols, external DNS servers, wire format handling |
+| **Repositories** | Zone, Cache, Blocklist | Data persistence, caching, and retrieval operations |
 
 ## 5.3 Level 3
 
 ### 5.3.1 Black Box: Zone Loader
 
-> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/infra/zone/README.md)
+> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/repos/zone/README.md)
 
 ***Purpose/Responsibility***
 - Load DNS zone files from a configured directory
@@ -286,7 +289,7 @@ func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.Authorit
 - Memory efficient parsing using streaming where possible
 
 ***Directory/File Location***
-`internal/dns/infra/zone/zone.go`
+`internal/dns/repos/zone/zone.go`
 
 ***Zone File Format***
 - Each file must contain a `zone_root` field
@@ -306,7 +309,7 @@ mail:
 
 ### 5.3.2 Black Box: DNS Cache
 
-> 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/infra/dnscache/README.md)
+> 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/repos/dnscache/README.md)
 
 ***Purpose/Responsibility***
 - Provide fast, in-memory LRU cache for DNS resource records
@@ -332,14 +335,14 @@ type Cache interface {
 - O(1) average case performance
 
 ***Directory/File Location***
-`internal/dns/infra/dnscache/dnscache.go`
+`internal/dns/repos/dnscache/dnscache.go`
 
 ***Uses***
 - [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU implementation
 
 ### 5.3.3 Black Box: Configuration
 
-> 📖 **Detailed Documentation**: [Config README](../internal/dns/infra/config/README.md)
+> 📖 **Detailed Documentation**: [Config README](../internal/dns/config/README.md)
 
 ***Purpose/Responsibility***
 - Load configuration from environment variables
@@ -367,7 +370,7 @@ func Load() (*AppConfig, error)
 - Case-insensitive key transformation
 
 ***Directory/File Location***
-`internal/dns/infra/config/config.go`
+`internal/dns/config/config.go`
 
 ***Configuration Options***
 - `UDNS_CACHE_SIZE`: DNS cache size (default: 1000)
@@ -379,7 +382,7 @@ func Load() (*AppConfig, error)
 
 ### 5.3.4 Black Box: Logger
 
-> 📖 **Detailed Documentation**: [Log README](../internal/dns/infra/log/README.md)
+> 📖 **Detailed Documentation**: [Log README](../internal/dns/common/log/README.md)
 
 ***Purpose/Responsibility***
 - Provide structured logging across all components
@@ -404,14 +407,14 @@ func Fatal(fields map[string]any, msg string)
 - High performance with minimal allocations
 
 ***Directory/File Location***
-`internal/dns/infra/log/log.go`
+`internal/dns/common/log/log.go`
 
 ***Uses***
 - [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
 ### 5.3.5 Black Box: Upstream Resolver
 
-> 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/infra/upstream/README.md)
+> 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/gateways/upstream/README.md)
 
 ***Purpose/Responsibility***
 - Forward DNS queries to upstream servers when local resolution fails
@@ -453,14 +456,90 @@ type Options struct {
 - **Context Management**: Automatic timeout application and deadline handling
 
 ***Directory/File Location***
-`internal/dns/infra/upstream/resolver.go`
+`internal/dns/gateways/upstream/resolver.go`
 
 ***Uses***
 - `domain.DNSCodec` interface for DNS message encoding/decoding
 - Standard library `net` package for UDP communication via injectable `DialFunc`
+- Standard library `net` package for UDP communication via injectable `DialFunc`
 - Go context package for cancellation and timeout management
 
-### 5.3.6 Black Box: DNS Block List
+### 5.3.6 Black Box: Transport Layer
+
+> 📖 **Detailed Documentation**: [Transport README](../internal/dns/gateways/transport/README.md)
+
+***Purpose/Responsibility***
+- Provide network transport abstractions for DNS server implementations
+- Handle conversion between DNS wire format and domain objects
+- Support multiple transport protocols (UDP implemented, DoH/DoT/DoQ planned)
+- Manage graceful startup and shutdown with context cancellation
+
+***Interface***
+```go
+type ServerTransport interface {
+    Start(ctx context.Context, handler RequestHandler) error
+    Stop() error
+    Address() string
+}
+
+type RequestHandler interface {
+    HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
+}
+```
+
+***Quality/Performance Characteristics***
+- **Protocol Independence**: Service layer unaware of transport details
+- **Concurrent Processing**: Each request handled in separate goroutine
+- **Graceful Shutdown**: Context cancellation and stop channel support
+- **Wire Format Abstraction**: Uses domain codec interfaces for encoding/decoding
+
+***Directory/File Location***
+`internal/dns/gateways/transport/`
+
+***Current Implementation***
+- ✅ UDP Transport (RFC 1035) - Standard DNS over UDP
+- 🚧 DNS over HTTPS (DoH) - Planned
+- 🚧 DNS over TLS (DoT) - Planned
+- 🚧 DNS over QUIC (DoQ) - Planned
+
+### 5.3.7 Black Box: Wire Format Codec
+
+> 📖 **Detailed Documentation**: [Wire Format README](../internal/dns/gateways/wire/README.md)
+
+***Purpose/Responsibility***
+- Encode and decode DNS messages for UDP transport
+- Implement DNS wire format as specified in RFC 1035
+- Handle DNS name compression and decompression
+- Provide robust error handling for malformed packets
+
+***Interface***
+```go
+type DNSCodec interface {
+    EncodeQuery(query domain.DNSQuery) ([]byte, error)
+    DecodeQuery(data []byte) (domain.DNSQuery, error)
+    EncodeResponse(resp domain.DNSResponse) ([]byte, error)
+    DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error)
+}
+```
+
+***Quality/Performance Characteristics***
+- **RFC 1035 Compliant**: Full DNS wire format specification implementation
+- **100% Test Coverage**: Comprehensive testing including error paths
+- **Label Compression**: Efficient packet size through name compression
+- **Zero-copy Operations**: Minimal memory allocations for performance
+
+***Directory/File Location***
+`internal/dns/gateways/wire/`
+
+***Features***
+- Binary DNS message encoding/decoding
+- DNS name compression pointer handling
+- Comprehensive input validation
+- Detailed error messages for debugging
+
+### 5.3.8 Black Box: DNS Block List
+
+> 📖 **Detailed Documentation**: [Blocklist README](../internal/dns/repos/blocklist/README.md)
 
 ***Purpose/Responsibility***
 - Provide domain blocking functionality for ad-blocking, malware protection, and content filtering
@@ -496,7 +575,7 @@ type BlockList interface {
 - Category-based blocking (ads, trackers, malware, adult content)
 
 ***Directory/File Location***
-`internal/dns/infra/blocklist/blocklist.go`
+`internal/dns/repos/blocklist/blocklist.go`
 
 # 6. Runtime View
 
