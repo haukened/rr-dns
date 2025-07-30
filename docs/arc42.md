@@ -121,6 +121,7 @@ graph TD
         subgraph "Infrastructure Layer"
             UDPServer[UDP Server]
             ZoneLoader[Zone Loader]
+            ZoneCache[Zone Cache]
             DNSCache[DNS Cache]
             UpstreamResolver[Upstream Resolver]
             BlockList[DNS Block List]
@@ -136,6 +137,8 @@ graph TD
     Client[DNS Client] --> UDPServer
     UDPServer --> Resolver
     Resolver --> Domain
+    Resolver --> ZoneLoader
+    Resolver --> ZoneCache
     Resolver --> DNSCache
     Resolver --> UpstreamResolver
     Resolver --> BlockList
@@ -238,7 +241,7 @@ graph TD
         
         subgraph "Config"
             direction TB
-            Config[Configuration]
+            configuration[Configuration]
         end
         
         subgraph "Gateways"
