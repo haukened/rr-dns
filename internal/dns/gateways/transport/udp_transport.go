@@ -8,6 +8,7 @@ import (
 
 	"github.com/haukened/rr-dns/internal/dns/common/log"
 	"github.com/haukened/rr-dns/internal/dns/gateways/wire"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 // UDPTransport implements ServerTransport for standard DNS over UDP (RFC 1035).
@@ -35,7 +36,7 @@ func NewUDPTransport(addr string, codec wire.DNSCodec) *UDPTransport {
 
 // Start begins listening for UDP DNS queries on the configured address.
 // It binds to the UDP socket and starts the packet handling loop.
-func (t *UDPTransport) Start(ctx context.Context, handler RequestHandler) error {
+func (t *UDPTransport) Start(ctx context.Context, handler resolver.DNSResponder) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -104,7 +105,7 @@ func (t *UDPTransport) Address() string {
 }
 
 // listenLoop continuously listens for UDP packets and handles them.
-func (t *UDPTransport) listenLoop(ctx context.Context, handler RequestHandler) {
+func (t *UDPTransport) listenLoop(ctx context.Context, handler resolver.DNSResponder) {
 	buffer := make([]byte, 512) // Standard DNS UDP packet size limit
 
 	for {
@@ -141,7 +142,7 @@ func (t *UDPTransport) listenLoop(ctx context.Context, handler RequestHandler) {
 }
 
 // handlePacket processes a single UDP DNS packet.
-func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr *net.UDPAddr, handler RequestHandler) {
+func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr *net.UDPAddr, handler resolver.DNSResponder) {
 	// Decode wire format to domain object
 	query, err := t.codec.DecodeQuery(data)
 	if err != nil {
