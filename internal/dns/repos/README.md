@@ -26,7 +26,8 @@ In the CLEAN architecture, repositories serve as:
 repos/
 ├── blocklist/      # DNS blocklist repository (planned)
 ├── dnscache/       # High-performance DNS record caching
-└── zone/          # Zone file loading and management
+├── zone/          # Zone file loading and management
+└── zonecache/     # In-memory authoritative record storage
 ```
 
 ## Components
@@ -47,6 +48,29 @@ High-performance, TTL-aware DNS cache with LRU eviction.
 - **Memory Overhead**: ~150 bytes per cached record
 - **Cache Hit Ratio**: Typically 80-95% for normal workloads
 - **Eviction Strategy**: Least Recently Used (LRU)
+
+### [Zone Cache (`zonecache/`)](zonecache/)
+
+In-memory storage for authoritative DNS records with concurrent-safe access.
+
+**Key Features:**
+- Fast O(1) lookup performance for authoritative records
+- Thread-safe concurrent access using RWMutex
+- DNS hierarchy-aware zone matching
+- Atomic zone replacement operations
+- Memory-efficient nested map structure
+
+**Performance Characteristics:**
+- **Lookup Time**: ~2.7μs average case
+- **Zone Replace**: ~1.5μs per operation
+- **Memory Usage**: Minimal overhead with direct record storage
+- **Concurrent Performance**: ~408ns per operation under load
+- **Data Structure**: Zone → FQDN → RRType → Records
+
+**Use Cases:**
+- Authoritative DNS server record storage
+- Zone data caching after file loading
+- High-performance DNS query resolution
 
 ### [Zone Repository (`zone/`)](zone/)
 
@@ -85,11 +109,13 @@ All repositories implement interfaces defined in the service layer following the
 // Interfaces defined in service layer (e.g., internal/dns/services/resolver)
 // Repository implementations comply with these contracts:
 
-// Example repository interfaces (defined in service layer)
-// ZoneRepository interface:
-// - FindRecord(name string, recordType uint16) (*domain.ResourceRecord, error)
-// - LoadZones(directory string) error
-// - GetAuthoritative(domain string) ([]domain.ResourceRecord, error)
+// ZoneCache interface (defined in services/resolver/interfaces.go):
+// - Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
+// - ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
+// - RemoveZone(zoneRoot string) error
+// - All() map[string][]*domain.AuthoritativeRecord
+// - Zones() []string
+// - Count() int
 
 // CacheRepository interface:
 // - Get(key string) (*domain.ResourceRecord, bool)
@@ -105,9 +131,10 @@ Repositories hide data source implementation details:
 ```go
 // Service layer doesn't know about file formats or cache implementation
 type DNSService struct {
-    zones     ZoneRepository     // Could be files, database, API
-    cache     CacheRepository   // Could be memory, Redis, etc.
-    blocklist BlocklistRepository // Could be files, remote lists
+    zoneCache resolver.ZoneCache     // In-memory authoritative records
+    cache     CacheRepository        // TTL-aware recursive cache
+    zones     ZoneRepository         // Zone file management
+    blocklist BlocklistRepository    // Domain filtering
 }
 ```
 
@@ -116,20 +143,30 @@ All repositories are interface-based for flexibility and testing:
 
 ```go
 // Easy to mock for testing
-type mockZoneRepo struct {
-    records map[string]*domain.ResourceRecord
+type mockZoneCache struct {
+    records map[string][]*domain.AuthoritativeRecord
 }
 
-func (m *mockZoneRepo) FindRecord(name string, recordType uint16) (*domain.ResourceRecord, error) {
-    return m.records[name], nil
+func (m *mockZoneCache) Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool) {
+    if records, found := m.records[fqdn]; found {
+        var matches []*domain.AuthoritativeRecord
+        for _, record := range records {
+            if record.Type == rrType {
+                matches = append(matches, record)
+            }
+        }
+        return matches, len(matches) > 0
+    }
+    return nil, false
 }
 ```
 
 ### Performance Optimization
 Repositories optimize for common DNS access patterns:
 
-- **Cache Layer**: Fast access to recently used records
-- **Zone Data**: Pre-loaded authoritative records
+- **Zone Cache**: Ultra-fast authoritative record lookups
+- **TTL Cache**: Fast access to recently resolved recursive queries
+- **Zone Loading**: Pre-loaded authoritative records from files
 - **Blocklist**: Bloom filters for fast negative lookups
 
 ## Integration Patterns
@@ -140,18 +177,18 @@ Repositories optimize for common DNS access patterns:
 import "github.com/haukened/rr-dns/internal/dns/services/resolver"
 
 type DNSResolver struct {
-    zones     resolver.ZoneRepository      // Interface defined in service layer
-    cache     resolver.CacheRepository     // Interface defined in service layer
-    upstream  resolver.UpstreamClient      // Interface defined in service layer
+    zoneCache resolver.ZoneCache        // Interface defined in service layer
+    cache     resolver.CacheRepository  // Interface defined in service layer
+    upstream  resolver.UpstreamClient   // Interface defined in service layer
 }
 
 func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
-    // 1. Check authoritative zones
-    if record := r.zones.FindRecord(query.Name, query.Type); record != nil {
-        return createAuthoritativeResponse(query, record)
+    // 1. Check authoritative zones first
+    if records, found := r.zoneCache.Find(query.Name, query.Type); found {
+        return createAuthoritativeResponse(query, records)
     }
     
-    // 2. Check cache
+    // 2. Check recursive cache
     if record, found := r.cache.Get(query.CacheKey()); found {
         return createCachedResponse(query, record)
     }
@@ -170,6 +207,10 @@ func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
 ```go
 // Repositories are configured through application config
 type RepositoryConfig struct {
+    ZoneCache struct {
+        InitialCapacity int `yaml:"initial_capacity"`
+    } `yaml:"zone_cache"`
+    
     Cache struct {
         Size         int           `yaml:"size"`
         TTLOverride  time.Duration `yaml:"ttl_override"`
@@ -199,6 +240,11 @@ Repositories provide consistent error handling:
 - Invalid domain names or record types
 - File system access errors
 
+### Zone Cache Errors
+- DNS hierarchy validation failures
+- Invalid zone root format
+- Concurrent access conflicts
+
 ### Cache Errors
 - Memory allocation failures
 - Concurrent access issues
@@ -212,13 +258,15 @@ Repositories provide consistent error handling:
 ## Performance Considerations
 
 ### Memory Management
-- **Cache Size Limits**: Configurable LRU cache sizes
+- **Zone Cache**: Direct in-memory storage with minimal overhead
+- **TTL Cache**: Configurable LRU cache sizes with automatic expiration
 - **Zone Data**: Loaded once at startup, minimal memory overhead
 - **Efficient Data Structures**: Optimized for DNS access patterns
 
 ### Access Patterns
-- **Cache-First**: Check cache before expensive operations
-- **Zone Priority**: Authoritative zones take precedence
+- **Authoritative-First**: Check zone cache before recursive resolution
+- **Cache-Second**: Check TTL cache before expensive upstream queries
+- **Zone Priority**: Authoritative zones take precedence over cached data
 - **Lazy Loading**: Load data only when needed
 
 ### Concurrent Access
@@ -236,8 +284,12 @@ Each repository includes comprehensive unit tests:
 go test ./internal/dns/repos/...
 
 # Test specific repository
+go test ./internal/dns/repos/zonecache/
 go test ./internal/dns/repos/dnscache/
 go test ./internal/dns/repos/zone/
+
+# Run benchmarks
+go test ./internal/dns/repos/zonecache/ -bench=.
 ```
 
 ### Integration Testing
@@ -251,6 +303,12 @@ go test ./internal/dns/repos/zone/
 - Error condition simulation
 
 ## Configuration Examples
+
+### Zone Cache Configuration
+```yaml
+zone_cache:
+  initial_capacity: 1000  # Initial map capacity for performance
+```
 
 ### Cache Configuration
 ```yaml

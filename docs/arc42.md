@@ -58,6 +58,7 @@ RR-DNS acts as a local DNS resolver for internal clients. It either serves DNS r
 ```mermaid
 graph TD
   Subsystem1[UDP Server] --> Resolver[Query Resolver]
+  Resolver --> ZoneCache[Zone Cache]
   Resolver --> ZoneRepo[Static Zone Repository]
   Resolver --> BlockList[DNS Block List]
   Resolver --> dnscache[DNS Cache]
@@ -65,6 +66,7 @@ graph TD
   Resolver --> Logger
   UpstreamResolver --> Internet[Upstream DNS Servers]
   ZoneRepo --> ZoneFile[Zone Files]
+  ZoneRepo --> ZoneCache
   BlockList --> BlockCache[Block Cache]
   BlockCache --> BlockDB[Block Database]
 ```
@@ -82,8 +84,8 @@ graph TD
 Since mermaid diagrams don't guarantee ordering, to eliminate ambiguity, the query resolver orders steps:
 ```mermaid
 graph LR
-  Query --> Zone
-  Zone --> Block
+  Query --> ZoneCache
+  ZoneCache --> Block
   Block --> dnscache[DNS Cache]
   dnscache --> Upstream
   Upstream --> Response
@@ -157,6 +159,7 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 | Query Resolver | Core business logic for DNS query resolution |
 | UDP Server | Network protocol handling and packet parsing |
 | Zone Loader | Loading and parsing zone files from disk |
+| Zone Cache | Ultra-fast in-memory storage for authoritative DNS records |
 | DNS Cache | In-memory LRU cache for performance optimization |
 | Upstream Resolver | Forward queries to external DNS servers when no local data available |
 | DNS Block List | Block malicious/unwanted domains using cached database lookups |
@@ -167,6 +170,7 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 
 - `QueryResolver` interface: Main service contract for DNS resolution
 - `ZoneRepository` interface: Abstraction for zone data access
+- `ZoneCache` interface: Abstraction for fast authoritative record access
 - `CacheRepository` interface: Abstraction for cached record storage
 - `BlockListRepository` interface: Abstraction for domain blocking decisions
 
@@ -247,6 +251,7 @@ graph TD
         subgraph "Repositories"
             direction TB
             ZoneLoader[Zone Repository] --> ZoneFiles[Zone Files]
+            ZoneCache[Zone Cache] --> mem[In-Memory Records]
             DNSCache[DNS Cache] --> lru[LRU Cache]
             BlockList[Blocklist Repository] --> lru
         end
@@ -264,7 +269,7 @@ Infrastructure components handle external concerns like networking, file I/O, ca
 | **Common** | Logger | Structured logging with configurable levels and output formats |
 | **Config** | Configuration | Load and validate configuration from environment variables |
 | **Gateways** | Transport, Upstream, Wire | Network protocols, external DNS servers, wire format handling |
-| **Repositories** | Zone, Cache, Blocklist | Data persistence, caching, and retrieval operations |
+| **Repositories** | Zone, ZoneCache, Cache, Blocklist | Data persistence, caching, and retrieval operations |
 
 ## 5.3 Level 3
 
@@ -340,7 +345,51 @@ type Cache interface {
 ***Uses***
 - [`github.com/hashicorp/golang-lru/v2`](https://github.com/hashicorp/golang-lru) for LRU implementation
 
-### 5.3.3 Black Box: Configuration
+### 5.3.3 Black Box: Zone Cache
+
+> 📖 **Detailed Documentation**: [Zone Cache README](../internal/dns/repos/zonecache/README.md)
+
+***Purpose/Responsibility***
+- Provide ultra-fast in-memory storage for authoritative DNS records
+- Enable O(1) lookup performance for zone-based queries
+- Maintain thread-safe concurrent access using RWMutex
+- Support atomic zone replacement operations
+- Implement DNS hierarchy-aware zone matching
+
+***Interface***
+```go
+type ZoneCache interface {
+    Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
+    ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
+    RemoveZone(zoneRoot string) error
+    All() map[string][]*domain.AuthoritativeRecord
+    Zones() []string
+    Count() int
+}
+```
+
+***Quality/Performance Characteristics***
+- **Lookup Time**: ~2.7μs average case for authoritative record retrieval
+- **Zone Replace**: ~1.5μs per atomic zone replacement operation
+- **Memory Usage**: Direct record storage with minimal overhead
+- **Concurrent Performance**: ~408ns per operation under concurrent load
+- **Data Structure**: Nested maps (Zone → FQDN → RRType → Records)
+- **Thread Safety**: Full concurrent read/write support with RWMutex
+
+***Directory/File Location***
+`internal/dns/repos/zonecache/zonecache.go`
+
+***Uses***
+- Go standard library `sync.RWMutex` for concurrent access control
+- Domain layer types for authoritative record storage
+
+***Zone Hierarchy Matching***
+- Supports exact domain matches and proper subdomain resolution
+- DNS hierarchy-aware: `mail.example.com` correctly matches zone `example.com`
+- Validates zone roots to prevent false positive matches
+- Case-insensitive domain name matching following DNS standards
+
+### 5.3.4 Black Box: Configuration
 
 > 📖 **Detailed Documentation**: [Config README](../internal/dns/config/README.md)
 
@@ -380,7 +429,7 @@ func Load() (*AppConfig, error)
 - `UDNS_ZONE_DIR`: Zone files directory (default: "/etc/rr-dns/zones/")
 - `UDNS_UPSTREAM`: Upstream DNS servers (default: "1.1.1.1:53,1.0.0.1:53")
 
-### 5.3.4 Black Box: Logger
+### 5.3.5 Black Box: Logger
 
 > 📖 **Detailed Documentation**: [Log README](../internal/dns/common/log/README.md)
 
@@ -412,7 +461,7 @@ func Fatal(fields map[string]any, msg string)
 ***Uses***
 - [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-### 5.3.5 Black Box: Upstream Resolver
+### 5.3.6 Black Box: Upstream Resolver
 
 > 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/gateways/upstream/README.md)
 
@@ -464,7 +513,7 @@ type Options struct {
 - Standard library `net` package for UDP communication via injectable `DialFunc`
 - Go context package for cancellation and timeout management
 
-### 5.3.6 Black Box: Transport Layer
+### 5.3.7 Black Box: Transport Layer
 
 > 📖 **Detailed Documentation**: [Transport README](../internal/dns/gateways/transport/README.md)
 
@@ -502,7 +551,7 @@ type RequestHandler interface {
 - 🚧 DNS over TLS (DoT) - Planned
 - 🚧 DNS over QUIC (DoQ) - Planned
 
-### 5.3.7 Black Box: Wire Format Codec
+### 5.3.8 Black Box: Wire Format Codec
 
 > 📖 **Detailed Documentation**: [Wire Format README](../internal/dns/gateways/wire/README.md)
 
@@ -537,7 +586,7 @@ type DNSCodec interface {
 - Comprehensive input validation
 - Detailed error messages for debugging
 
-### 5.3.8 Black Box: DNS Block List
+### 5.3.9 Black Box: DNS Block List
 
 > 📖 **Detailed Documentation**: [Blocklist README](../internal/dns/repos/blocklist/README.md)
 
@@ -583,7 +632,8 @@ type BlockList interface {
 
 - UDPServer receives binary query.
 - Parsed into a DNSQuery domain object.
-- Resolver looks up name/type in ZoneRepository.
+- Resolver first checks ZoneCache for authoritative records.
+- If no authoritative records found, resolver checks DNS cache or queries upstream.
 - DNSResponse is created and encoded.
 - UDPServer sends response back to client.
 
@@ -592,6 +642,7 @@ sequenceDiagram
     participant Client
     participant UDPServer
     participant Resolver
+    participant ZoneCache
     participant BlockList
     participant ZoneRepo
     participant CacheRepo
@@ -602,18 +653,18 @@ sequenceDiagram
     UDPServer->>Domain: decode to DNSQuery
     UDPServer->>Resolver: Resolve(DNSQuery)
 
-    Resolver->>BlockList: IsBlocked(domain)
-    BlockList-->>Resolver: blocked status
-    
-    alt domain is blocked
-        Resolver->>Domain: create NXDOMAIN response
-    else domain not blocked
-        Resolver->>ZoneRepo: FindRecords(name, type)
-        ZoneRepo-->>Resolver: []AuthoritativeRecord (or nil)
+    Resolver->>ZoneCache: Find(fqdn, rrType)
+    ZoneCache-->>Resolver: []AuthoritativeRecord (or nil)
 
-        alt records found in zone
-            Resolver->>Domain: to DNSResponse with TTLs
-        else
+    alt records found in zone cache
+        Resolver->>Domain: create authoritative response
+    else no authoritative records
+        Resolver->>BlockList: IsBlocked(domain)
+        BlockList-->>Resolver: blocked status
+        
+        alt domain is blocked
+            Resolver->>Domain: create NXDOMAIN response
+        else domain not blocked
             Resolver->>CacheRepo: Get(name, type, class)
             CacheRepo-->>Resolver: []ResourceRecord (or nil)
             alt records found in cache
