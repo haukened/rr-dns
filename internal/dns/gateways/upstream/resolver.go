@@ -222,3 +222,5 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 		return domain.DNSResponse{}, ctx.Err()
 	}
 }
+
+var _ resolver.UpstreamClient = (*Resolver)(nil)
