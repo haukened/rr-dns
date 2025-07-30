@@ -16,6 +16,10 @@ import (
 type AppConfig struct {
 	CacheSize uint `koanf:"cache_size" validate:"required,gte=1"`
 
+	// DisableCache disables DNS response caching when set to true.
+	// Useful for testing scenarios where cache behavior needs to be bypassed.
+	DisableCache bool `koanf:"disable_cache"`
+
 	// Env is the runtime environment, either "dev" or "prod".
 	Env string `koanf:"env" validate:"required,oneof=dev prod"`
 
@@ -36,12 +40,13 @@ type AppConfig struct {
 // It includes default values for cache size, environment, log level, listening port, zone directory,
 // and upstream DNS servers.
 var DEFAULT_APP_CONFIG = AppConfig{
-	CacheSize: 1000,
-	Env:       "prod",
-	LogLevel:  "info",
-	Port:      53,
-	ZoneDir:   "/etc/rr-dns/zones/",
-	Servers:   []string{"1.1.1.1:53", "1.0.0.1:53"},
+	CacheSize:    1000,
+	DisableCache: false,
+	Env:          "prod",
+	LogLevel:     "info",
+	Port:         53,
+	ZoneDir:      "/etc/rr-dns/zones/",
+	Servers:      []string{"1.1.1.1:53", "1.0.0.1:53"},
 }
 
 // validIPPort validates whether the provided field value is a valid IP address and port combination.
