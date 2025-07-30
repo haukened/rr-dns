@@ -58,3 +58,24 @@ type ServerTransport interface {
 	// Address returns the network address the transport is bound to.
 	Address() string
 }
+
+// ZoneCache defines the interface for in-memory authoritative record storage
+type ZoneCache interface {
+	// Find returns authoritative records matching the FQDN and RRType
+	Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
+
+	// ReplaceZone replaces all records for a zone with new records
+	ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
+
+	// RemoveZone removes all records for a zone
+	RemoveZone(zoneRoot string) error
+
+	// All returns a snapshot of all zone data (for admin/diagnostic purposes)
+	All() map[string][]*domain.AuthoritativeRecord
+
+	// Zones returns a list of all zone roots currently cached
+	Zones() []string
+
+	// Count returns the total number of records across all zones
+	Count() int
+}

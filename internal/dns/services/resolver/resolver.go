@@ -1,7 +1,8 @@
 package resolver
 
 type Service struct {
-	upstream  UpstreamClient
-	transport ServerTransport
-	cache     Cache
+	transport     ServerTransport
+	upstream      UpstreamClient
+	upstreamCache Cache
+	zoneCache     ZoneCache
 }
