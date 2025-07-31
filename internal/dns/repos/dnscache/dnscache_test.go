@@ -20,14 +20,17 @@ func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 	rr := &domain.ResourceRecord{Name: "example.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(10 * time.Second)}
-	cache.Set(rr)
+	err = cache.Set([]*domain.ResourceRecord{rr})
+	if err != nil {
+		t.Fatalf("failed to set record: %v", err)
+	}
 
 	got, ok := cache.Get(rr.CacheKey())
 	if !ok {
 		t.Fatalf("expected record to be found")
 	}
-	if got != rr {
-		t.Errorf("expected %v, got %v", rr, got)
+	if len(got) != 1 || got[0] != rr {
+		t.Errorf("expected [%v], got %v", rr, got)
 	}
 }
 
@@ -37,7 +40,10 @@ func TestDnsCache_Get_ReturnsFalseIfExpired(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 	rr := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
-	cache.Set(rr) // already expired
+	err = cache.Set([]*domain.ResourceRecord{rr}) // already expired
+	if err != nil {
+		t.Fatalf("failed to set record: %v", err)
+	}
 
 	got, ok := cache.Get(rr.CacheKey())
 	if ok {
@@ -69,15 +75,24 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 	rr3 := &domain.ResourceRecord{Name: "c.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	cache.Set(rr1)
-	cache.Set(rr2)
-	cache.Set(rr3)
+	err = cache.Set([]*domain.ResourceRecord{rr1})
+	if err != nil {
+		t.Fatalf("failed to set rr1: %v", err)
+	}
+	err = cache.Set([]*domain.ResourceRecord{rr2})
+	if err != nil {
+		t.Fatalf("failed to set rr2: %v", err)
+	}
+	err = cache.Set([]*domain.ResourceRecord{rr3})
+	if err != nil {
+		t.Fatalf("failed to set rr3: %v", err)
+	}
 
 	keys := cache.Keys()
 	want := map[string]bool{
-		"a.com.:1:1": true,
-		"b.com.:1:1": true,
-		"c.com.:1:1": true,
+		"a.com.|a.com|A|IN": true,
+		"b.com.|b.com|A|IN": true,
+		"c.com.|c.com|A|IN": true,
 	}
 	if len(keys) != 3 {
 		t.Errorf("expected 3 keys, got %d", len(keys))
@@ -97,15 +112,21 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 	rr1 := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
 	rr2 := &domain.ResourceRecord{Name: "valid.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	cache.Set(rr1) // expired
-	cache.Set(rr2) // valid
+	err = cache.Set([]*domain.ResourceRecord{rr1}) // expired
+	if err != nil {
+		t.Fatalf("failed to set rr1: %v", err)
+	}
+	err = cache.Set([]*domain.ResourceRecord{rr2}) // valid
+	if err != nil {
+		t.Fatalf("failed to set rr2: %v", err)
+	}
 
 	// Trigger eviction of expired by accessing it
 	cache.Get(rr1.CacheKey())
 
 	keys := cache.Keys()
-	if len(keys) != 1 || keys[0] != "valid.com.:1:1" {
-		t.Errorf("expected only 'valid.com.:1:1' in keys, got %v", keys)
+	if len(keys) != 1 || keys[0] != "valid.com.|valid.com|A|IN" {
+		t.Errorf("expected only 'valid.com.|valid.com|A|IN' in keys, got %v", keys)
 	}
 }
 
@@ -126,7 +147,10 @@ func TestDnsCache_Delete_RemovesEntry(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 	rr := &domain.ResourceRecord{Name: "delete.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	cache.Set(rr)
+	err = cache.Set([]*domain.ResourceRecord{rr})
+	if err != nil {
+		t.Fatalf("failed to set record: %v", err)
+	}
 
 	cache.Delete(rr.CacheKey())
 
@@ -159,8 +183,14 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	}
 	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	cache.Set(rr1)
-	cache.Set(rr2)
+	err = cache.Set([]*domain.ResourceRecord{rr1})
+	if err != nil {
+		t.Fatalf("failed to set rr1: %v", err)
+	}
+	err = cache.Set([]*domain.ResourceRecord{rr2})
+	if err != nil {
+		t.Fatalf("failed to set rr2: %v", err)
+	}
 
 	cache.Delete(rr1.CacheKey())
 
@@ -172,5 +202,36 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	}
 	if cache.Len() != 1 {
 		t.Errorf("expected cache length 1, got %d", cache.Len())
+	}
+}
+
+func TestDnsCache_SetZeroRecords(t *testing.T) {
+	cache, err := New(2)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+	err = cache.Set([]*domain.ResourceRecord{})
+	if err != nil {
+		t.Fatalf("failed to set zero records: %v", err)
+	}
+	if cache.Len() != 0 {
+		t.Errorf("expected cache length 0, got %d", cache.Len())
+	}
+}
+
+func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
+	cache, err := New(2)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	records := []*domain.ResourceRecord{
+		{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)},
+		{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)},
+	}
+
+	err = cache.Set(records)
+	if err == nil {
+		t.Errorf("expected error for multiple records with different keys, got nil")
 	}
 }

@@ -31,13 +31,13 @@ type Blocklist interface {
 // Methods:
 //   - New(size int): Creates a new cache with the specified size.
 //   - Set(record *domain.ResourceRecord): Stores a resource record in the cache.
-//   - Get(key string): Retrieves a resource record by key, returning the record and a boolean indicating existence.
+//   - Get(key string): Retrieves resource records by key, returning the records and a boolean indicating existence.
 //   - Delete(key string): Removes a resource record from the cache by key.
-//   - Len(): Returns the number of records currently stored in the cache.
+//   - Len(): Returns the number of cache entries currently stored in the cache.
 //   - Keys(): Returns a slice of all keys currently stored in the cache.
 type Cache interface {
-	Set(record *domain.ResourceRecord)
-	Get(key string) (*domain.ResourceRecord, bool)
+	Set(record []*domain.ResourceRecord) error
+	Get(key string) ([]*domain.ResourceRecord, bool)
 	Delete(key string)
 	Len() int
 	Keys() []string
@@ -69,8 +69,8 @@ type ServerTransport interface {
 
 // ZoneCache defines the interface for in-memory authoritative record storage
 type ZoneCache interface {
-	// Find returns authoritative records matching the FQDN and RRType
-	Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
+	// Find returns authoritative resource records matching the DNS query
+	Find(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
 
 	// ReplaceZone replaces all records for a zone with new records
 	ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
