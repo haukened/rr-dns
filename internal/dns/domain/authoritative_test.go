@@ -185,7 +185,7 @@ func TestAuthoritativeRecord_CacheKey(t *testing.T) {
 				Type:  1,
 				Class: 1,
 			},
-			want: "example.com.|example.com|A|IN",
+			want: "example.com.|example.com.|A|IN",
 		},
 		{
 			name: "AAAA record with different class",
@@ -194,7 +194,7 @@ func TestAuthoritativeRecord_CacheKey(t *testing.T) {
 				Type:  28,
 				Class: 3,
 			},
-			want: "example.com.|host.example.com|AAAA|CH",
+			want: "example.com.|host.example.com.|AAAA|CH",
 		},
 	}
 

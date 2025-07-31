@@ -114,7 +114,7 @@ func TestResourceRecord_TTL_Underflow(t *testing.T) {
 
 func TestResourceRecord_CacheKey(t *testing.T) {
 	rr := ResourceRecord{Name: "example.com.", Type: 1, Class: 1}
-	want := "example.com.|example.com|A|IN"
+	want := "example.com.|example.com.|A|IN"
 	if got := rr.CacheKey(); got != want {
 		t.Errorf("CacheKey() = %v, want %v", got, want)
 	}

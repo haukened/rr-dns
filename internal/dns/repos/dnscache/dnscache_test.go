@@ -90,9 +90,9 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 
 	keys := cache.Keys()
 	want := map[string]bool{
-		"a.com.|a.com|A|IN": true,
-		"b.com.|b.com|A|IN": true,
-		"c.com.|c.com|A|IN": true,
+		"a.com.|a.com.|A|IN": true,
+		"b.com.|b.com.|A|IN": true,
+		"c.com.|c.com.|A|IN": true,
 	}
 	if len(keys) != 3 {
 		t.Errorf("expected 3 keys, got %d", len(keys))
@@ -125,8 +125,8 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 	cache.Get(rr1.CacheKey())
 
 	keys := cache.Keys()
-	if len(keys) != 1 || keys[0] != "valid.com.|valid.com|A|IN" {
-		t.Errorf("expected only 'valid.com.|valid.com|A|IN' in keys, got %v", keys)
+	if len(keys) != 1 || keys[0] != "valid.com.|valid.com.|A|IN" {
+		t.Errorf("expected only 'valid.com.|valid.com.|A|IN' in keys, got %v", keys)
 	}
 }
 
