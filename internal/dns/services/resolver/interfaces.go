@@ -70,16 +70,13 @@ type ServerTransport interface {
 // ZoneCache defines the interface for in-memory authoritative record storage
 type ZoneCache interface {
 	// Find returns authoritative resource records matching the DNS query
-	Find(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
+	FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
 
-	// ReplaceZone replaces all records for a zone with new records
-	ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
+	// PutZone replaces all records for a zone with new records
+	PutZone(zoneRoot string, records []*domain.AuthoritativeRecord)
 
 	// RemoveZone removes all records for a zone
-	RemoveZone(zoneRoot string) error
-
-	// All returns a snapshot of all zone data (for admin/diagnostic purposes)
-	All() map[string][]*domain.AuthoritativeRecord
+	RemoveZone(zoneRoot string)
 
 	// Zones returns a list of all zone roots currently cached
 	Zones() []string
