@@ -27,6 +27,18 @@ func NewDNSResponse(id uint16, rcode RCode, answers, authority, additional []Res
 	return resp, nil
 }
 
+// NewDNSErrorResponse creates a DNSResponse with the specified ID and response code (RCode),
+// representing an error response. The Answers, Authority, and Additional sections are set to nil.
+func NewDNSErrorResponse(id uint16, rcode RCode) DNSResponse {
+	return DNSResponse{
+		ID:         id,
+		RCode:      rcode,
+		Answers:    nil,
+		Authority:  nil,
+		Additional: nil,
+	}
+}
+
 // Validate checks whether the DNSResponse fields are structurally valid.
 func (resp DNSResponse) Validate() error {
 	if !resp.RCode.IsValid() {

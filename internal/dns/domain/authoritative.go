@@ -15,6 +15,11 @@ type AuthoritativeRecord struct {
 	Data  []byte
 }
 
+// CacheKey returns a unique string key representing this record's Name, Type, and Class.
+func (ar AuthoritativeRecord) CacheKey() string {
+	return generateCacheKey(ar.Name, ar.Type, ar.Class)
+}
+
 // NewAuthoritativeRecord creates a validated AuthoritativeRecord.
 // Returns an error if any field is invalid.
 func NewAuthoritativeRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (*AuthoritativeRecord, error) {

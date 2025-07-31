@@ -171,3 +171,39 @@ func TestNewAuthoritativeRecord(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthoritativeRecord_CacheKey(t *testing.T) {
+	cases := []struct {
+		name string
+		ar   AuthoritativeRecord
+		want string
+	}{
+		{
+			name: "standard A record",
+			ar: AuthoritativeRecord{
+				Name:  "example.com.",
+				Type:  1,
+				Class: 1,
+			},
+			want: "example.com.|example.com|A|IN",
+		},
+		{
+			name: "AAAA record with different class",
+			ar: AuthoritativeRecord{
+				Name:  "host.example.com.",
+				Type:  28,
+				Class: 3,
+			},
+			want: "example.com.|host.example.com|AAAA|CH",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.ar.CacheKey()
+			if got != tc.want {
+				t.Errorf("CacheKey() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
