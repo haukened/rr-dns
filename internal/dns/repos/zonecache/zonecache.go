@@ -2,7 +2,6 @@ package zonecache
 
 import (
 	"sync"
-	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/common/utils"
 	"github.com/haukened/rr-dns/internal/dns/domain"
@@ -13,19 +12,20 @@ import (
 // It provides fast access to authoritative DNS records with concurrent safety.
 type ZoneCache struct {
 	mu    sync.RWMutex
-	zones map[string]map[string][]*domain.AuthoritativeRecord
+	zones map[string]map[string][]domain.AuthoritativeRecord
 	//    zoneRoot → CacheKey → record
 }
 
 // New creates a new ZoneCache instance
 func New() *ZoneCache {
 	return &ZoneCache{
-		zones: make(map[string]map[string][]*domain.AuthoritativeRecord),
+		zones: make(map[string]map[string][]domain.AuthoritativeRecord),
 	}
 }
 
-// Find returns resource records matching the DNSQuery
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool) {
+// FindRecords returns authoritative records matching the DNSQuery.
+// Zero allocations - returns slice directly from cache.
+func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.AuthoritativeRecord, bool) {
 	zc.mu.RLock()
 	defer zc.mu.RUnlock()
 
@@ -42,28 +42,24 @@ func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecor
 	if !exists {
 		return nil, false
 	}
-	// Convert []*domain.AuthoritativeRecord to []*domain.ResourceRecord
-	var rrRecords []*domain.ResourceRecord
-	for _, ar := range records {
-		rr := domain.NewResourceRecordFromAuthoritative(*ar, time.Now())
-		rrRecords = append(rrRecords, &rr)
-	}
-	return rrRecords, true
+
+	return records, true // ✅ Zero allocations - return slice directly
 }
 
 // PutZone replaces all records for a zone with new records
-func (zc *ZoneCache) PutZone(zoneRoot string, records []*domain.AuthoritativeRecord) {
+func (zc *ZoneCache) PutZone(zoneRoot string, records []domain.AuthoritativeRecord) {
 	zoneRoot = utils.CanonicalDNSName(zoneRoot)
 
 	zc.mu.Lock()
 	defer zc.mu.Unlock()
 
 	// Create new zone map
-	zoneMap := make(map[string][]*domain.AuthoritativeRecord)
+	zoneMap := make(map[string][]domain.AuthoritativeRecord)
 
 	// Group records by CacheKey
 	for _, record := range records {
-		zoneMap[record.CacheKey()] = append(zoneMap[record.CacheKey()], record)
+		key := record.CacheKey()
+		zoneMap[key] = append(zoneMap[key], record)
 	}
 
 	// Replace the zone
