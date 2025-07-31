@@ -3,6 +3,7 @@ package zonecache
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
 	"github.com/haukened/rr-dns/internal/dns/services/resolver"
@@ -18,8 +19,8 @@ var (
 // It provides fast access to authoritative DNS records with concurrent safety.
 type ZoneCache struct {
 	mu    sync.RWMutex
-	zones map[string]map[string][]*domain.AuthoritativeRecord
-	//    zoneRoot → fqdn → records
+	zones map[string]map[string]*domain.AuthoritativeRecord
+	//    zoneRoot → CacheKey → record
 }
 
 // Ensure ZoneCache implements resolver.ZoneCache at compile time
@@ -28,17 +29,19 @@ var _ resolver.ZoneCache = (*ZoneCache)(nil)
 // New creates a new ZoneCache instance
 func New() *ZoneCache {
 	return &ZoneCache{
-		zones: make(map[string]map[string][]*domain.AuthoritativeRecord),
+		zones: make(map[string]map[string]*domain.AuthoritativeRecord),
 	}
 }
 
-// Find returns authoritative records matching the FQDN and RRType
-func (zc *ZoneCache) Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool) {
+// Find returns resource records matching the DNSQuery
+func (zc *ZoneCache) Find(query domain.DNSQuery) ([]*domain.ResourceRecord, bool) {
 	zc.mu.RLock()
 	defer zc.mu.RUnlock()
 
+	fqdn := query.Name
+
 	// Find the zone that contains this FQDN
-	var zoneRecords map[string][]*domain.AuthoritativeRecord
+	var zoneRecords map[string]*domain.AuthoritativeRecord
 	var found bool
 
 	// Look for the most specific zone that contains this FQDN
@@ -54,25 +57,13 @@ func (zc *ZoneCache) Find(fqdn string, rrType domain.RRType) ([]*domain.Authorit
 		return nil, false
 	}
 
-	// Look up records for this FQDN
-	records, exists := zoneRecords[fqdn]
+	key := query.CacheKey()
+	record, exists := zoneRecords[key]
 	if !exists {
 		return nil, false
 	}
-
-	// Filter by RRType
-	var matches []*domain.AuthoritativeRecord
-	for _, record := range records {
-		if record.Type == rrType {
-			matches = append(matches, record)
-		}
-	}
-
-	if len(matches) == 0 {
-		return nil, false
-	}
-
-	return matches, true
+	rr := domain.NewResourceRecordFromAuthoritative(*record, time.Now())
+	return []*domain.ResourceRecord{&rr}, true
 }
 
 // ReplaceZone replaces all records for a zone with new records
@@ -90,17 +81,11 @@ func (zc *ZoneCache) ReplaceZone(zoneRoot string, records []*domain.Authoritativ
 	defer zc.mu.Unlock()
 
 	// Create new zone map
-	zoneMap := make(map[string][]*domain.AuthoritativeRecord)
+	zoneMap := make(map[string]*domain.AuthoritativeRecord)
 
-	// Group records by FQDN
+	// Group records by CacheKey
 	for _, record := range records {
-		fqdn := record.Name
-		// Ensure FQDN ends with dot
-		if fqdn[len(fqdn)-1] != '.' {
-			fqdn = fqdn + "."
-		}
-
-		zoneMap[fqdn] = append(zoneMap[fqdn], record)
+		zoneMap[record.CacheKey()] = record
 	}
 
 	// Replace the zone
@@ -140,8 +125,8 @@ func (zc *ZoneCache) All() map[string][]*domain.AuthoritativeRecord {
 
 	for zoneRoot, zone := range zc.zones {
 		var allRecords []*domain.AuthoritativeRecord
-		for _, records := range zone {
-			allRecords = append(allRecords, records...)
+		for _, record := range zone {
+			allRecords = append(allRecords, record)
 		}
 		result[zoneRoot] = allRecords
 	}
@@ -169,9 +154,7 @@ func (zc *ZoneCache) Count() int {
 
 	count := 0
 	for _, zone := range zc.zones {
-		for _, records := range zone {
-			count += len(records)
-		}
+		count += len(zone)
 	}
 
 	return count

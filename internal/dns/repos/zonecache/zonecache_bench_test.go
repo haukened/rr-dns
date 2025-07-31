@@ -19,8 +19,9 @@ func BenchmarkFind(b *testing.B) {
 	cache.ReplaceZone("example.com", records)
 
 	b.ResetTimer()
+	query := domain.DNSQuery{Name: "www.example.com.", Type: 1}
 	for i := 0; i < b.N; i++ {
-		cache.Find("www.example.com.", 1)
+		cache.Find(query)
 	}
 }
 
@@ -69,9 +70,10 @@ func BenchmarkFind_Concurrent(b *testing.B) {
 	cache.ReplaceZone("example.com", records)
 
 	b.ResetTimer()
+	query := domain.DNSQuery{Name: "www.example.com.", Type: 1}
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			cache.Find("www.example.com.", 1)
+			cache.Find(query)
 		}
 	})
 }

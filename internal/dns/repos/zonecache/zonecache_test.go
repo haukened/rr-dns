@@ -67,7 +67,8 @@ func TestFind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			records, found := cache.Find(tt.fqdn, tt.rrType)
+			query := domain.DNSQuery{Name: tt.fqdn, Type: tt.rrType}
+			records, found := cache.Find(query)
 
 			assert.Equal(t, tt.wantFind, found, "unexpected found result")
 			assert.Equal(t, tt.wantLen, len(records), "unexpected number of records")
@@ -94,7 +95,7 @@ func TestReplaceZone(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify initial records exist
-	records, found := cache.Find("www.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 
@@ -107,19 +108,19 @@ func TestReplaceZone(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify old records are gone
-	records, found = cache.Find("www.example.com.", 1)
+	records, found = cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.False(t, found)
 	assert.Len(t, records, 0)
 
-	records, found = cache.Find("mail.example.com.", 15)
+	records, found = cache.Find(domain.DNSQuery{Name: "mail.example.com.", Type: 15})
 	assert.False(t, found)
 
 	// Verify new records exist
-	records, found = cache.Find("api.example.com.", 1)
+	records, found = cache.Find(domain.DNSQuery{Name: "api.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 
-	records, found = cache.Find("db.example.com.", 1)
+	records, found = cache.Find(domain.DNSQuery{Name: "db.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 }
@@ -141,11 +142,11 @@ func TestRemoveZone(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify records exist before removal
-	records, found := cache.Find("www.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 
-	records, found = cache.Find("www.test.com.", 1)
+	records, found = cache.Find(domain.DNSQuery{Name: "www.test.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 
@@ -154,14 +155,14 @@ func TestRemoveZone(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify example.com records are gone
-	_, found = cache.Find("www.example.com.", 1)
+	_, found = cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.False(t, found)
 
-	_, found = cache.Find("mail.example.com.", 15)
+	_, found = cache.Find(domain.DNSQuery{Name: "mail.example.com.", Type: 15})
 	assert.False(t, found)
 
 	// Verify test.com records still exist
-	records, found = cache.Find("www.test.com.", 1)
+	records, found = cache.Find(domain.DNSQuery{Name: "www.test.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 }
@@ -183,7 +184,7 @@ func TestConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				cache.Find("www.example.com.", 1)
+				cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 			}
 		}()
 
@@ -276,7 +277,7 @@ func TestZoneRootNormalization(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify record can be found
-	foundRecords, found := cache.Find("www.example.com.", 1)
+	foundRecords, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, foundRecords, 1)
 
@@ -285,7 +286,7 @@ func TestZoneRootNormalization(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify record is gone
-	_, found = cache.Find("www.example.com.", 1)
+	_, found = cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.False(t, found)
 }
 
@@ -301,7 +302,7 @@ func TestFQDNNormalization(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Should be able to find with trailing dot
-	foundRecords, found := cache.Find("www.example.com.", 1)
+	foundRecords, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, foundRecords, 1)
 }
@@ -311,7 +312,7 @@ func TestEmptyCache(t *testing.T) {
 	cache := New()
 
 	// Test Find on empty cache
-	records, found := cache.Find("www.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.False(t, found)
 	assert.Len(t, records, 0)
 
@@ -339,7 +340,7 @@ func TestReplaceZone_EmptyRecords(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify record exists
-	foundRecords, found := cache.Find("www.example.com.", 1)
+	foundRecords, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, foundRecords, 1)
 
@@ -348,7 +349,7 @@ func TestReplaceZone_EmptyRecords(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify records are gone
-	foundRecords, found = cache.Find("www.example.com.", 1)
+	foundRecords, found = cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.False(t, found)
 	assert.Len(t, foundRecords, 0)
 
@@ -520,7 +521,7 @@ func TestFind_NoZoneMatch(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try to find record in different zone
-	records, found := cache.Find("www.other.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "www.other.com.", Type: 1})
 	assert.False(t, found)
 	assert.Len(t, records, 0)
 }
@@ -535,7 +536,7 @@ func TestFind_ZoneMatchNoFQDN(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try to find record for FQDN that doesn't exist in zone
-	records, found := cache.Find("mail.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "mail.example.com.", Type: 1})
 	assert.False(t, found)
 	assert.Len(t, records, 0)
 }
@@ -550,7 +551,7 @@ func TestFind_FQDNMatchNoRRType(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Try to find AAAA record for same FQDN
-	records, found := cache.Find("www.example.com.", 28) // AAAA
+	records, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 28}) // AAAA
 	assert.False(t, found)
 	assert.Len(t, records, 0)
 }
@@ -568,7 +569,7 @@ func TestFind_MultipleRecordsSameType(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Find all A records
-	records, found := cache.Find("www.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "www.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 3)
 
@@ -595,7 +596,7 @@ func TestFind_MostSpecificZone(t *testing.T) {
 
 	// Find should match first zone found (order dependent in current implementation)
 	// Note: This tests current behavior but might need updating if zone precedence logic changes
-	records, found := cache.Find("sub.example.com.", 1)
+	records, found := cache.Find(domain.DNSQuery{Name: "sub.example.com.", Type: 1})
 	assert.True(t, found)
 	assert.Len(t, records, 1)
 }
