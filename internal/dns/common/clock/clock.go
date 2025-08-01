@@ -13,13 +13,13 @@ func (c RealClock) Now() time.Time {
 }
 
 type MockClock struct {
-	currentTime time.Time
+	CurrentTime time.Time
 }
 
 func (c *MockClock) Now() time.Time {
-	return c.currentTime
+	return c.CurrentTime
 }
 
 func (c *MockClock) Advance(d time.Duration) {
-	c.currentTime = c.currentTime.Add(d)
+	c.CurrentTime = c.CurrentTime.Add(d)
 }

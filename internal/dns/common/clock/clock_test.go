@@ -36,7 +36,7 @@ func TestRealClock_Now_Multiple_Calls(t *testing.T) {
 
 func TestMockClock_Now(t *testing.T) {
 	fixedTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: fixedTime}
+	clock := &MockClock{CurrentTime: fixedTime}
 
 	now := clock.Now()
 
@@ -47,7 +47,7 @@ func TestMockClock_Now(t *testing.T) {
 
 func TestMockClock_Now_Consistent(t *testing.T) {
 	fixedTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: fixedTime}
+	clock := &MockClock{CurrentTime: fixedTime}
 
 	first := clock.Now()
 	second := clock.Now()
@@ -59,7 +59,7 @@ func TestMockClock_Now_Consistent(t *testing.T) {
 
 func TestMockClock_Advance(t *testing.T) {
 	initialTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: initialTime}
+	clock := &MockClock{CurrentTime: initialTime}
 
 	// Test advancing by various durations
 	testCases := []struct {
@@ -98,7 +98,7 @@ func TestMockClock_Advance(t *testing.T) {
 
 func TestMockClock_Advance_Negative_Duration(t *testing.T) {
 	initialTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: initialTime}
+	clock := &MockClock{CurrentTime: initialTime}
 
 	// Advance backwards
 	clock.Advance(-1 * time.Hour)
@@ -112,7 +112,7 @@ func TestMockClock_Advance_Negative_Duration(t *testing.T) {
 
 func TestMockClock_Advance_Zero_Duration(t *testing.T) {
 	initialTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: initialTime}
+	clock := &MockClock{CurrentTime: initialTime}
 
 	// Advance by zero
 	clock.Advance(0)
@@ -132,7 +132,7 @@ func TestClock_Interface_Compliance(t *testing.T) {
 func TestMockClock_Simulation(t *testing.T) {
 	// Simulate a realistic scenario where we need to test time-dependent behavior
 	startTime := time.Date(2025, 8, 1, 9, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: startTime}
+	clock := &MockClock{CurrentTime: startTime}
 
 	// Simulate a day's worth of operations
 	events := []struct {
@@ -164,7 +164,7 @@ func TestMockClock_Simulation(t *testing.T) {
 func TestMockClock_TTL_Simulation(t *testing.T) {
 	// Simulate DNS record TTL expiration testing
 	startTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: startTime}
+	clock := &MockClock{CurrentTime: startTime}
 
 	// Simulate a DNS record with 300 second TTL
 	recordCreated := clock.Now()
@@ -188,7 +188,7 @@ func TestMockClock_TTL_Simulation(t *testing.T) {
 	for _, tp := range testPoints {
 		t.Run(tp.name, func(t *testing.T) {
 			// Reset clock and advance to test point
-			clock.currentTime = startTime
+			clock.CurrentTime = startTime
 			clock.Advance(tp.advance)
 
 			now := clock.Now()
@@ -206,7 +206,7 @@ func TestMockClock_Concurrent_Access(t *testing.T) {
 	// Test that MockClock can be safely used concurrently for reads
 	// Note: This doesn't test concurrent writes (Advance) as that would require synchronization
 	initialTime := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	clock := &MockClock{currentTime: initialTime}
+	clock := &MockClock{CurrentTime: initialTime}
 
 	done := make(chan bool, 10)
 
