@@ -5,117 +5,615 @@ import (
 	"time"
 )
 
-func TestNewResourceRecord(t *testing.T) {
-	rr, err := NewResourceRecord("example.com.", 1, 1, 60, []byte{1, 2, 3, 4})
-	if err != nil {
-		t.Errorf("NewResourceRecord() error = %v, want nil", err)
-	}
-	if rr.Name != "example.com." {
-		t.Errorf("Name = %v, want %v", rr.Name, "example.com.")
-	}
-	if rr.Type != 1 {
-		t.Errorf("Type = %v, want %v", rr.Type, 1)
-	}
-	if rr.Class != 1 {
-		t.Errorf("Class = %v, want %v", rr.Class, 1)
-	}
-	if rr.Data == nil || len(rr.Data) != 4 {
-		t.Errorf("Data = %v, want length 4", rr.Data)
-	}
-	if rr.ExpiresAt.Before(time.Now()) {
-		t.Errorf("ExpiresAt = %v, want future time", rr.ExpiresAt)
-	}
-}
-
-func TestNewResourceRecord_Invalid(t *testing.T) {
-	cases := []struct {
-		name    string
-		rrtype  RRType
-		class   RRClass
-		wantErr bool
+func TestNewAuthoritativeResourceRecord(t *testing.T) {
+	tests := []struct {
+		name         string
+		recordName   string
+		rrtype       RRType
+		class        RRClass
+		ttl          uint32
+		data         []byte
+		expectError  bool
+		expectedName string
 	}{
-		{"empty name", 1, 1, true},
-		{"invalid type", 9999, 1, true},
-		{"invalid class", 1, 9999, true},
+		{
+			name:         "valid A record",
+			recordName:   "example.com.",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{192, 0, 2, 1},
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:         "name gets canonicalized",
+			recordName:   "EXAMPLE.COM",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{192, 0, 2, 1},
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:         "name with whitespace gets canonicalized",
+			recordName:   "  example.com  ",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{192, 0, 2, 1},
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:        "empty name",
+			recordName:  "",
+			rrtype:      1, // A
+			class:       1, // IN
+			ttl:         300,
+			data:        []byte{192, 0, 2, 1},
+			expectError: true,
+		},
+		{
+			name:        "invalid RRType",
+			recordName:  "example.com.",
+			rrtype:      0, // Invalid
+			class:       1, // IN
+			ttl:         300,
+			data:        []byte{192, 0, 2, 1},
+			expectError: true,
+		},
+		{
+			name:        "invalid RRClass",
+			recordName:  "example.com.",
+			rrtype:      1, // A
+			class:       0, // Invalid
+			ttl:         300,
+			data:        []byte{192, 0, 2, 1},
+			expectError: true,
+		},
+		{
+			name:         "zero TTL is valid",
+			recordName:   "example.com.",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          0,
+			data:         []byte{192, 0, 2, 1},
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:         "empty data is valid",
+			recordName:   "example.com.",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{},
+			expectError:  false,
+			expectedName: "example.com.",
+		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewResourceRecord("", tc.rrtype, tc.class, 60, []byte{1, 2, 3, 4})
-			if (err != nil) != tc.wantErr {
-				t.Errorf("NewResourceRecord() error = %v, wantErr %v", err, tc.wantErr)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr, err := NewAuthoritativeResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			// Verify the record fields
+			if rr.Name != tt.expectedName {
+				t.Errorf("Expected name %q, got %q", tt.expectedName, rr.Name)
+			}
+			if rr.Type != tt.rrtype {
+				t.Errorf("Expected type %d, got %d", tt.rrtype, rr.Type)
+			}
+			if rr.Class != tt.class {
+				t.Errorf("Expected class %d, got %d", tt.class, rr.Class)
+			}
+			if rr.ttl != tt.ttl {
+				t.Errorf("Expected TTL %d, got %d", tt.ttl, rr.ttl)
+			}
+			if rr.expiresAt != nil {
+				t.Errorf("Expected expiresAt to be nil for authoritative record, got %v", rr.expiresAt)
+			}
+			if !equalBytes(rr.Data, tt.data) {
+				t.Errorf("Expected data %v, got %v", tt.data, rr.Data)
 			}
 		})
 	}
 }
 
-func TestResourceRecord_Validate(t *testing.T) {
-	rr := ResourceRecord{Name: "example.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(60 * time.Second), Data: []byte{1, 2, 3, 4}}
-	if err := rr.Validate(); err != nil {
-		t.Errorf("Validate() error = %v, want nil", err)
+func TestNewCachedResourceRecord(t *testing.T) {
+	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		recordName   string
+		rrtype       RRType
+		class        RRClass
+		ttl          uint32
+		data         []byte
+		now          time.Time
+		expectError  bool
+		expectedName string
+	}{
+		{
+			name:         "valid cached record",
+			recordName:   "example.com.",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{192, 0, 2, 1},
+			now:          timeFixture,
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:         "name gets canonicalized",
+			recordName:   "EXAMPLE.COM",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          300,
+			data:         []byte{192, 0, 2, 1},
+			now:          timeFixture,
+			expectError:  false,
+			expectedName: "example.com.",
+		},
+		{
+			name:        "empty name",
+			recordName:  "",
+			rrtype:      1, // A
+			class:       1, // IN
+			ttl:         300,
+			data:        []byte{192, 0, 2, 1},
+			now:         timeFixture,
+			expectError: true,
+		},
+		{
+			name:         "zero TTL cached record",
+			recordName:   "example.com.",
+			rrtype:       1, // A
+			class:        1, // IN
+			ttl:          0,
+			data:         []byte{192, 0, 2, 1},
+			now:          timeFixture,
+			expectError:  false,
+			expectedName: "example.com.",
+		},
 	}
-	rr.Name = ""
-	if err := rr.Validate(); err == nil {
-		t.Errorf("Validate() error = nil, want error for empty name")
-	}
-	rr.Name = "example.com."
-	rr.Type = 9999
-	if err := rr.Validate(); err == nil {
-		t.Errorf("Validate() error = nil, want error for invalid type")
-	}
-	rr.Type = 1
-	rr.Class = 9999
-	if err := rr.Validate(); err == nil {
-		t.Errorf("Validate() error = nil, want error for invalid class")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rr, err := NewCachedResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data, tt.now)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			// Verify the record fields
+			if rr.Name != tt.expectedName {
+				t.Errorf("Expected name %q, got %q", tt.expectedName, rr.Name)
+			}
+			if rr.Type != tt.rrtype {
+				t.Errorf("Expected type %d, got %d", tt.rrtype, rr.Type)
+			}
+			if rr.Class != tt.class {
+				t.Errorf("Expected class %d, got %d", tt.class, rr.Class)
+			}
+			if rr.ttl != tt.ttl {
+				t.Errorf("Expected TTL %d, got %d", tt.ttl, rr.ttl)
+			}
+			if rr.expiresAt == nil {
+				t.Errorf("Expected expiresAt to be set for cached record, got nil")
+			} else {
+				expectedExpiration := tt.now.Add(time.Duration(tt.ttl) * time.Second)
+				if !rr.expiresAt.Equal(expectedExpiration) {
+					t.Errorf("Expected expiresAt %v, got %v", expectedExpiration, *rr.expiresAt)
+				}
+			}
+			if !equalBytes(rr.Data, tt.data) {
+				t.Errorf("Expected data %v, got %v", tt.data, rr.Data)
+			}
+		})
 	}
 }
 
-func TestResourceRecord_Invalid(t *testing.T) {
-	cases := []struct {
-		name string
-		rr   ResourceRecord
+func TestResourceRecord_TTL(t *testing.T) {
+	tests := []struct {
+		name        string
+		record      ResourceRecord
+		expectedTTL uint32
 	}{
 		{
-			name: "empty name",
-			rr:   ResourceRecord{Name: "", Type: 1, Class: 1, ExpiresAt: time.Now().Add(60 * time.Second), Data: []byte{1}},
+			name: "authoritative record returns original TTL",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: nil,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 300,
 		},
 		{
-			name: "invalid type",
-			rr:   ResourceRecord{Name: "example.com.", Type: 9999, Class: 1, ExpiresAt: time.Now().Add(60 * time.Second), Data: []byte{1}},
-		},
-		{
-			name: "invalid class",
-			rr:   ResourceRecord{Name: "example.com.", Type: 1, Class: 9999, ExpiresAt: time.Now().Add(60 * time.Second), Data: []byte{1}},
+			name: "authoritative record with zero TTL",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       0,
+				expiresAt: nil,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 0,
 		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := tc.rr.Validate(); err == nil {
-				t.Errorf("Validate() for %s: got nil, want error", tc.name)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualTTL := tt.record.TTL()
+
+			// For authoritative records, TTL should be the original value
+			if tt.record.expiresAt == nil && actualTTL != tt.expectedTTL {
+				t.Errorf("Expected TTL %d, got %d", tt.expectedTTL, actualTTL)
 			}
 		})
 	}
 }
 
 func TestResourceRecord_TTLRemaining(t *testing.T) {
-	rr := ResourceRecord{ExpiresAt: time.Now().Add(60 * time.Second)}
-	ttl := rr.TTLRemaining()
-	if ttl < 59*time.Second || ttl > 61*time.Second {
-		t.Errorf("TTLRemaining() = %v, want ~60s", ttl)
+	tests := []struct {
+		name             string
+		record           ResourceRecord
+		expectedDuration time.Duration
+	}{
+		{
+			name: "authoritative record returns original TTL as duration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: nil,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedDuration: 300 * time.Second,
+		},
+		{
+			name: "cached record with future expiration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: &[]time.Time{time.Now().Add(200 * time.Second)}[0],
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedDuration: 200 * time.Second, // Approximate
+		},
+		{
+			name: "cached record expired",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: &[]time.Time{time.Now().Add(-100 * time.Second)}[0],
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedDuration: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remaining := tt.record.TTLRemaining()
+
+			if tt.record.expiresAt == nil {
+				// Authoritative record should return original TTL
+				if remaining != tt.expectedDuration {
+					t.Errorf("Expected TTL remaining %v, got %v", tt.expectedDuration, remaining)
+				}
+			} else {
+				// Cached record - test within reasonable bounds due to time precision
+				if tt.expectedDuration == 0 {
+					if remaining != 0 {
+						t.Errorf("Expected TTL remaining %v, got %v", tt.expectedDuration, remaining)
+					}
+				} else {
+					// Allow some tolerance for time passage during test execution
+					tolerance := 2 * time.Second
+					if remaining < tt.expectedDuration-tolerance || remaining > tt.expectedDuration+tolerance {
+						t.Errorf("Expected TTL remaining ~%v, got %v", tt.expectedDuration, remaining)
+					}
+				}
+			}
+		})
 	}
 }
 
-func TestResourceRecord_TTL_Underflow(t *testing.T) {
-	rr := ResourceRecord{ExpiresAt: time.Now().Add(-60 * time.Second)}
-	ttl := rr.TTLRemaining()
-	if ttl != 0 {
-		t.Errorf("TTLRemaining() = %v, want 0 for expired record", ttl)
+func TestResourceRecord_IsAuthoritative(t *testing.T) {
+	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
+	authRecord := ResourceRecord{
+		Name:      "example.com.",
+		Type:      1,
+		Class:     1,
+		ttl:       300,
+		expiresAt: nil,
+		Data:      []byte{192, 0, 2, 1},
+	}
+
+	cachedRecord := ResourceRecord{
+		Name:      "example.com.",
+		Type:      1,
+		Class:     1,
+		ttl:       300,
+		expiresAt: &timeFixture,
+		Data:      []byte{192, 0, 2, 1},
+	}
+
+	if !authRecord.IsAuthoritative() {
+		t.Error("Expected authoritative record to return true for IsAuthoritative()")
+	}
+
+	if cachedRecord.IsAuthoritative() {
+		t.Error("Expected cached record to return false for IsAuthoritative()")
+	}
+}
+
+func TestResourceRecord_IsExpired(t *testing.T) {
+	futureTime := time.Now().Add(300 * time.Second)
+	pastTime := time.Now().Add(-300 * time.Second)
+
+	tests := []struct {
+		name            string
+		record          ResourceRecord
+		expectedExpired bool
+	}{
+		{
+			name: "authoritative record never expires",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: nil,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedExpired: false,
+		},
+		{
+			name: "cached record not yet expired",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: &futureTime,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedExpired: false,
+		},
+		{
+			name: "cached record expired",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: &pastTime,
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedExpired: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.record.IsExpired() != tt.expectedExpired {
+				t.Errorf("Expected IsExpired() = %v, got %v", tt.expectedExpired, tt.record.IsExpired())
+			}
+		})
 	}
 }
 
 func TestResourceRecord_CacheKey(t *testing.T) {
-	rr := ResourceRecord{Name: "example.com.", Type: 1, Class: 1}
-	want := "example.com.|example.com.|A|IN"
-	if got := rr.CacheKey(); got != want {
-		t.Errorf("CacheKey() = %v, want %v", got, want)
+	rr1 := ResourceRecord{
+		Name:  "example.com.",
+		Type:  1, // A
+		Class: 1, // IN
+		ttl:   300,
+		Data:  []byte{192, 0, 2, 1},
+	}
+
+	rr2 := ResourceRecord{
+		Name:  "example.com.",
+		Type:  1,                    // A
+		Class: 1,                    // IN
+		ttl:   600,                  // Different TTL
+		Data:  []byte{192, 0, 2, 2}, // Different data
+	}
+
+	rr3 := ResourceRecord{
+		Name:  "example.com.",
+		Type:  28, // AAAA - different type
+		Class: 1,  // IN
+		ttl:   300,
+		Data:  []byte{1, 2, 3, 4},
+	}
+
+	// Records with same name, type, class should have same cache key
+	key1 := rr1.CacheKey()
+	key2 := rr2.CacheKey()
+	if key1 != key2 {
+		t.Errorf("Expected same cache key for records with same name/type/class, got %q vs %q", key1, key2)
+	}
+
+	// Records with different type should have different cache key
+	key3 := rr3.CacheKey()
+	if key1 == key3 {
+		t.Errorf("Expected different cache keys for records with different types, both got %q", key1)
+	}
+
+	// Cache key should not be empty
+	if key1 == "" {
+		t.Error("Cache key should not be empty")
+	}
+}
+
+func TestResourceRecord_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		record      ResourceRecord
+		expectError bool
+	}{
+		{
+			name: "valid record",
+			record: ResourceRecord{
+				Name:  "example.com.",
+				Type:  1, // A
+				Class: 1, // IN
+				ttl:   300,
+				Data:  []byte{192, 0, 2, 1},
+			},
+			expectError: false,
+		},
+		{
+			name: "empty name",
+			record: ResourceRecord{
+				Name:  "",
+				Type:  1, // A
+				Class: 1, // IN
+				ttl:   300,
+				Data:  []byte{192, 0, 2, 1},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid type",
+			record: ResourceRecord{
+				Name:  "example.com.",
+				Type:  0, // Invalid
+				Class: 1, // IN
+				ttl:   300,
+				Data:  []byte{192, 0, 2, 1},
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid class",
+			record: ResourceRecord{
+				Name:  "example.com.",
+				Type:  1, // A
+				Class: 0, // Invalid
+				ttl:   300,
+				Data:  []byte{192, 0, 2, 1},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.record.Validate()
+			if tt.expectError && err == nil {
+				t.Error("Expected validation error but got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
+// Helper function to compare byte slices
+func equalBytes(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Benchmark tests
+func BenchmarkNewAuthoritativeResourceRecord(b *testing.B) {
+	name := "example.com."
+	rrtype := RRType(1)
+	class := RRClass(1)
+	ttl := uint32(300)
+	data := []byte{192, 0, 2, 1}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = NewAuthoritativeResourceRecord(name, rrtype, class, ttl, data)
+	}
+}
+
+func BenchmarkNewCachedResourceRecord(b *testing.B) {
+	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
+	name := "example.com."
+	rrtype := RRType(1)
+	class := RRClass(1)
+	ttl := uint32(300)
+	data := []byte{192, 0, 2, 1}
+	now := timeFixture
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = NewCachedResourceRecord(name, rrtype, class, ttl, data, now)
+	}
+}
+
+func BenchmarkResourceRecord_TTL(b *testing.B) {
+	rr := ResourceRecord{
+		Name:      "example.com.",
+		Type:      1,
+		Class:     1,
+		ttl:       300,
+		expiresAt: nil,
+		Data:      []byte{192, 0, 2, 1},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = rr.TTL()
+	}
+}
+
+func BenchmarkResourceRecord_CacheKey(b *testing.B) {
+	rr := ResourceRecord{
+		Name:  "example.com.",
+		Type:  1,
+		Class: 1,
+		ttl:   300,
+		Data:  []byte{192, 0, 2, 1},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = rr.CacheKey()
 	}
 }

@@ -3,6 +3,8 @@ package domain
 import (
 	"fmt"
 	"time"
+
+	"github.com/haukened/rr-dns/internal/dns/common/utils"
 )
 
 // ResourceRecord represents a DNS resource record (RR) used for caching.
@@ -11,17 +13,37 @@ type ResourceRecord struct {
 	Name      string
 	Type      RRType
 	Class     RRClass
-	ExpiresAt time.Time
+	ttl       uint32
+	expiresAt *time.Time
 	Data      []byte
 }
 
-// NewResourceRecord constructs a ResourceRecord and validates its fields.
-func NewResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error) {
+// NewAuthoritativeResourceRecord constructs an authoritative ResourceRecord (non-expiring).
+func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error) {
 	rr := ResourceRecord{
-		Name:      name,
+		Name:      utils.CanonicalDNSName(name),
 		Type:      rrtype,
 		Class:     class,
-		ExpiresAt: time.Now().Add(time.Duration(ttl) * time.Second),
+		ttl:       ttl,
+		expiresAt: nil,
+		Data:      data,
+	}
+	if err := rr.Validate(); err != nil {
+		return ResourceRecord{}, err
+	}
+	return rr, nil
+}
+
+// NewCachedResourceRecord constructs a cached ResourceRecord with an expiration time.
+// accepts the current time to calculate the expiration, keeping domain logic encapsulated.
+func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, now time.Time) (ResourceRecord, error) {
+	exp := now.Add(time.Duration(ttl) * time.Second)
+	rr := ResourceRecord{
+		Name:      utils.CanonicalDNSName(name),
+		Type:      rrtype,
+		Class:     class,
+		ttl:       ttl,
+		expiresAt: &exp,
 		Data:      data,
 	}
 	if err := rr.Validate(); err != nil {
@@ -46,7 +68,10 @@ func (rr ResourceRecord) Validate() error {
 
 // TTLRemaining returns the remaining TTL duration until the record expires.
 func (rr ResourceRecord) TTLRemaining() time.Duration {
-	ttl := time.Until(rr.ExpiresAt)
+	if rr.expiresAt == nil {
+		return time.Duration(rr.ttl) * time.Second
+	}
+	ttl := time.Until(*rr.expiresAt)
 	if ttl < 0 {
 		return 0
 	}
@@ -56,4 +81,36 @@ func (rr ResourceRecord) TTLRemaining() time.Duration {
 // CacheKey returns a cache key string derived from the record's name, type, and class.
 func (rr ResourceRecord) CacheKey() string {
 	return generateCacheKey(rr.Name, rr.Type, rr.Class)
+}
+
+// TTL returns the effective TTL value for wire encoding.
+// If the record is cached (expiresAt set), it computes the remaining TTL.
+// If it's authoritative (expiresAt is nil), it returns the original TTL.
+func (rr ResourceRecord) TTL() uint32 {
+	// zone records are authoritative, so they do not have an expiration time
+	// so we can confidently return the original TTL
+	if rr.expiresAt == nil {
+		return rr.ttl
+	}
+	// cached resource records have an expiration time
+	// because for messages returned by an upstream DNS server
+	// TTL only has meaning in the context of the time of arrival
+	ttl := time.Until(*rr.expiresAt).Seconds()
+	if ttl <= 0 {
+		return 0
+	}
+	return uint32(ttl)
+}
+
+// IsExpired returns true if the record has an expiration time that has passed.
+func (rr ResourceRecord) IsExpired() bool {
+	if rr.expiresAt == nil {
+		return false
+	}
+	return time.Now().After(*rr.expiresAt)
+}
+
+// IsAuthoritative returns true if the record has no expiration time set.
+func (rr ResourceRecord) IsAuthoritative() bool {
+	return rr.expiresAt == nil
 }
