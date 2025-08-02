@@ -3,6 +3,7 @@ package wire
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -205,7 +206,7 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 	codec := &udpCodec{}
 
 	// Create a test resource record
-	rr, err := domain.NewResourceRecord(
+	rr, err := domain.NewAuthoritativeResourceRecord(
 		"example.com.",
 		1,                    // A record
 		1,                    // IN class
@@ -308,6 +309,7 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 
 func TestUdpCodec_DecodeResponse(t *testing.T) {
 	codec := &udpCodec{}
+	timeFixture := time.Date(2099, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
 		name       string
@@ -356,7 +358,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 			expectedID: 12345,
 			checkResp: func(resp domain.DNSResponse) bool {
 				return resp.ID == 12345 && len(resp.Answers) == 1 &&
-					resp.Answers[0].Name == "example.com" &&
+					resp.Answers[0].Name == "example.com." &&
 					resp.Answers[0].Type == 1
 			},
 		},
@@ -505,7 +507,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := codec.DecodeResponse(tt.data, tt.expectedID)
+			result, err := codec.DecodeResponse(tt.data, tt.expectedID, timeFixture)
 
 			if tt.wantErr != "" {
 				assert.Error(t, err)

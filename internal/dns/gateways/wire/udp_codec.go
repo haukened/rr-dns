@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
@@ -157,7 +158,7 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 
 // DecodeResponse parses a raw DNS response from a UDP packet into a DNSResponse,
 // validating the response ID and extracting resource records.
-func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error) {
+func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time) (domain.DNSResponse, error) {
 	if len(data) < 12 {
 		return domain.DNSResponse{}, errors.New("response too short")
 	}
@@ -221,7 +222,7 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16) (domain.DNSRes
 
 		rrtype := domain.RRType(typ)
 		rrclass := domain.RRClass(class)
-		rr, err := domain.NewResourceRecord(name, rrtype, rrclass, ttl, rdata)
+		rr, err := domain.NewCachedResourceRecord(name, rrtype, rrclass, ttl, rdata, now)
 		if err != nil {
 			return domain.DNSResponse{}, fmt.Errorf("invalid resource record: %w", err)
 		}
