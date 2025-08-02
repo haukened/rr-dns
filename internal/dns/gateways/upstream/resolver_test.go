@@ -23,8 +23,8 @@ func (m *MockCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
 	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockCodec) DecodeResponse(data []byte, queryID uint16) (domain.DNSResponse, error) {
-	args := m.Called(data, queryID)
+func (m *MockCodec) DecodeResponse(data []byte, queryID uint16, now time.Time) (domain.DNSResponse, error) {
+	args := m.Called(data, queryID, now)
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
 
@@ -83,19 +83,22 @@ func createTestQuery() domain.DNSQuery {
 }
 
 func createTestResponse() domain.DNSResponse {
+	rr, _ := domain.NewAuthoritativeResourceRecord(
+		"example.com.",
+		1,   // A record
+		1,   // IN class
+		300, // 5 minutes TTL
+		[]byte("1.2.3.4"),
+	)
 	return domain.DNSResponse{
-		ID:    12345,
-		RCode: 0, // NOERROR
-		Answers: []domain.ResourceRecord{
-			{
-				Name:      "example.com.",
-				Type:      1, // A record
-				Class:     1, // IN class
-				ExpiresAt: time.Now().Add(time.Hour),
-				Data:      []byte("1.2.3.4"),
-			},
-		},
+		ID:      12345,
+		RCode:   0, // NOERROR
+		Answers: []domain.ResourceRecord{rr},
 	}
+}
+
+func createTimeFixture() time.Time {
+	return time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 }
 
 func TestNewResolver(t *testing.T) {
@@ -196,6 +199,7 @@ func TestResolver_ensureContextDeadline(t *testing.T) {
 }
 
 func TestResolver_Resolve_Serial(t *testing.T) {
+	tf := createTimeFixture()
 	query := createTestQuery()
 	response := createTestResponse()
 	queryBytes := []byte("query")
@@ -213,7 +217,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 			servers: []string{"1.1.1.1:53"},
 			setupMocks: func(codec *MockCodec, conn *MockConn) {
 				codec.On("EncodeQuery", query).Return(queryBytes, nil)
-				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID, tf).Return(response, nil)
 				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
 				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
 				conn.On("Close").Return(nil)
@@ -266,7 +270,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 				// First server call will fail at dial level (handled by test dial func)
 				// Second server call succeeds
 				codec.On("EncodeQuery", query).Return(queryBytes, nil)
-				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID, tf).Return(response, nil)
 				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
 				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
 				conn.On("Close").Return(nil)
@@ -305,7 +309,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 			assert.NoError(t, err)
 
 			ctx := context.Background()
-			resp, err := resolver.Resolve(ctx, query)
+			resp, err := resolver.Resolve(ctx, query, tf)
 
 			if tt.wantErr != "" {
 				assert.Error(t, err)
@@ -322,6 +326,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 }
 
 func TestResolver_Resolve_Parallel(t *testing.T) {
+	tf := createTimeFixture()
 	query := createTestQuery()
 	response := createTestResponse()
 	queryBytes := []byte("query")
@@ -340,7 +345,7 @@ func TestResolver_Resolve_Parallel(t *testing.T) {
 			servers: []string{"1.1.1.1:53", "8.8.8.8:53"},
 			setupMocks: func(codec *MockCodec, conn *MockConn) {
 				codec.On("EncodeQuery", query).Return(queryBytes, nil)
-				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID, tf).Return(response, nil)
 				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
 				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
 				conn.On("Close").Return(nil)
@@ -414,7 +419,7 @@ func TestResolver_Resolve_Parallel(t *testing.T) {
 				defer cancel()
 			}
 
-			resp, err := resolver.Resolve(ctx, query)
+			resp, err := resolver.Resolve(ctx, query, tf)
 
 			if tt.wantErr != "" {
 				assert.Error(t, err)
@@ -431,6 +436,7 @@ func TestResolver_Resolve_Parallel(t *testing.T) {
 }
 
 func TestResolver_Resolve_ContextCancellation(t *testing.T) {
+	tf := createTimeFixture()
 	query := createTestQuery()
 	queryBytes := []byte("query")
 
@@ -460,7 +466,7 @@ func TestResolver_Resolve_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, err = resolver.Resolve(ctx, query)
+	_, err = resolver.Resolve(ctx, query, tf)
 	assert.Error(t, err)
 
 	codec.AssertExpectations(t)
@@ -505,7 +511,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 			name: "successful query",
 			setupMocks: func(codec *MockCodec, conn *MockConn) {
 				codec.On("EncodeQuery", query).Return(queryBytes, nil)
-				codec.On("DecodeResponse", responseBytes, query.ID).Return(response, nil)
+				codec.On("DecodeResponse", responseBytes, query.ID, mock.AnythingOfType("time.Time")).Return(response, nil)
 				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
 				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
 				conn.On("Close").Return(nil)
@@ -517,7 +523,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 			name: "decode error",
 			setupMocks: func(codec *MockCodec, conn *MockConn) {
 				codec.On("EncodeQuery", query).Return(queryBytes, nil)
-				codec.On("DecodeResponse", responseBytes, query.ID).Return(domain.DNSResponse{}, errors.New("decode failed"))
+				codec.On("DecodeResponse", responseBytes, query.ID, mock.AnythingOfType("time.Time")).Return(domain.DNSResponse{}, errors.New("decode failed"))
 				conn.On("Write", queryBytes).Return(len(queryBytes), nil)
 				conn.On("Read", mock.AnythingOfType("[]uint8")).Return(len(responseBytes), nil)
 				conn.On("Close").Return(nil)
@@ -528,6 +534,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tf := createTimeFixture()
 		t.Run(tt.name, func(t *testing.T) {
 			codec := &MockCodec{}
 			conn := &MockConn{}
@@ -547,7 +554,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 			assert.NoError(t, err)
 
 			ctx := context.Background()
-			resp, err := resolver.queryServerWithContext(ctx, "1.1.1.1:53", query)
+			resp, err := resolver.queryServerWithContext(ctx, "1.1.1.1:53", query, tf)
 
 			if tt.wantErr != "" {
 				assert.Error(t, err)

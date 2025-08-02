@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"net"
+	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
@@ -13,7 +14,7 @@ import (
 // The Resolve method takes a context for cancellation and timeout control,
 // as well as a DNSQuery object, and returns a DNSResponse or an error.
 type UpstreamClient interface {
-	Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+	Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error)
 }
 
 // Blocklist defines an interface for checking whether a DNS query is blocked.

@@ -99,23 +99,23 @@ func (r *Resolver) setTimeout(d time.Duration) {
 // Resolve forwards a DNS query to upstream servers and returns the response.
 // It tries either parallel or serial resolution depending on the Resolver's parallel flag.
 // The method respects the deadline set in the context or applies the default timeout.
-func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error) {
+func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
 	ctx, cancel := r.ensureContextDeadline(ctx)
 	if cancel != nil {
 		defer cancel()
 	}
 
 	if r.parallel {
-		return r.resolveWithContext(ctx, query)
+		return r.resolveWithContext(ctx, query, now)
 	}
-	return r.resolveSerialWithContext(ctx, query)
+	return r.resolveSerialWithContext(ctx, query, now)
 }
 
 // resolveSerialWithContext attempts to query each server in order until one responds successfully.
-func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error) {
+func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
 	var lastErr error
 	for _, server := range r.servers {
-		resp, err := r.queryServerWithContext(ctx, server, query)
+		resp, err := r.queryServerWithContext(ctx, server, query, now)
 		if err == nil {
 			return resp, nil
 		}
@@ -125,7 +125,7 @@ func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.DN
 }
 
 // resolveWithContext forwards a DNS query using parallel server attempts for better performance.
-func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error) {
+func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
 	// Channel to receive the first successful response
 	responseChan := make(chan domain.DNSResponse, 1)
 	errorChan := make(chan error, len(r.servers))
@@ -133,7 +133,7 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery
 	// Launch goroutines for each server
 	for _, server := range r.servers {
 		go func(srv string) {
-			response, err := r.queryServerWithContext(ctx, srv, query)
+			response, err := r.queryServerWithContext(ctx, srv, query, now)
 			if err != nil {
 				errorChan <- fmt.Errorf(errServerFailed, srv, err)
 				return
@@ -167,7 +167,7 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery
 }
 
 // queryServerWithContext performs DNS query with context cancellation support.
-func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.DNSQuery) (domain.DNSResponse, error) {
+func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
 	// Create UDP connection
 	conn, err := r.dial(ctx, "udp", server)
 	if err != nil {
@@ -211,7 +211,7 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 		}
 
 		// Decode response
-		response, err := r.codec.DecodeResponse(buffer[:n], query.ID)
+		response, err := r.codec.DecodeResponse(buffer[:n], query.ID, now)
 		resultChan <- result{response: response, err: err}
 	}()
 
