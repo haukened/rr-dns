@@ -23,8 +23,8 @@ func (m *MockDNSCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
 	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockDNSCodec) DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error) {
-	args := m.Called(data, expectedID)
+func (m *MockDNSCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time) (domain.DNSResponse, error) {
+	args := m.Called(data, expectedID, now)
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
 
