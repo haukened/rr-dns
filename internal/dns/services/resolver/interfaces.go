@@ -73,7 +73,7 @@ type ZoneCache interface {
 	FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
 
 	// PutZone replaces all records for a zone with new records
-	PutZone(zoneRoot string, records []*domain.AuthoritativeRecord)
+	PutZone(zoneRoot string, records []*domain.ResourceRecord)
 
 	// RemoveZone removes all records for a zone
 	RemoveZone(zoneRoot string)
