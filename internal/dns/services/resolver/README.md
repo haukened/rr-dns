@@ -181,7 +181,7 @@ func main() {
 The resolver processes DNS queries through the following decision tree:
 
 1. **Authoritative Lookup**: Check if we have authoritative data for the zone
-2. **Blocklist Check**: Query passes through security filtering
+2. **Blocklist Check**: Applied only to non-authoritative queries
 3. **Cache Lookup**: Check upstream response cache for recent answers
 4. **Upstream Resolution**: Forward query to configured upstream servers
 5. **Response Caching**: Cache successful upstream responses
@@ -295,7 +295,7 @@ func TestResolver(t *testing.T) {
 
 ## Performance Characteristics
 
-- **Authoritative Queries**: Sub-microsecond response times
+- **Authoritative Queries**: Lightning-fast response times
 - **Cached Queries**: ~100 nanosecond cache lookups
 - **Upstream Queries**: Network latency + ~500μs processing
 - **Memory Usage**: O(n) where n = total cached records
