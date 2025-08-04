@@ -53,21 +53,6 @@ type DNSResponder interface {
 	HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
 }
 
-// ServerTransport defines the interface for DNS server transport implementations.
-// Different transport types (UDP, DoH, DoT, DoQ) can implement this interface
-// while providing the same request handling contract to the service layer.
-type ServerTransport interface {
-	// Start begins listening for requests and handling them via the provided handler.
-	// The transport handles all network protocol concerns and wire format conversion.
-	Start(ctx context.Context, handler DNSResponder) error
-
-	// Stop gracefully shuts down the transport, closing connections and cleaning up resources.
-	Stop() error
-
-	// Address returns the network address the transport is bound to.
-	Address() string
-}
-
 // ZoneCache defines the interface for in-memory authoritative record storage with value-based records
 type ZoneCache interface {
 	// Find returns authoritative resource records matching the DNS query (value-based)
