@@ -46,11 +46,11 @@ type Cache interface {
 
 // DNSResponder defines an interface for handling DNS queries and generating responses.
 // Implementations of this interface process DNS requests, abstracting away network protocol details.
-// The HandleRequest method receives the query, client address, and context, and returns a DNS response.
+// The HandleQuery method receives the query, client address, and context, and returns a DNS response.
 type DNSResponder interface {
-	// HandleRequest processes a DNS query and returns a DNS response.
+	// HandleQuery processes a DNS query and returns a DNS response.
 	// The transport handles all network protocol details - the handler only sees domain objects.
-	HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
+	HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error)
 }
 
 // ZoneCache defines the interface for in-memory authoritative record storage with value-based records

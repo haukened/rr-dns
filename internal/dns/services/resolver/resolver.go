@@ -136,3 +136,6 @@ func buildResponse(query domain.DNSQuery, rcode domain.RCode, records []domain.R
 		// TODO: Set additional response fields as needed (Authority, Additional sections)
 	}
 }
+
+// Ensure Resolver implements DNSResponder at compile time
+var _ DNSResponder = (*Resolver)(nil)
