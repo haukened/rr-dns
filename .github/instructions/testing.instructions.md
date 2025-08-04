@@ -1,5 +1,5 @@
 ---
-applyTo: "**/*_test.go"
+applyTo: "**/*.go"
 ---
 
 # Testing Guidelines for rr-dns
@@ -87,7 +87,8 @@ repo.AssertExpectations(t)
 ## Naming & Placement
 
 - Test files are named `*_test.go`.
-- Unit test files go next to implementation.
+- Benchmark files are named `*_bench_test.go`.
+- Test files are placed in the same package as the code they test.
 - Test functions are named `TestXxx`.
 - Use descriptive subtests with `t.Run`.
 
