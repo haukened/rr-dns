@@ -31,5 +31,5 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# the actual binary
-rr-dnsd
+# the actual binary (not the source directory)
+/rr-dnsd
