@@ -165,6 +165,6 @@ func (s *StubDNSCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
 
 type StubDNSResponder struct{}
 
-func (s *StubDNSResponder) HandleRequest(ctx context.Context, query domain.DNSQuery, client net.Addr) domain.DNSResponse {
-	return domain.DNSResponse{ID: query.ID, RCode: 0}
+func (s *StubDNSResponder) HandleQuery(ctx context.Context, query domain.DNSQuery, client net.Addr) (domain.DNSResponse, error) {
+	return domain.DNSResponse{ID: query.ID, RCode: 0}, nil
 }

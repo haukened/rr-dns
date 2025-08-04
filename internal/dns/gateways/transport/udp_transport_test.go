@@ -43,9 +43,9 @@ type MockDNSResponder struct {
 	mock.Mock
 }
 
-func (m *MockDNSResponder) HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse {
+func (m *MockDNSResponder) HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error) {
 	args := m.Called(ctx, query, clientAddr)
-	return args.Get(0).(domain.DNSResponse)
+	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
 
 // MockLogger implements log.Logger for testing
@@ -205,7 +205,7 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 	codec.On("EncodeResponse", testResponse).Return(responseData, nil)
 
 	// Setup handler expectations
-	handler.On("HandleRequest", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse)
+	handler.On("HandleQuery", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse, nil)
 
 	// Setup logger expectations to be flexible about what gets logged
 	mockLogger.On("Info", mock.Anything, mock.Anything).Maybe()
@@ -314,7 +314,7 @@ func TestUDPTransport_CodecEncodeError(t *testing.T) {
 	codec.On("EncodeResponse", testResponse).Return([]byte{}, assert.AnError)
 
 	// Setup handler
-	handler.On("HandleRequest", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse)
+	handler.On("HandleQuery", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse, nil)
 
 	// Expect error to be logged
 	mockLogger.On("Error", mock.MatchedBy(func(fields map[string]any) bool {
@@ -404,7 +404,7 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 	// Setup mocks to handle multiple calls
 	codec.On("DecodeQuery", queryData).Return(testQuery, nil).Maybe()
 	codec.On("EncodeResponse", testResponse).Return(responseData, nil).Maybe()
-	handler.On("HandleRequest", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse).Maybe()
+	handler.On("HandleQuery", mock.AnythingOfType("*context.cancelCtx"), testQuery, mock.AnythingOfType("*net.UDPAddr")).Return(testResponse, nil).Maybe()
 
 	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -165,7 +165,15 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	}, "Received DNS query")
 
 	// Pass domain object to service layer
-	response := handler.HandleRequest(ctx, query, clientAddr)
+	response, err := handler.HandleQuery(ctx, query, clientAddr)
+	if err != nil {
+		t.logger.Error(map[string]any{
+			"client":   clientAddr.String(),
+			"query_id": query.ID,
+			"error":    err.Error(),
+		}, "Failed to handle DNS query")
+		return
+	}
 
 	// Encode domain object back to wire format
 	responseData, err := t.codec.EncodeResponse(response)
