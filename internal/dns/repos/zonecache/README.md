@@ -32,10 +32,10 @@ Zone Files → Zone Loader → ZoneCache → Resolver Service → DNS Response
 ```go
 type ZoneCache interface {
     // FindRecords returns authoritative records matching the DNSQuery
-    FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
+    FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
     
     // PutZone replaces all records for a zone with new records
-    PutZone(zoneRoot string, records []*domain.ResourceRecord)
+    PutZone(zoneRoot string, records []domain.ResourceRecord)
     
     // RemoveZone removes all records for a zone
     RemoveZone(zoneRoot string)
@@ -56,7 +56,7 @@ The ZoneCache uses a nested map structure for efficient lookups:
 // Internal structure (simplified)
 type ZoneCache struct {
     mu    sync.RWMutex
-    zones map[string]map[string][]*domain.ResourceRecord
+    zones map[string]map[string][]domain.ResourceRecord
     //    zoneRoot → CacheKey → records
 }
 ```
@@ -104,7 +104,7 @@ func main() {
     )
     
     // Put zone with new records
-    records := []*domain.ResourceRecord{&record1, &record2}
+    records := []domain.ResourceRecord{record1, record2}
     cache.PutZone("example.com.", records)
     
     // Find records for query
@@ -214,14 +214,14 @@ The ZoneCache is designed for high-concurrency DNS query workloads:
 ### Locking Strategy
 ```go
 // Read operations acquire read lock
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
     zc.mu.RLock()
     defer zc.mu.RUnlock()
     // ... lookup logic
 }
 
 // Write operations acquire write lock
-func (zc *ZoneCache) PutZone(zoneRoot string, records []*domain.ResourceRecord) {
+func (zc *ZoneCache) PutZone(zoneRoot string, records []domain.ResourceRecord) {
     zc.mu.Lock()
     defer zc.mu.Unlock()
     // ... update logic

@@ -34,8 +34,7 @@ This document defines the core domain entities used in RR-DNS. These types are p
 
 - `DNSQuery` – an incoming question from a client
 - `DNSResponse` – a full structured response (including Answers, Authority, Additional)
-- `ResourceRecord` – a DNS RR used for caching, includes expiry
-- `AuthoritativeRecord` – a DNS RR loaded from zone files, includes TTL
+- `ResourceRecord` – a unified DNS RR type supporting both cached and authoritative records
 - `RRType` – DNS record types (A, AAAA, NS, etc.)
 - `RRClass` – DNS classes (typically IN)
 - `RCode` – response codes (NOERROR, NXDOMAIN, SERVFAIL, etc.)
@@ -183,66 +182,72 @@ if err != nil {
 
 ## ResourceRecord
 
-Represents a DNS resource record used for caching. Contains an expiration timestamp (`ExpiresAt`) and is constructed from zone data or responses. Not persisted to disk.
+Represents a unified DNS resource record that supports both cached and authoritative use cases. The record behavior is determined by the constructor used and whether it has an expiration time.
 
 **Fields:**
-- `Name`: Domain name this record applies to
+- `Name`: Domain name this record applies to (automatically canonicalized)
 - `Type`: RRType
-- `Class`: RRClass
-- `ExpiresAt`: Timestamp when this record becomes invalid
+- `Class`: RRClass  
 - `Data`: RDATA (binary content, format depends on type)
+- `ttl`: TTL value in seconds (private field)
+- `expiresAt`: Expiration timestamp for cached records (private field, nil for authoritative)
 
-**Constraints:**
-- `ExpiresAt` must be a valid time in the future
-- Data must conform to RRType-specific format (not enforced here)
-- `ResourceRecord` instances are immutable once constructed and should not be mutated
+**Constructors:**
 
-**Notes:**
-- TTL is converted to `ExpiresAt` at construction time for cache expiry.
-- Use `NewResourceRecord` to construct and validate records.
-- Use `TTLRemaining()` to get time until expiry.
-- Use `CacheKey()` to generate a cache key for lookups.
-
-**Example:**
-
+**For Authoritative Records (Zone Files):**
 ```go
-ResourceRecord{
-  Name: "example.com.",
-  Type: A,
-  Class: IN,
-  ExpiresAt: time.Now().Add(300 * time.Second),
-  Data: []byte{192, 0, 2, 1}, // IPv4 address: 192.0.2.1
-}
+func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error)
 ```
 
-## AuthoritativeRecord
+**For Cached Records (With Expiration):**
+```go
+func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, now time.Time) (ResourceRecord, error)
+```
 
-Represents a DNS resource record loaded from a zone file. Used for authoritative answers and not subject to cache expiry. TTL is preserved for wire responses.
+**Methods:**
+- `Validate()`: Validates the record structure and data
+- `TTL()`: Returns the TTL value
+- `IsExpired()`: Returns true if the record has expired (cached records only)
+- `CacheKey()`: Generates a cache key for storage/lookup
+- `IsAuthoritative()`: Returns true if this is an authoritative (non-expiring) record
 
-**Fields:**
-- `Name`: Domain name this record applies to
-- `Type`: RRType
-- `Class`: RRClass
-- `TTL`: Time-to-live in seconds
-- `Data`: RDATA (binary content, format depends on type)
+**Key Differences:**
+- **Authoritative records**: Created with `NewAuthoritativeResourceRecord`, no expiration (`expiresAt` is nil)
+- **Cached records**: Created with `NewCachedResourceRecord`, expire based on TTL and creation time
 
 **Constraints:**
-- `TTL` must be a positive integer
-- Data must conform to RRType-specific format (not enforced here)
-- Use `Validate()` to check record validity
+- Names are automatically canonicalized (trailing dot added if missing)
+- TTL must be positive for cached records
+- Data must conform to RRType-specific format (validation depends on implementation)
+- Records are immutable once constructed
 
-**Conversion:**
-- Use `NewResourceRecordFromAuthoritative(ar, now)` to convert to a `ResourceRecord` with expiry
-
-**Example:**
-
+**Example - Authoritative Record:**
 ```go
-AuthoritativeRecord{
-  Name: "example.com.",
-  Type: A,
-  Class: IN,
-  TTL: 300,
-  Data: []byte{192, 0, 2, 1},
+// Zone file record - never expires
+rr, err := NewAuthoritativeResourceRecord(
+    "example.com.",
+    RRTypeFromString("A"), 
+    RRClass(1),
+    300,
+    []byte{192, 0, 2, 1},
+)
+```
+
+**Example - Cached Record:**
+```go
+// Cached record - expires after TTL
+rr, err := NewCachedResourceRecord(
+    "example.com.",
+    RRTypeFromString("A"),
+    RRClass(1), 
+    300,
+    []byte{192, 0, 2, 1},
+    time.Now(), // creation time
+)
+
+// Check if expired
+if rr.IsExpired() {
+    // Record has expired, remove from cache
 }
 ```
 
@@ -322,6 +327,7 @@ classDiagram
     class RRType {
       <<enumeration>>
       +IsValid() bool
+      +String() string
     }
 
     class RRClass {
@@ -344,24 +350,18 @@ classDiagram
         +CacheKey() string
     }
 
-    class AuthoritativeRecord {
-        +Name string
-        +Type RRType
-        +Class RRClass
-        +TTL uint32
-        +Data []byte
-        +Validate() error
-    }
-
     class ResourceRecord {
         +Name string
         +Type RRType
         +Class RRClass
-        +ExpiresAt time.Time
+        -ttl uint32
+        -expiresAt *time.Time
         +Data []byte
         +Validate() error
-        +TTLRemaining() time.Duration
+        +TTL() uint32
+        +IsExpired() bool
         +CacheKey() string
+        +IsAuthoritative() bool
     }
 
     class DNSResponse {
@@ -381,9 +381,6 @@ classDiagram
     %% Associations
     DNSResponse --> RCode
     DNSResponse --> ResourceRecord : answers/authority/additional
-    AuthoritativeRecord --> RRType
-    AuthoritativeRecord --> RRClass
-    AuthoritativeRecord --> ResourceRecord : produces
     ResourceRecord --> RRType
     ResourceRecord --> RRClass
     DNSQuery --> RRType

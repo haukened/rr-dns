@@ -64,13 +64,13 @@ apex = utils.GetApexDomain("localhost")
 - IP addresses are handled gracefully (though not recommended for DNS names)
 - Empty strings return empty strings
 
-### Helper Functions
+### Utility Functions
 
 #### `removeTrailingDot(name string) string`
-Internal helper that removes trailing dots for consistent processing.
+Removes a trailing dot from the given domain name string, if present.
 
-#### `addTrailingDot(name string) string`
-Internal helper that ensures domain names end with a trailing dot.
+#### `addTrailingDot(name string) string`  
+Ensures that the provided domain name ends with a trailing dot (useful for FQDNs).
 
 ## Use Cases
 
@@ -160,7 +160,7 @@ canonical, apex := processQuery("  API.Service.EXAMPLE.com  ")
 
 ### Zone Cache Implementation
 ```go
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.AuthoritativeRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
     fqdn := utils.CanonicalDNSName(query.Name)
     zone := utils.GetApexDomain(fqdn)
     

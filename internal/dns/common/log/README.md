@@ -97,12 +97,25 @@ This logging system follows CLEAN architecture principles:
 
 ## Testing Support
 
-### Test Logger
+### Custom Test Logger
 
 ```go
+// Create a test logger that captures log output
+type testLogger struct {
+    entries []string
+}
+
+func (l *testLogger) Info(_ map[string]any, msg string) { 
+    l.entries = append(l.entries, "INFO:"+msg) 
+}
+func (l *testLogger) Error(_ map[string]any, msg string) { 
+    l.entries = append(l.entries, "ERROR:"+msg) 
+}
+// ... implement other Logger methods
+
 func TestSomeFunction(t *testing.T) {
-    // Use test logger to capture log output
-    testLogger := &log.TestLogger{}
+    // Use custom test logger to capture log output
+    testLogger := &testLogger{}
     log.SetLogger(testLogger)
     defer log.SetLogger(log.GetLogger()) // restore
     
@@ -110,18 +123,34 @@ func TestSomeFunction(t *testing.T) {
     someFunction()
     
     // Verify logging
-    if !testLogger.HasMessage("Expected log message") {
+    found := false
+    for _, entry := range testLogger.entries {
+        if strings.Contains(entry, "Expected log message") {
+            found = true
+            break
+        }
+    }
+    if !found {
         t.Error("Expected log message not found")
     }
 }
 ```
 
-### No-op Logger
+### Silent Testing
 
 ```go
 func TestSilentOperation(t *testing.T) {
+    // Create a no-op logger for silent testing
+    type noopLogger struct{}
+    func (n *noopLogger) Info(map[string]any, string)  {}
+    func (n *noopLogger) Error(map[string]any, string) {}
+    func (n *noopLogger) Debug(map[string]any, string) {}
+    func (n *noopLogger) Warn(map[string]any, string)  {}
+    func (n *noopLogger) Panic(map[string]any, string) {}
+    func (n *noopLogger) Fatal(map[string]any, string) {}
+    
     // Disable all logging for test
-    log.SetLogger(&log.NoopLogger{})
+    log.SetLogger(&noopLogger{})
     defer log.SetLogger(log.GetLogger()) // restore
     
     // Run code without log output

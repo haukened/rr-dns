@@ -110,17 +110,18 @@ All repositories implement interfaces defined in the service layer following the
 // Repository implementations comply with these contracts:
 
 // ZoneCache interface (defined in services/resolver/interfaces.go):
-// - Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
-// - ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
-// - RemoveZone(zoneRoot string) error
-// - All() map[string][]*domain.AuthoritativeRecord
+// - FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+// - PutZone(zoneRoot string, records []domain.ResourceRecord)
+// - RemoveZone(zoneRoot string)
 // - Zones() []string
 // - Count() int
 
-// CacheRepository interface:
-// - Get(key string) (*domain.ResourceRecord, bool)
-// - Set(record *domain.ResourceRecord)
+// Cache interface:
+// - Get(key string) ([]domain.ResourceRecord, bool)
+// - Set(record []domain.ResourceRecord) error
+// - Delete(key string)
 // - Len() int
+// - Keys() []string
 ```
 
 ## Design Principles
@@ -144,14 +145,14 @@ All repositories are interface-based for flexibility and testing:
 ```go
 // Easy to mock for testing
 type mockZoneCache struct {
-    records map[string][]*domain.AuthoritativeRecord
+    records map[string][]domain.ResourceRecord
 }
 
-func (m *mockZoneCache) Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool) {
-    if records, found := m.records[fqdn]; found {
-        var matches []*domain.AuthoritativeRecord
+func (m *mockZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+    if records, found := m.records[query.Name]; found {
+        var matches []domain.ResourceRecord
         for _, record := range records {
-            if record.Type == rrType {
+            if record.Type == query.Type {
                 matches = append(matches, record)
             }
         }
@@ -184,19 +185,19 @@ type DNSResolver struct {
 
 func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
     // 1. Check authoritative zones first
-    if records, found := r.zoneCache.Find(query.Name, query.Type); found {
+    if records, found := r.zoneCache.FindRecords(query); found {
         return createAuthoritativeResponse(query, records)
     }
     
     // 2. Check recursive cache
-    if record, found := r.cache.Get(query.CacheKey()); found {
-        return createCachedResponse(query, record)
+    if records, found := r.cache.Get(query.CacheKey()); found {
+        return createCachedResponse(query, records)
     }
     
     // 3. Query upstream and cache result
     response := r.upstream.Resolve(query)
-    for _, record := range response.Answers {
-        r.cache.Set(&record)
+    if len(response.Answers) > 0 {
+        r.cache.Set(response.Answers)
     }
     
     return response

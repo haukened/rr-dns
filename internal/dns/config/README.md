@@ -16,12 +16,13 @@ The `config` package handles:
 
 ```go
 type AppConfig struct {
-    CacheSize uint     `koanf:"cache_size"`  // DNS cache size (default: 1000)
-    Env       string   `koanf:"env"`         // Runtime environment: "dev" or "prod"
-    LogLevel  string   `koanf:"log_level"`   // Log level: "debug", "info", "warn", "error"
-    Port      int      `koanf:"port"`        // DNS server port (default: 53)
-    ZoneDir   string   `koanf:"zone_dir"`    // Zone files directory
-    Servers   []string `koanf:"servers"`     // Upstream DNS servers (ip:port format)
+    CacheSize    uint     `koanf:"cache_size"`    // DNS cache size (default: 1000)
+    DisableCache bool     `koanf:"disable_cache"` // Disable DNS response caching (default: false)
+    Env          string   `koanf:"env"`           // Runtime environment: "dev" or "prod"
+    LogLevel     string   `koanf:"log_level"`     // Log level: "debug", "info", "warn", "error"
+    Port         int      `koanf:"port"`          // DNS server port (default: 53)
+    ZoneDir      string   `koanf:"zone_dir"`      // Zone files directory
+    Servers      []string `koanf:"servers"`       // Upstream DNS servers (ip:port format)
 }
 ```
 
@@ -58,6 +59,7 @@ All configuration is controlled via environment variables with the `UDNS_` prefi
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `UDNS_CACHE_SIZE` | uint | 1000 | Maximum number of DNS records to cache |
+| `UDNS_DISABLE_CACHE` | bool | false | Disable DNS response caching for testing |
 | `UDNS_ENV` | string | "prod" | Runtime environment (`dev` or `prod`) |
 | `UDNS_LOG_LEVEL` | string | "info" | Log verbosity level |
 | `UDNS_PORT` | int | 53 | UDP port for DNS server to bind to |

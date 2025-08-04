@@ -110,22 +110,34 @@ This section shows the static decomposition of RR-DNS into building blocks and t
 ```mermaid
 graph TD
     subgraph "RR-DNS System"
+        subgraph "Services Layer"
+            Resolver[DNS Query Resolver]
+        end
+        
         subgraph "Domain Layer"
             Domain[Domain Models<br/>DNSQuery, DNSResponse<br/>ResourceRecord, etc.]
         end
         
-        subgraph "Service Layer"
-            Resolver[Query Resolver]
-        end
-        
         subgraph "Infrastructure Layer"
-            UDPServer[UDP Server]
-            ZoneLoader[Zone Loader]
-            ZoneCache[Zone Cache]
-            DNSCache[DNS Cache]
-            UpstreamResolver[Upstream Resolver]
-            BlockList[DNS Block List]
-            Logger[Logger]
+            subgraph "Gateways"
+                UDPServer[Transport Layer]
+                UpstreamResolver[Upstream Resolver]
+                Wire[Wire Format Codec]
+            end
+            
+            subgraph "Repositories"
+                ZoneLoader[Zone Repository]
+                ZoneCache[Zone Cache]
+                DNSCache[DNS Cache]
+                BlockList[DNS Block List]
+            end
+            
+            subgraph "Common Services"
+                Logger[Structured Logger]
+                Clock[Clock Abstraction]
+                Utils[DNS Utils]
+            end
+            
             Config[Configuration]
         end
         
@@ -137,7 +149,6 @@ graph TD
     Client[DNS Client] --> UDPServer
     UDPServer --> Resolver
     Resolver --> Domain
-    Resolver --> ZoneLoader
     Resolver --> ZoneCache
     Resolver --> DNSCache
     Resolver --> UpstreamResolver
@@ -145,9 +156,14 @@ graph TD
     Resolver --> Logger
     ZoneLoader --> Domain
     ZoneLoader --> ZoneFiles
+    ZoneCache --> Domain
+    DNSCache --> Domain
     UpstreamResolver --> Internet[Upstream DNS Servers]
-    Config --> Logger
+    UpstreamResolver --> Wire
+    UDPServer --> Wire
     UDPServer --> Domain
+    Config --> Logger
+    Config --> Resolver
 ```
 
 ***Motivation***
@@ -158,28 +174,35 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 
 | **Building Block** | **Responsibility** |
 |--------------------|--------------------|
+| DNS Query Resolver | Core business logic for DNS query resolution, orchestrates all resolution strategies |
 | Domain Models | Pure domain entities representing DNS concepts (queries, responses, records) |
-| Query Resolver | Core business logic for DNS query resolution |
-| UDP Server | Network protocol handling and packet parsing |
-| Zone Loader | Loading and parsing zone files from disk |
-| Zone Cache | Ultra-fast in-memory storage for authoritative DNS records |
-| DNS Cache | In-memory LRU cache for performance optimization |
+| Transport Layer | Network protocol handling and packet parsing (UDP, DoH, DoT, DoQ) |
+| Zone Repository | Loading and parsing zone files from disk with value-based record creation |
+| Zone Cache | Ultra-fast in-memory storage for authoritative DNS records with value-based architecture |
+| DNS Cache | In-memory LRU cache for performance optimization with TTL-aware expiration |
 | Upstream Resolver | Forward queries to external DNS servers when no local data available |
-| DNS Block List | Block malicious/unwanted domains using cached database lookups |
-| Logger | Structured logging across all components |
-| Configuration | Environment-based configuration management |
+| DNS Block List | Block malicious/unwanted domains using configurable blocklist sources |
+| Structured Logger | High-performance structured logging across all components |
+| Clock Abstraction | Time abstraction for deterministic testing of time-dependent operations |
+| DNS Utils | DNS name processing, normalization, and apex domain extraction |
+| Configuration | Environment-based configuration management with comprehensive validation |
 
 ***Important Interfaces***
 
-- `QueryResolver` interface: Main service contract for DNS resolution
-- `ZoneRepository` interface: Abstraction for zone data access
-- `ZoneCache` interface: Abstraction for fast authoritative record access
-- `CacheRepository` interface: Abstraction for cached record storage
-- `BlockListRepository` interface: Abstraction for domain blocking decisions
+> 📖 **Detailed Documentation**: [DNS Resolver Service README](../internal/dns/services/resolver/README.md)
+
+- `DNSResponder` interface: Main service contract for DNS query processing
+- `ZoneCache` interface: Ultra-fast authoritative record storage with value-based operations  
+- `Cache` interface: TTL-aware upstream response caching with bulk record support
+- `UpstreamClient` interface: External DNS server communication abstraction
+- `ServerTransport` interface: Network protocol abstraction supporting multiple transport types
+- `Blocklist` interface: Domain filtering and security feature framework
 
 ## 5.2 Level 2
 
 ### 5.2.1 White Box: Domain Layer
+
+> 📖 **Detailed Documentation**: [Domain README](../internal/dns/domain/README.md)
 
 ***Overview Diagram***
 
@@ -188,8 +211,7 @@ graph TD
     subgraph "Domain Layer"
         DNSQuery[DNSQuery]
         DNSResponse[DNSResponse]
-        ResourceRecord[ResourceRecord]
-        AuthoritativeRecord[AuthoritativeRecord]
+        ResourceRecord[ResourceRecord<br/>Unified type with constructors]
         RRType[RRType]
         RRClass[RRClass]
         RCode[RCode]
@@ -202,14 +224,11 @@ graph TD
     DNSResponse --> ResourceRecord
     ResourceRecord --> RRType
     ResourceRecord --> RRClass
-    AuthoritativeRecord --> RRType
-    AuthoritativeRecord --> RRClass
-    AuthoritativeRecord --> ResourceRecord
 ```
 
 ***Motivation***
 
-The domain layer contains pure business entities free from infrastructure concerns. These types serve as contracts between layers and ensure type safety across the system.
+The domain layer contains pure business entities free from infrastructure concerns. These types serve as contracts between layers and ensure type safety across the system. The unified ResourceRecord design provides better performance through value-based storage and CPU cache locality.
 
 ***Contained Building Blocks***
 
@@ -217,15 +236,24 @@ The domain layer contains pure business entities free from infrastructure concer
 |----------|-------------------|
 | DNSQuery | Represents incoming DNS questions from clients |
 | DNSResponse | Complete DNS response with answers, authority, and additional sections |
-| ResourceRecord | Cached DNS records with expiration timestamps |
-| AuthoritativeRecord | Zone file records with TTL for authoritative responses |
+| ResourceRecord | Unified DNS record type with dual constructors for cached and authoritative records |
 | RRType | DNS record types (A, AAAA, MX, etc.) |
 | RRClass | DNS classes (typically IN) |
 | RCode | DNS response codes (NOERROR, NXDOMAIN, etc.) |
 
-> For detailed domain model documentation, see [`internal/dns/domain/00_domain.md`](../../internal/dns/domain/00_domain.md)
+***Key Design Changes***
+
+- **Unified ResourceRecord**: Single type replaces separate cached/authoritative records
+- **Value-Based Storage**: Records stored as values (not pointers) for better performance
+- **Dual Constructors**: `NewCachedResourceRecord()` and `NewAuthoritativeResourceRecord()` provide appropriate creation patterns
 
 ### 5.2.2 White Box: Infrastructure Layer
+
+> 📖 **Detailed Documentation**: 
+> - [Common Services](../internal/dns/common/README.md)
+> - [Configuration](../internal/dns/config/README.md)  
+> - [Gateways](../internal/dns/gateways/README.md)
+> - [Repositories](../internal/dns/repos/README.md)
 
 ***Overview Diagram***
 
@@ -234,67 +262,78 @@ The domain layer contains pure business entities free from infrastructure concer
 ```mermaid
 graph TD
     subgraph "Infrastructure Layer"
-        subgraph "Common"
+        subgraph "Common Services"
             direction TB
-            Logger[Logger]
+            Logger[Structured Logger]
+            Clock[Clock Abstraction]
+            Utils[DNS Utils]
         end
         
-        subgraph "Config"
+        subgraph "Configuration"
             direction TB
-            configuration[Configuration]
+            Config[Environment Config]
         end
         
         subgraph "Gateways"
             direction TB
-            Transport[Transport Layer]
+            Transport[Transport Layer<br/>UDP/DoH/DoT/DoQ]
             Upstream[Upstream Resolver]  
             Wire[Wire Format Codec]
         end
         
         subgraph "Repositories"
             direction TB
-            ZoneLoader[Zone Repository] --> ZoneFiles[Zone Files]
-            ZoneCache[Zone Cache] --> mem[In-Memory Records]
-            DNSCache[DNS Cache] --> lru[LRU Cache]
-            BlockList[Blocklist Repository] --> lru
+            ZoneLoader[Zone Repository] --> ZoneFiles[Zone Files<br/>YAML/JSON/TOML]
+            ZoneCache[Zone Cache] --> ValueMem[Value-Based Storage]
+            DNSCache[DNS Cache] --> ValueLRU[Value-Based LRU]
+            BlockList[Blocklist Repository] --> BlockDB[Block Sources]
         end
     end
 ```
 
 ***Motivation***
 
-Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are organized into focused directories that group related functionality while maintaining clean architectural boundaries. The new structure separates common services, configuration, gateways to external systems, and data repositories.
+Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are organized into focused directories that group related functionality while maintaining clean architectural boundaries. The value-based storage approach provides better CPU cache locality and reduced GC pressure.
 
 ***Contained Building Blocks***
 
 | **Directory** | **Components** | **Responsibility** |
 |---------------|----------------|-------------------|
-| **Common** | Logger | Structured logging with configurable levels and output formats |
+| **Common** | Logger, Clock, Utils | Structured logging, time abstraction for testing, DNS name utilities |
 | **Config** | Configuration | Load and validate configuration from environment variables |
 | **Gateways** | Transport, Upstream, Wire | Network protocols, external DNS servers, wire format handling |
-| **Repositories** | Zone, ZoneCache, Cache, Blocklist | Data persistence, caching, and retrieval operations |
+| **Repositories** | Zone, ZoneCache, Cache, Blocklist | Data persistence, value-based caching, and retrieval operations |
+
+***Key Architecture Improvements***
+
+- **Value-Based Storage**: All repositories use `[]domain.ResourceRecord` instead of pointers
+- **Clock Abstraction**: Deterministic time testing with MockClock
+- **Gateway Pattern**: Clean separation of external system concerns
+- **Repository Pattern**: Consistent data access interfaces
 
 ## 5.3 Level 3
 
-### 5.3.1 Black Box: Zone Loader
+### 5.3.1 Black Box: Zone Repository
 
-> 📖 **Detailed Documentation**: [Zone Loader README](../internal/dns/repos/zone/README.md)
+> 📖 **Detailed Documentation**: [Zone Repository README](../internal/dns/repos/zone/README.md)
 
 ***Purpose/Responsibility***
-- Load DNS zone files from a configured directory
-- Support multiple formats: YAML, JSON, TOML
-- Parse zone data into `AuthoritativeRecord` domain objects
+- Load DNS zone files from a configured directory with value-based record creation
+- Support multiple formats: YAML, JSON, TOML with optimal performance (JSON fastest at ~37.8μs)
+- Parse zone data into `domain.ResourceRecord` values (not pointers) for better performance
 - Handle file format validation and error reporting
 
 ***Interface***
 ```go
-func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.AuthoritativeRecord, error)
+func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]domain.ResourceRecord, error)
 ```
 
 ***Quality/Performance Characteristics***
-- Loads all zone files at startup (not runtime)
-- Fails fast on invalid zone files
-- Memory efficient parsing using streaming where possible
+- **JSON Loading**: ~37.8μs per file (fastest format)
+- **YAML Loading**: ~57.5μs per file  
+- **TOML Loading**: ~51.8μs per file
+- **Value-Based Output**: Returns `[]domain.ResourceRecord` for optimal cache integration
+- Fails fast on invalid zone files with detailed error messages
 
 ***Directory/File Location***
 `internal/dns/repos/zone/zone.go`
@@ -320,27 +359,28 @@ mail:
 > 📖 **Detailed Documentation**: [DNS Cache README](../internal/dns/repos/dnscache/README.md)
 
 ***Purpose/Responsibility***
-- Provide fast, in-memory LRU cache for DNS resource records
-- Reduce lookup latency and zone file access
-- Thread-safe operations for concurrent queries
-- Automatic expiration based on TTL
+- Provide fast, in-memory LRU cache for DNS resource records with value-based storage
+- Reduce lookup latency and upstream query overhead
+- Thread-safe operations for concurrent queries with automatic TTL expiration
+- Support multiple records per cache key for efficient bulk operations
 
 ***Interface***
 ```go
 type Cache interface {
     Get(key string) ([]domain.ResourceRecord, bool)
-    Put(key string, records []domain.ResourceRecord, ttl time.Duration)
+    Set(records []domain.ResourceRecord) error
     Delete(key string)
-    Clear()
-    Size() int
+    Len() int
+    Keys() []string
 }
 ```
 
 ***Quality/Performance Characteristics***
-- LRU eviction policy
-- Configurable cache size
-- Thread-safe for concurrent access
-- O(1) average case performance
+- **Lookup Time**: ~93ns per Get operation (sub-microsecond)
+- **Insertion Time**: ~350ns per Set operation
+- **Multiple Records**: ~428ns for retrieving 5 records together
+- **Value-Based Storage**: CPU cache efficiency, reduced GC pressure
+- Thread-safe with LRU eviction policy and automatic expiration
 
 ***Directory/File Location***
 `internal/dns/repos/dnscache/dnscache.go`
@@ -353,73 +393,67 @@ type Cache interface {
 > 📖 **Detailed Documentation**: [Zone Cache README](../internal/dns/repos/zonecache/README.md)
 
 ***Purpose/Responsibility***
-- Provide ultra-fast in-memory storage for authoritative DNS records
-- Enable O(1) lookup performance for zone-based queries
+- Provide ultra-fast in-memory storage for authoritative DNS records with value-based architecture
+- Enable sub-microsecond lookup performance for zone-based queries
 - Maintain thread-safe concurrent access using RWMutex
-- Support atomic zone replacement operations
-- Implement DNS hierarchy-aware zone matching
+- Support atomic zone replacement operations with DNS hierarchy-aware matching
 
 ***Interface***
 ```go
 type ZoneCache interface {
-    Find(fqdn string, rrType domain.RRType) ([]*domain.AuthoritativeRecord, bool)
-    ReplaceZone(zoneRoot string, records []*domain.AuthoritativeRecord) error
-    RemoveZone(zoneRoot string) error
-    All() map[string][]*domain.AuthoritativeRecord
+    FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+    PutZone(zoneRoot string, records []domain.ResourceRecord)
+    RemoveZone(zoneRoot string)
     Zones() []string
     Count() int
 }
 ```
 
 ***Quality/Performance Characteristics***
-- **Lookup Time**: ~2.7μs average case for authoritative record retrieval
-- **Zone Replace**: ~1.5μs per atomic zone replacement operation
-- **Memory Usage**: Direct record storage with minimal overhead
-- **Concurrent Performance**: ~408ns per operation under concurrent load
-- **Data Structure**: Nested maps (Zone → FQDN → RRType → Records)
-- **Thread Safety**: Full concurrent read/write support with RWMutex
+- **Lookup Time**: ~296ns per FindRecords operation
+- **Zone Replace**: ~323ns per PutZone operation  
+- **Value-Based Storage**: Direct record storage with optimal CPU cache locality
+- **Concurrent Performance**: Full RWMutex-based thread safety
+- **Data Structure**: Efficient nested maps (Zone → CacheKey → Records)
 
 ***Directory/File Location***
 `internal/dns/repos/zonecache/zonecache.go`
 
-***Uses***
-- Go standard library `sync.RWMutex` for concurrent access control
-- Domain layer types for authoritative record storage
-
-***Zone Hierarchy Matching***
-- Supports exact domain matches and proper subdomain resolution
-- DNS hierarchy-aware: `mail.example.com` correctly matches zone `example.com`
-- Validates zone roots to prevent false positive matches
-- Case-insensitive domain name matching following DNS standards
+***Key Design Features***
+- Value-based `[]domain.ResourceRecord` storage (not pointers)
+- DNS hierarchy-aware zone matching for proper subdomain resolution
+- Cache key-based organization for O(1) query-specific lookups
 
 ### 5.3.4 Black Box: Configuration
 
-> 📖 **Detailed Documentation**: [Config README](../internal/dns/config/README.md)
+> 📖 **Detailed Documentation**: [Configuration README](../internal/dns/config/README.md)
 
 ***Purpose/Responsibility***
-- Load configuration from environment variables
-- Validate configuration values using struct tags
-- Provide defaults for optional settings
-- Support multiple data types (strings, integers, arrays)
+- Load configuration from environment variables following 12-Factor App methodology
+- Validate configuration values using struct tags and custom validators
+- Provide defaults for optional settings with comprehensive error reporting
+- Support multiple data types with type-safe configuration access
 
 ***Interface***
 ```go
 type AppConfig struct {
-    CacheSize uint     `koanf:"cache_size" validate:"required,gte=1"`
-    Env       string   `koanf:"env" validate:"required,oneof=dev prod"`
-    LogLevel  string   `koanf:"log_level" validate:"required,oneof=debug info warn error"`
-    Port      int      `koanf:"port" validate:"required,gte=1,lt=65535"`
-    ZoneDir   string   `koanf:"zone_dir" validate:"required"`
-    Upstream  []string `koanf:"upstream" validate:"required,dive,hostname_port"`
+    CacheSize    uint     `koanf:"cache_size" validate:"required,gte=1"`
+    DisableCache bool     `koanf:"disable_cache"`
+    Env          string   `koanf:"env" validate:"required,oneof=dev prod"`
+    LogLevel     string   `koanf:"log_level" validate:"required,oneof=debug info warn error"`
+    Port         int      `koanf:"port" validate:"required,gte=1,lt=65535"`
+    ZoneDir      string   `koanf:"zone_dir" validate:"required"`
+    Servers      []string `koanf:"servers" validate:"required,dive,ip_port"`
 }
 
 func Load() (*AppConfig, error)
 ```
 
 ***Quality/Performance Characteristics***
-- Validation on load with clear error messages
-- Environment variable prefix: `UDNS_`
-- Case-insensitive key transformation
+- Comprehensive validation on load with detailed error messages
+- Environment variable prefix: `UDNS_` for all configuration
+- Immutable configuration during runtime (fail-fast approach)
+- Custom validators for IP:port format and other domain-specific formats
 
 ***Directory/File Location***
 `internal/dns/config/config.go`
@@ -432,19 +466,19 @@ func Load() (*AppConfig, error)
 - `UDNS_ZONE_DIR`: Zone files directory (default: "/etc/rr-dns/zones/")
 - `UDNS_UPSTREAM`: Upstream DNS servers (default: "1.1.1.1:53,1.0.0.1:53")
 
-### 5.3.5 Black Box: Logger
+### 5.3.5 Black Box: Structured Logger
 
-> 📖 **Detailed Documentation**: [Log README](../internal/dns/common/log/README.md)
+> 📖 **Detailed Documentation**: [Structured Logger README](../internal/dns/common/log/README.md)
 
 ***Purpose/Responsibility***
-- Provide structured logging across all components
-- Support multiple log levels and output formats
-- Configure logging based on environment (dev/prod)
-- Thread-safe logging operations
+- Provide structured logging across all components using Uber's Zap
+- Support multiple log levels and output formats (JSON for production, console for development)
+- Configure logging based on environment with global logger access
+- Thread-safe logging operations with high performance characteristics
 
 ***Interface***
 ```go
-func Configure(env, logLevel string)
+func Configure(env, logLevel string) error
 func Info(fields map[string]any, msg string)
 func Error(fields map[string]any, msg string)
 func Debug(fields map[string]any, msg string)
@@ -454,9 +488,10 @@ func Fatal(fields map[string]any, msg string)
 ```
 
 ***Quality/Performance Characteristics***
-- Structured JSON logging in production
-- Human-readable console logging in development
-- High performance with minimal allocations
+- High performance with minimal allocations using Zap
+- Structured JSON logging in production, human-readable console in development  
+- Global logger with dependency injection support for testing
+- Level-based filtering with efficient structured field handling
 
 ***Directory/File Location***
 `internal/dns/common/log/log.go`
@@ -464,7 +499,66 @@ func Fatal(fields map[string]any, msg string)
 ***Uses***
 - [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-### 5.3.6 Black Box: Upstream Resolver
+### 5.3.6 Black Box: Clock Abstraction
+
+> 📖 **Detailed Documentation**: [Clock Abstraction README](../internal/dns/common/clock/README.md)
+
+***Purpose/Responsibility***
+- Provide time abstraction layer for deterministic testing of time-dependent code
+- Enable controllable mock time for TTL expiration testing and performance simulation
+- Abstract `time.Now()` calls through injectable interface following Dependency Inversion Principle
+- Support both production (real time) and testing (mock time) scenarios
+
+***Interface***
+```go
+type Clock interface {
+    Now() time.Time
+}
+
+// Production implementation
+type RealClock struct{}
+func (c RealClock) Now() time.Time { return time.Now() }
+
+// Test implementation  
+type MockClock struct { CurrentTime time.Time }
+func (c *MockClock) Advance(d time.Duration) { c.CurrentTime = c.CurrentTime.Add(d) }
+```
+
+***Quality/Performance Characteristics***
+- **Zero overhead** in production (direct `time.Now()` delegation)
+- **Deterministic testing** with precise time control for TTL and cache testing
+- **Fast simulation** of hours/days of DNS operations in microseconds
+- Thread-safe for concurrent reads (writes require synchronization in tests)
+
+***Directory/File Location***
+`internal/dns/common/clock/clock.go`
+
+### 5.3.7 Black Box: DNS Utils
+
+> 📖 **Detailed Documentation**: [DNS Utils README](../internal/dns/common/utils/README.md)
+
+***Purpose/Responsibility***
+- Provide DNS name processing and normalization utilities
+- Handle canonical DNS name formatting with proper FQDN handling
+- Extract apex domains using Public Suffix List for zone organization and cache efficiency
+- Support consistent DNS name handling across all components
+
+***Interface***
+```go
+func CanonicalDNSName(name string) string     // Normalize to lowercase with trailing dot
+func GetApexDomain(name string) string        // Extract apex domain using PSL
+```
+
+***Quality/Performance Characteristics***
+- **Idempotent operations** with deterministic output for consistent caching
+- **Public Suffix List integration** for accurate domain boundary detection
+- **RFC 1035 compliant** DNS name formatting and validation
+- Minimal memory allocations with efficient string operations
+
+***Directory/File Location***
+`internal/dns/common/utils/`
+
+### 5.3.8 Black Box: Upstream Resolver
 
 > 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/gateways/upstream/README.md)
 
@@ -516,7 +610,7 @@ type Options struct {
 - Standard library `net` package for UDP communication via injectable `DialFunc`
 - Go context package for cancellation and timeout management
 
-### 5.3.7 Black Box: Transport Layer
+### 5.3.9 Black Box: Transport Layer
 
 > 📖 **Detailed Documentation**: [Transport README](../internal/dns/gateways/transport/README.md)
 
@@ -554,7 +648,7 @@ type RequestHandler interface {
 - 🚧 DNS over TLS (DoT) - Planned
 - 🚧 DNS over QUIC (DoQ) - Planned
 
-### 5.3.8 Black Box: Wire Format Codec
+### 5.3.10 Black Box: Wire Format Codec
 
 > 📖 **Detailed Documentation**: [Wire Format README](../internal/dns/gateways/wire/README.md)
 
@@ -589,7 +683,7 @@ type DNSCodec interface {
 - Comprehensive input validation
 - Detailed error messages for debugging
 
-### 5.3.9 Black Box: DNS Block List
+### 5.3.11 Black Box: DNS Block List
 
 > 📖 **Detailed Documentation**: [Blocklist README](../internal/dns/repos/blocklist/README.md)
 
@@ -656,8 +750,8 @@ sequenceDiagram
     UDPServer->>Domain: decode to DNSQuery
     UDPServer->>Resolver: Resolve(DNSQuery)
 
-    Resolver->>ZoneCache: Find(fqdn, rrType)
-    ZoneCache-->>Resolver: []AuthoritativeRecord (or nil)
+    Resolver->>ZoneCache: FindRecords(query)
+    ZoneCache-->>Resolver: []ResourceRecord (or nil)
 
     alt records found in zone cache
         Resolver->>Domain: create authoritative response
@@ -668,14 +762,14 @@ sequenceDiagram
         alt domain is blocked
             Resolver->>Domain: create NXDOMAIN response
         else domain not blocked
-            Resolver->>CacheRepo: Get(name, type, class)
+            Resolver->>CacheRepo: Get(cacheKey)
             CacheRepo-->>Resolver: []ResourceRecord (or nil)
             alt records found in cache
-                Resolver->>Domain: to DNSResponse
+                Resolver->>Domain: create cached response
             else
                 Resolver->>UpstreamResolver: Resolve(ctx, query)
                 UpstreamResolver-->>Resolver: DNSResponse
-                Resolver->>CacheRepo: Put(name, response)
+                Resolver->>CacheRepo: Set(response.Answers)
             end
         end
     end
@@ -727,15 +821,19 @@ This section describes overall principles and solution patterns that are relevan
 
 ### Entity Relationships
 ```go
-// Example: Converting authoritative to cached records
-func NewResourceRecordFromAuthoritative(ar *AuthoritativeRecord, now time.Time) *ResourceRecord {
-    return &ResourceRecord{
-        Name:      ar.Name,
-        Type:      ar.Type,
-        Class:     ar.Class,
-        ExpiresAt: now.Add(time.Duration(ar.TTL) * time.Second),
-        Data:      ar.Data,
-    }
+// Example: Creating records with appropriate constructors
+func NewCachedRecord(name string, rrType RRType, ttl uint32, data []byte, now time.Time) ResourceRecord {
+    return NewCachedResourceRecord(name, rrType, RRClass(1), ttl, data, now)
+}
+
+func NewAuthoritativeRecord(name string, rrType RRType, ttl uint32, data []byte) ResourceRecord {
+    return NewAuthoritativeResourceRecord(name, rrType, RRClass(1), ttl, data)
+}
+
+// Value-based storage for optimal performance
+type ZoneCache interface {
+    FindRecords(query DNSQuery) ([]ResourceRecord, bool)  // Returns values, not pointers
+    PutZone(zoneRoot string, records []ResourceRecord)    // Accepts values, not pointers
 }
 ```
 
