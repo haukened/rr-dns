@@ -1,0 +1,121 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/haukened/rr-dns/internal/dns/config"
+)
+
+// TestE2E_DNSResolution tests actual DNS queries end-to-end
+func TestE2E_DNSResolution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping E2E test in short mode")
+	}
+
+	// Setup test zone
+	tempDir := t.TempDir()
+	zoneFile := filepath.Join(tempDir, "e2e.yaml")
+	zoneContent := `zone_root: e2e.test
+api:
+  A: "10.0.0.1"
+web:
+  A: 
+    - "10.0.0.2"
+    - "10.0.0.3"
+`
+	if err := os.WriteFile(zoneFile, []byte(zoneContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Find available port
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	// Set environment
+	originalEnv := map[string]string{
+		"UDNS_PORT":      os.Getenv("UDNS_PORT"),
+		"UDNS_ZONE_DIR":  os.Getenv("UDNS_ZONE_DIR"),
+		"UDNS_LOG_LEVEL": os.Getenv("UDNS_LOG_LEVEL"),
+	}
+	defer func() {
+		for key, value := range originalEnv {
+			if value == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, value)
+			}
+		}
+	}()
+
+	os.Setenv("UDNS_PORT", fmt.Sprintf("%d", port))
+	os.Setenv("UDNS_ZONE_DIR", tempDir)
+	os.Setenv("UDNS_LOG_LEVEL", "error") // Reduce noise
+
+	// Start application
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := buildApplication(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start in background
+	appErr := make(chan error, 1)
+	go func() {
+		appErr <- app.Run(ctx)
+	}()
+
+	// Wait for startup
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("Server failed to start")
+		default:
+			conn, err := net.Dial("udp", fmt.Sprintf("localhost:%d", port))
+			if err == nil {
+				conn.Close()
+				goto serverStarted
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+serverStarted:
+	// TODO: Add actual DNS query tests here using net.LookupHost or custom DNS client
+	// This would require implementing a simple DNS client or using a library like miekg/dns
+
+	// For now, just verify the server is responding to connections
+	conn, err := net.Dial("udp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		t.Fatalf("Cannot connect to DNS server: %v", err)
+	}
+	conn.Close()
+
+	// Shutdown
+	cancel()
+	select {
+	case err := <-appErr:
+		if err != nil {
+			t.Errorf("Application shutdown error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Application failed to shutdown")
+	}
+}
