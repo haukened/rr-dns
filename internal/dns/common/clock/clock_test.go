@@ -125,7 +125,7 @@ func TestMockClock_Advance_Zero_Duration(t *testing.T) {
 
 func TestClock_Interface_Compliance(t *testing.T) {
 	// Test that both implementations satisfy the Clock interface
-	var _ Clock = RealClock{}
+	var _ Clock = &RealClock{}
 	var _ Clock = &MockClock{}
 }
 
