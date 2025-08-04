@@ -17,6 +17,10 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# Build artifacts
+build/
+coverage/
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
@@ -34,3 +38,6 @@ go.work.sum
 # the actual binary (not the source directory)
 /rr-dnsd
 cmd/rr-dnsd/rr-dnsd
+
+# vscode
+.vscode
