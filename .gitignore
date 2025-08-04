@@ -33,3 +33,4 @@ go.work.sum
 
 # the actual binary (not the source directory)
 /rr-dnsd
+cmd/rr-dnsd/rr-dnsd
