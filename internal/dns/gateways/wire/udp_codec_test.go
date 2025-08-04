@@ -411,7 +411,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 				return data
 			}(),
 			expectedID: 12345,
-			wantErr:    "truncated answer section",
+			wantErr:    "truncated record section",
 		},
 		{
 			name: "failed to decode answer name",
@@ -433,7 +433,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 				return data
 			}(),
 			expectedID: 12345,
-			wantErr:    "failed to decode answer name",
+			wantErr:    "failed to decode record name",
 		},
 		{
 			name: "truncated answer section after name",
@@ -456,7 +456,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 				return data // Total length: 12 (header) + 1 (name) + 9 (padding) = 22
 			}(),
 			expectedID: 12345,
-			wantErr:    "truncated answer section after name",
+			wantErr:    "truncated record section after name",
 		},
 		{
 			name: "truncated rdata",
