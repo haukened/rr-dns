@@ -50,12 +50,27 @@ func TestLoadZoneDirectory(t *testing.T) {
 		t.Fatalf("failed to write TOML file: %v", err)
 	}
 
-	records, err := LoadZoneDirectory(tmpDir, 60*time.Second)
+	zones, err := LoadZoneDirectory(tmpDir, 60*time.Second)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(records) != 3 {
-		t.Errorf("expected 3 records, got %d", len(records))
+	if len(zones) != 3 {
+		t.Errorf("expected 3 zones, got %d", len(zones))
+	}
+
+	// Check that we have the expected zones (without assuming canonicalization)
+	expectedZones := []string{"example.com", "example.org", "example.net"}
+	for _, expected := range expectedZones {
+		found := false
+		for zoneRoot := range zones {
+			if strings.TrimSuffix(zoneRoot, ".") == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected zone %s not found in zones: %v", expected, zones)
+		}
 	}
 }
 
@@ -81,8 +96,8 @@ func TestLoadZoneDirectory_InvalidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if records != nil {
-		t.Errorf("expected nil records for unsupported extension, got %v", records)
+	if len(records) != 0 {
+		t.Errorf("expected empty map for unsupported extension, got %v", records)
 	}
 }
 
