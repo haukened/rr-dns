@@ -1,5 +1,5 @@
 ---
-applyTo: "*.go"
+applyTo: "**"
 ---
 
 # CLEAN Architecture in Go

@@ -1,5 +1,5 @@
 ---
-applyTo: "*.go"
+applyTo: "**/*.go"
 ---
 
 # SOLID Principles in Go

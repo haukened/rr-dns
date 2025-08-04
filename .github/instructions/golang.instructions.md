@@ -1,5 +1,5 @@
 ---
-applyTo: '*.go'
+applyTo: '**/*.go'
 ---
 
 # Go Style & Conventions

@@ -1,5 +1,5 @@
 ---
-applyTo: "*_test.go"
+applyTo: "**/*_test.go"
 ---
 
 # Testing Guidelines for rr-dns
