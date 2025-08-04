@@ -68,13 +68,13 @@ type ServerTransport interface {
 	Address() string
 }
 
-// ZoneCache defines the interface for in-memory authoritative record storage
+// ZoneCache defines the interface for in-memory authoritative record storage with value-based records
 type ZoneCache interface {
-	// Find returns authoritative resource records matching the DNS query
-	FindRecords(query domain.DNSQuery) ([]*domain.ResourceRecord, bool)
+	// Find returns authoritative resource records matching the DNS query (value-based)
+	FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
 
-	// PutZone replaces all records for a zone with new records
-	PutZone(zoneRoot string, records []*domain.ResourceRecord)
+	// PutZone replaces all records for a zone with new records (value-based)
+	PutZone(zoneRoot string, records []domain.ResourceRecord)
 
 	// RemoveZone removes all records for a zone
 	RemoveZone(zoneRoot string)
