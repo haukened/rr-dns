@@ -290,11 +290,21 @@ local:
 		b.Run(q.name, func(b *testing.B) {
 			query := createTestQuery(q.host, domain.RRType(1)) // A record
 
+			// Warm-up: measure one cold upstream hit
+			firstStart := time.Now()
+			queryDNSServer(b, app, query)
+			b.Logf("Cold query (%s) took: %s", q.name, time.Since(firstStart))
+
+			// Pause to let cache settle
+			time.Sleep(50 * time.Millisecond)
+
+			// Now benchmark warm cache performance (all queries should be cached)
+			// This benchmark measures the warm cache behavior after an initial warm-up.
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				queryDNSServer(b, app, query)
+				queryDNSServer(b, app, query) // Now all cached
 			}
 		})
 	}
