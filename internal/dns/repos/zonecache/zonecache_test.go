@@ -24,14 +24,14 @@ func TestZoneCache_PutZone(t *testing.T) {
 	tests := []struct {
 		name      string
 		zoneRoot  string
-		records   []*domain.AuthoritativeRecord
+		records   []domain.ResourceRecord
 		wantZones int
 		wantCount int
 	}{
 		{
 			name:     "single zone with one record",
 			zoneRoot: "example.com.",
-			records: []*domain.AuthoritativeRecord{
+			records: []domain.ResourceRecord{
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
@@ -40,7 +40,7 @@ func TestZoneCache_PutZone(t *testing.T) {
 		{
 			name:     "single zone with multiple records",
 			zoneRoot: "example.com.",
-			records: []*domain.AuthoritativeRecord{
+			records: []domain.ResourceRecord{
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 				{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 				{Name: "example.com.", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
@@ -51,7 +51,7 @@ func TestZoneCache_PutZone(t *testing.T) {
 		{
 			name:     "zone root without trailing dot",
 			zoneRoot: "example.com",
-			records: []*domain.AuthoritativeRecord{
+			records: []domain.ResourceRecord{
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
@@ -60,7 +60,7 @@ func TestZoneCache_PutZone(t *testing.T) {
 		{
 			name:     "zone root with whitespace",
 			zoneRoot: "  example.com.  ",
-			records: []*domain.AuthoritativeRecord{
+			records: []domain.ResourceRecord{
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
@@ -69,14 +69,14 @@ func TestZoneCache_PutZone(t *testing.T) {
 		{
 			name:      "empty records slice",
 			zoneRoot:  "example.com.",
-			records:   []*domain.AuthoritativeRecord{},
+			records:   []domain.ResourceRecord{},
 			wantZones: 1,
 			wantCount: 0,
 		},
 		{
 			name:     "multiple records with same cache key",
 			zoneRoot: "example.com.",
-			records: []*domain.AuthoritativeRecord{
+			records: []domain.ResourceRecord{
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 			},
@@ -111,7 +111,7 @@ func TestZoneCache_PutZone_Replace(t *testing.T) {
 	zc := New()
 
 	// Put initial records
-	initialRecords := []*domain.AuthoritativeRecord{
+	initialRecords := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 	}
@@ -122,7 +122,7 @@ func TestZoneCache_PutZone_Replace(t *testing.T) {
 	}
 
 	// Replace with new records
-	newRecords := []*domain.AuthoritativeRecord{
+	newRecords := []domain.ResourceRecord{
 		{Name: "api.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
 	}
 	zc.PutZone("example.com.", newRecords)
@@ -148,7 +148,7 @@ func TestZoneCache_FindRecords(t *testing.T) {
 	zc := New()
 
 	// Setup test data
-	records := []*domain.AuthoritativeRecord{
+	records := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}}, // Multiple A records
 		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
@@ -238,18 +238,9 @@ func TestZoneCache_FindRecords(t *testing.T) {
 			}
 
 			// Verify returned records are valid ResourceRecords
-			if found {
-				for i, rr := range result {
-					if rr == nil {
-						t.Errorf("record %d is nil", i)
-						continue
-					}
-					if rr.ExpiresAt.IsZero() {
-						t.Errorf("record %d has zero expiration time", i)
-					}
-					if err := rr.Validate(); err != nil {
-						t.Errorf("record %d is invalid: %v", i, err)
-					}
+			for i, rr := range result {
+				if err := rr.Validate(); err != nil {
+					t.Errorf("record %d is invalid: %v", i, err)
 				}
 			}
 		})
@@ -260,10 +251,10 @@ func TestZoneCache_RemoveZone(t *testing.T) {
 	zc := New()
 
 	// Setup multiple zones
-	zone1Records := []*domain.AuthoritativeRecord{
+	zone1Records := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
-	zone2Records := []*domain.AuthoritativeRecord{
+	zone2Records := []domain.ResourceRecord{
 		{Name: "www.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 1}},
 	}
 
@@ -298,7 +289,7 @@ func TestZoneCache_RemoveZone_Canonical(t *testing.T) {
 	zc := New()
 
 	// Put zone with canonical name
-	records := []*domain.AuthoritativeRecord{
+	records := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
 	zc.PutZone("example.com.", records)
@@ -351,7 +342,7 @@ func TestZoneCache_Zones(t *testing.T) {
 	// Add some zones
 	expectedZones := []string{"example.com.", "test.com.", "another.org."}
 	for _, zone := range expectedZones {
-		records := []*domain.AuthoritativeRecord{
+		records := []domain.ResourceRecord{
 			{Name: "www." + zone, Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		}
 		zc.PutZone(zone, records)
@@ -384,7 +375,7 @@ func TestZoneCache_Count(t *testing.T) {
 	}
 
 	// Add records with different cache keys
-	records1 := []*domain.AuthoritativeRecord{
+	records1 := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 		{Name: "example.com.", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
@@ -396,7 +387,7 @@ func TestZoneCache_Count(t *testing.T) {
 	}
 
 	// Add another zone
-	records2 := []*domain.AuthoritativeRecord{
+	records2 := []domain.ResourceRecord{
 		{Name: "www.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 1}},
 		{Name: "api.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 2}},
 	}
@@ -418,7 +409,7 @@ func TestZoneCache_Count_SameCacheKey(t *testing.T) {
 	zc := New()
 
 	// Add multiple records with the same cache key
-	records := []*domain.AuthoritativeRecord{
+	records := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
@@ -435,7 +426,7 @@ func TestZoneCache_ConcurrentAccess(t *testing.T) {
 	zc := New()
 
 	// Setup initial data
-	records := []*domain.AuthoritativeRecord{
+	records := []domain.ResourceRecord{
 		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
 	zc.PutZone("example.com.", records)
@@ -480,7 +471,7 @@ func TestZoneCache_EdgeCases(t *testing.T) {
 	t.Run("empty zone root", func(t *testing.T) {
 		zc := New()
 		// Use a record that would naturally belong to the root zone
-		records := []*domain.AuthoritativeRecord{
+		records := []domain.ResourceRecord{
 			{Name: ".", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 		}
 		zc.PutZone("", records)

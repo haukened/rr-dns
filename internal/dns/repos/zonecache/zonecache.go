@@ -9,23 +9,23 @@ import (
 )
 
 // ZoneCache is an in-memory implementation of resolver.ZoneCache.
-// It provides fast access to authoritative DNS records with concurrent safety.
+// It provides fast access to authoritative DNS records with concurrent safety and value-based storage.
 type ZoneCache struct {
 	mu    sync.RWMutex
-	zones map[string]map[string][]domain.AuthoritativeRecord
-	//    zoneRoot → CacheKey → record
+	zones map[string]map[string][]domain.ResourceRecord
+	//    zoneRoot → CacheKey → records (value-based)
 }
 
 // New creates a new ZoneCache instance
 func New() *ZoneCache {
 	return &ZoneCache{
-		zones: make(map[string]map[string][]domain.AuthoritativeRecord),
+		zones: make(map[string]map[string][]domain.ResourceRecord),
 	}
 }
 
 // FindRecords returns authoritative records matching the DNSQuery.
 // Zero allocations - returns slice directly from cache.
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.AuthoritativeRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
 	zc.mu.RLock()
 	defer zc.mu.RUnlock()
 
@@ -47,14 +47,14 @@ func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.AuthoritativeR
 }
 
 // PutZone replaces all records for a zone with new records
-func (zc *ZoneCache) PutZone(zoneRoot string, records []domain.AuthoritativeRecord) {
+func (zc *ZoneCache) PutZone(zoneRoot string, records []domain.ResourceRecord) {
 	zoneRoot = utils.CanonicalDNSName(zoneRoot)
 
 	zc.mu.Lock()
 	defer zc.mu.Unlock()
 
 	// Create new zone map
-	zoneMap := make(map[string][]domain.AuthoritativeRecord)
+	zoneMap := make(map[string][]domain.ResourceRecord)
 
 	// Group records by CacheKey
 	for _, record := range records {
