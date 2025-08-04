@@ -42,6 +42,58 @@ graph
     blocklist --> blockDB
 ```
 
+### Transport-Driven Design
+
+The RR-DNS resolver follows a **transport-driven architecture** where:
+
+- **Transport owns the lifecycle**: The transport layer (UDP, DoT, DoH, DoQ) manages server startup, shutdown, and connection handling
+- **Resolver focuses on logic**: The resolver service purely handles DNS query resolution without network concerns  
+- **Clean separation**: Network protocols are abstracted behind the `ServerTransport` interface
+
+**Startup Pattern:**
+```go
+// Create a single resolver instance with all dependencies
+resolver := resolver.NewResolver(resolver.ResolverOptions{
+    ZoneCache:     zoneCache,
+    UpstreamCache: upstreamCache,
+    Upstream:      upstreamClient,
+    Blocklist:     blocklist,
+    Clock:         clock.NewRealClock(),
+    Logger:        logger,
+})
+
+// Inject the same resolver into multiple transports
+udpTransport := udp.NewTransport(":53")
+dotTransport := dot.NewTransport(":853", tlsConfig)
+dohTransport := doh.NewTransport(":443", httpConfig)
+
+// All transports share the same resolver instance
+go udpTransport.Start(ctx, resolver)  // UDP on port 53
+go dotTransport.Start(ctx, resolver)  // DNS-over-TLS on port 853  
+go dohTransport.Start(ctx, resolver)  // DNS-over-HTTPS on port 443
+
+// Each transport calls resolver.HandleQuery() for incoming requests
+```
+
+**Shared Resolver Benefits:**
+- **Single source of truth**: One resolver with one cache, one configuration
+- **Consistent behavior**: Same DNS logic across all protocols
+- **Resource efficiency**: Shared caches and upstream connections
+- **Simplified state**: No synchronization between resolver instances
+
+**Benefits:**
+- Easy to swap protocols (UDP → DoT → DoH) without changing resolver logic
+- Transport handles protocol-specific concerns (TLS, HTTP/2, connection pooling)
+- Resolver stays focused on DNS business logic
+- Clear dependency boundaries for testing
+- **Multiple protocols simultaneously**: Same resolver serves UDP, DoT, DoH concurrently
+- **Shared state**: All protocols use the same caches and upstream connections
+
+**Zone Loading:**
+- Zone files are loaded at startup/bootstrap (not by resolver)
+- Loaded zones are injected into `ZoneCache` before resolver starts
+- Resolver queries the cache but doesn't perform file I/O
+
 ## Core Types
 
 ### Resolver
