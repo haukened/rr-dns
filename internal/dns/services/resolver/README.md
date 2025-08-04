@@ -16,23 +16,30 @@ The `resolver` service acts as the central DNS query processing engine, implemen
 
 The resolver follows the CLEAN architecture pattern with well-defined interfaces:
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  ServerTransport│    │    Resolver     │    │ UpstreamClient  │
-│   (UDP/DoT/DoH) │◄──►│    Service      │◄──►│   (External)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   ZoneCache     │
-                    │  (Authoritative)│
-                    └─────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │ UpstreamCache   │
-                    │  (Recursive)    │
-                    └─────────────────┘
+```mermaid
+graph
+    resolver[Resolver Service]
+    transport[Server Transport]
+    upstreamClient[Upstream Client]
+    upstreamServer[Upstream Server]
+    upstreamCache[Upstream Cache]
+    zoneC[Zone Cache]
+    blocklist[Blocklist]
+    lru[LRU Cache]
+    zoneF[Zone Files]
+    blockDB[Blocklist Database]
+
+    transport <--> resolver
+    resolver <--> upstreamClient
+    resolver --> zoneF
+    resolver --> blocklist
+    upstreamClient <--> upstreamServer
+    resolver <--> upstreamCache
+    resolver <--> zoneC
+    zoneC --> lru
+    upstreamCache --> lru
+    blocklist --> lru
+    blocklist --> blockDB
 ```
 
 ## Core Types
