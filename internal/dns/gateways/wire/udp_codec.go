@@ -29,17 +29,20 @@ func (c *udpCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0))      // ARCOUNT
 
 	// Question
-	labels := strings.Split(query.Name, ".")
+	name := strings.TrimSuffix(query.Name, ".") // Remove trailing dot
+	labels := strings.Split(name, ".")
 	for _, label := range labels {
 		if len(label) > 63 {
 			return nil, fmt.Errorf("label too long: %s", label)
 		}
-		buf.WriteByte(byte(len(label)))
-		buf.WriteString(label)
+		if len(label) > 0 { // Skip empty labels
+			buf.WriteByte(byte(len(label)))
+			buf.WriteString(label)
+		}
 	}
 	buf.WriteByte(0) // End of name
 	_ = binary.Write(&buf, binary.BigEndian, uint16(query.Type))
-	_ = binary.Write(&buf, binary.BigEndian, uint16(1)) // QCLASS=IN
+	_ = binary.Write(&buf, binary.BigEndian, uint16(query.Class))
 
 	return buf.Bytes(), nil
 }
@@ -167,8 +170,14 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time)
 		return domain.DNSResponse{}, fmt.Errorf("ID mismatch: expected %d, got %d", expectedID, id)
 	}
 
+	// Parse flags to extract RCode (lower 4 bits of byte 3)
+	flags := binary.BigEndian.Uint16(data[2:4])
+	rcode := domain.RCode(flags & 0x000F)
+
 	qdCount := binary.BigEndian.Uint16(data[4:6])
 	anCount := binary.BigEndian.Uint16(data[6:8])
+	nsCount := binary.BigEndian.Uint16(data[8:10])
+	arCount := binary.BigEndian.Uint16(data[10:12])
 
 	offset := 12
 	// Skip questions
@@ -190,49 +199,85 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time)
 	// Parse answers
 	answers := []domain.ResourceRecord{}
 	for i := 0; i < int(anCount); i++ {
-		if offset+10 > len(data) {
-			return domain.DNSResponse{}, errors.New("truncated answer section")
-		}
-
-		name, newOffset, err := decodeName(data, offset)
+		rr, newOffset, err := c.parseResourceRecord(data, offset, now)
 		if err != nil {
-			return domain.DNSResponse{}, fmt.Errorf("failed to decode answer name: %w", err)
-		}
-		offset = newOffset
-
-		if offset+10 > len(data) {
-			return domain.DNSResponse{}, errors.New("truncated answer section after name")
-		}
-
-		typ := binary.BigEndian.Uint16(data[offset : offset+2])
-		offset += 2
-		class := binary.BigEndian.Uint16(data[offset : offset+2])
-		offset += 2
-		ttl := binary.BigEndian.Uint32(data[offset : offset+4])
-		offset += 4
-		rdLen := binary.BigEndian.Uint16(data[offset : offset+2])
-		offset += 2
-
-		if offset+int(rdLen) > len(data) {
-			return domain.DNSResponse{}, errors.New("truncated rdata")
-		}
-		rdata := make([]byte, rdLen)
-		copy(rdata, data[offset:offset+int(rdLen)])
-		offset += int(rdLen)
-
-		rrtype := domain.RRType(typ)
-		rrclass := domain.RRClass(class)
-		rr, err := domain.NewCachedResourceRecord(name, rrtype, rrclass, ttl, rdata, now)
-		if err != nil {
-			return domain.DNSResponse{}, fmt.Errorf("invalid resource record: %w", err)
+			return domain.DNSResponse{}, fmt.Errorf("failed to parse answer record %d: %w", i, err)
 		}
 		answers = append(answers, rr)
+		offset = newOffset
+	}
+
+	// Parse authority records
+	authority := []domain.ResourceRecord{}
+	for i := 0; i < int(nsCount); i++ {
+		rr, newOffset, err := c.parseResourceRecord(data, offset, now)
+		if err != nil {
+			return domain.DNSResponse{}, fmt.Errorf("failed to parse authority record %d: %w", i, err)
+		}
+		authority = append(authority, rr)
+		offset = newOffset
+	}
+
+	// Parse additional records
+	additional := []domain.ResourceRecord{}
+	for i := 0; i < int(arCount); i++ {
+		rr, newOffset, err := c.parseResourceRecord(data, offset, now)
+		if err != nil {
+			return domain.DNSResponse{}, fmt.Errorf("failed to parse additional record %d: %w", i, err)
+		}
+		additional = append(additional, rr)
+		offset = newOffset
 	}
 
 	return domain.DNSResponse{
-		ID:      id,
-		Answers: answers,
+		ID:         id,
+		RCode:      rcode,
+		Answers:    answers,
+		Authority:  authority,
+		Additional: additional,
 	}, nil
+}
+
+// parseResourceRecord extracts a single resource record from DNS response data
+func (c *udpCodec) parseResourceRecord(data []byte, offset int, now time.Time) (domain.ResourceRecord, int, error) {
+	if offset+10 > len(data) {
+		return domain.ResourceRecord{}, 0, errors.New("truncated record section")
+	}
+
+	name, newOffset, err := decodeName(data, offset)
+	if err != nil {
+		return domain.ResourceRecord{}, 0, fmt.Errorf("failed to decode record name: %w", err)
+	}
+	offset = newOffset
+
+	if offset+10 > len(data) {
+		return domain.ResourceRecord{}, 0, errors.New("truncated record section after name")
+	}
+
+	typ := binary.BigEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	class := binary.BigEndian.Uint16(data[offset : offset+2])
+	offset += 2
+	ttl := binary.BigEndian.Uint32(data[offset : offset+4])
+	offset += 4
+	rdLen := binary.BigEndian.Uint16(data[offset : offset+2])
+	offset += 2
+
+	if offset+int(rdLen) > len(data) {
+		return domain.ResourceRecord{}, 0, errors.New("truncated rdata")
+	}
+	rdata := make([]byte, rdLen)
+	copy(rdata, data[offset:offset+int(rdLen)])
+	offset += int(rdLen)
+
+	rrtype := domain.RRType(typ)
+	rrclass := domain.RRClass(class)
+	rr, err := domain.NewCachedResourceRecord(name, rrtype, rrclass, ttl, rdata, now)
+	if err != nil {
+		return domain.ResourceRecord{}, 0, fmt.Errorf("invalid resource record: %w", err)
+	}
+
+	return rr, offset, nil
 }
 
 var UDP DNSCodec = &udpCodec{}
