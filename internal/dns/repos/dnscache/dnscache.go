@@ -5,6 +5,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
 var (
@@ -84,3 +85,5 @@ func (c *dnsCache) Len() int {
 func (c *dnsCache) Keys() []string {
 	return c.lru.Keys()
 }
+
+var _ resolver.Cache = (*dnsCache)(nil)

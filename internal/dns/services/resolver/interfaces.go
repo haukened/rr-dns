@@ -37,8 +37,8 @@ type Blocklist interface {
 //   - Len(): Returns the number of cache entries currently stored in the cache.
 //   - Keys(): Returns a slice of all keys currently stored in the cache.
 type Cache interface {
-	Set(record []*domain.ResourceRecord) error
-	Get(key string) ([]*domain.ResourceRecord, bool)
+	Set(record []domain.ResourceRecord) error
+	Get(key string) ([]domain.ResourceRecord, bool)
 	Delete(key string)
 	Len() int
 	Keys() []string
