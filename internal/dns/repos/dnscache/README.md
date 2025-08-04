@@ -1,6 +1,6 @@
 # DNS Cache
 
-This package provides a high-performance, TTL-aware DNS cache using an LRU (Least Recently Used) eviction strategy for optimal memory management and query performance.
+This package provides a high-performance, TTL-aware DNS cache using an LRU (Least Recently Used) eviction strategy with value-based storage for optimal memory management and query performance.
 
 ## Overview
 
@@ -8,9 +8,10 @@ The `dnscache` package handles:
 
 - **LRU-based caching** with automatic memory management
 - **TTL-aware expiration** that respects DNS record time-to-live values
-- **High-performance lookups** with O(1) average case complexity
+- **High-performance lookups** with O(1) average case complexity and value-based storage
 - **Automatic cleanup** of expired records during access
 - **Thread-safe operations** for concurrent DNS query handling
+- **Value semantics** for improved CPU cache locality and reduced GC pressure
 
 ## Cache Architecture
 
@@ -18,17 +19,25 @@ The `dnscache` package handles:
 ┌─────────────────────────────────────────────────────────┐
 │                    DNS Cache                            │
 ├─────────────────────────────────────────────────────────┤
-│  Key: domain.name:type:class                           │
-│  Value: *domain.ResourceRecord (with ExpiresAt)        │
+│  Key: domain.name|domain.name|type|class              │
+│  Value: []domain.ResourceRecord (value-based storage)  │
 ├─────────────────────────────────────────────────────────┤
 │  LRU Backing Store                                      │
 │  ├─ Most Recently Used ─────────────────────────────┐   │
 │  │                                                  │   │
-│  │  [record1] ← [record2] ← [record3] ← [record4]   │   │
+│  │  [records] ← [records] ← [records] ← [records]   │   │
 │  │                                                  │   │
 │  └─ Least Recently Used ────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## Performance Benefits
+
+The value-based storage approach provides:
+- **Better CPU cache locality**: Records stored as values, not pointers
+- **Reduced GC pressure**: Fewer heap allocations and pointer dereferences
+- **Sub-microsecond access**: Get operations complete in ~93ns
+- **Efficient bulk operations**: Multiple records per cache key supported
 
 ## Usage
 
@@ -51,30 +60,34 @@ func main() {
         log.Fatalf("Failed to create cache: %v", err)
     }
     
-    // Create a DNS record
-    record, err := domain.NewResourceRecord(
+    // Create a DNS record using the constructor
+    record, err := domain.NewCachedResourceRecord(
         "example.com.", 
-        1,    // A record
-        1,    // IN class
-        300,  // TTL: 5 minutes
-        []byte{192, 0, 2, 1}, // IP address data
+        domain.RRTypeFromString("A"), // A record
+        domain.RRClass(1),            // IN class
+        300,                          // TTL: 5 minutes
+        []byte{192, 0, 2, 1},        // IP address data
+        time.Now(),                  // creation time
     )
     if err != nil {
         log.Fatalf("Failed to create record: %v", err)
     }
     
-    // Store in cache
-    cache.Set(record)
+    // Store in cache (value-based storage)
+    err = cache.Set([]domain.ResourceRecord{record})
+    if err != nil {
+        log.Fatalf("Failed to cache record: %v", err)
+    }
     
     // Retrieve from cache
-    if cachedRecord, found := cache.Get(record.CacheKey()); found {
-        fmt.Printf("Cache hit: %s\n", cachedRecord.Name)
+    if cachedRecords, found := cache.Get(record.CacheKey()); found {
+        fmt.Printf("Cache hit: %s (%d records)\n", cachedRecords[0].Name, len(cachedRecords))
     } else {
         fmt.Println("Cache miss")
     }
     
     // Check cache size
-    fmt.Printf("Cache contains %d records\n", cache.Len())
+    fmt.Printf("Cache contains %d unique keys\n", cache.Len())
 }
 ```
 
@@ -84,20 +97,46 @@ func main() {
 func resolveDNSQuery(query domain.DNSQuery, cache *dnscache.Cache) domain.DNSResponse {
     // Check cache first
     cacheKey := query.CacheKey()
-    if cachedRecord, found := cache.Get(cacheKey); found {
-        // Cache hit - return cached response
-        return domain.NewDNSResponse(query.ID, 0, []domain.ResourceRecord{*cachedRecord}, nil, nil)
+    if cachedRecords, found := cache.Get(cacheKey); found {
+        // Cache hit - return cached response with all records
+        return domain.NewDNSResponse(query.ID, 0, cachedRecords, nil, nil)
     }
     
     // Cache miss - resolve upstream
     response := resolveUpstream(query)
     
-    // Cache the response records
-    for _, record := range response.Answers {
-        cache.Set(&record)
+    // Cache the response records (multiple records can share same cache key)
+    if len(response.Answers) > 0 {
+        err := cache.Set(response.Answers)
+        if err != nil {
+            // Log error but continue - caching failure shouldn't break resolution
+            log.Printf("Failed to cache DNS response: %v", err)
+        }
     }
     
     return response
+}
+
+### Multiple Records Per Cache Key
+
+```go
+// DNS responses often contain multiple records for the same query
+aRecords := []domain.ResourceRecord{
+    // Multiple A records for load balancing
+    domain.ResourceRecrd{},
+    domain.ResourceRecrd{},
+    ...
+}
+
+// All records stored together under same cache key
+cache.Set(aRecords)
+
+// Retrieved together as a slice
+if records, found := cache.Get("example.com.|example.com.|A|IN"); found {
+    fmt.Printf("Found %d A records for example.com\n", len(records))
+    for _, record := range records {
+        fmt.Printf("  IP: %v\n", record.Data)
+    }
 }
 ```
 
@@ -106,13 +145,15 @@ func resolveDNSQuery(query domain.DNSQuery, cache *dnscache.Cache) domain.DNSRes
 The cache uses structured keys based on DNS query parameters:
 
 ```
-Format: "name:type:class"
+Format: "name|name|type|class"
 Examples:
-├─ "example.com.:1:1"        (A record for example.com)
-├─ "www.example.com.:28:1"   (AAAA record for www.example.com)
-├─ "mail.example.com.:15:1"  (MX record for mail.example.com)
-└─ "_sip._tcp.example.com.:33:1" (SRV record)
+├─ "example.com.|example.com.|A|IN"        (A record for example.com)
+├─ "www.example.com.|www.example.com.|AAAA|IN"   (AAAA record for www.example.com)
+├─ "mail.example.com.|mail.example.com.|MX|IN"  (MX record for mail.example.com)
+└─ "_sip._tcp.example.com.|_sip._tcp.example.com.|SRV|IN" (SRV record)
 ```
+
+**Note**: Keys are generated automatically using `record.CacheKey()` method for consistency.
 
 ## TTL and Expiration Handling
 
@@ -123,28 +164,48 @@ Examples:
 
 ### TTL Behavior
 ```go
-// Record with 300-second TTL
-record := &domain.ResourceRecord{
-    Name:      "example.com.",
-    Type:      1,
-    Class:     1,
-    ExpiresAt: time.Now().Add(300 * time.Second),
-    Data:      []byte{192, 0, 2, 1},
-}
+// Record with 300-second TTL created using constructor
+record, err := domain.NewCachedResourceRecord(
+    "example.com.",
+    domain.RRTypeFromString("A"),
+    domain.RRClass(1),
+    300, // TTL in seconds
+    []byte{192, 0, 2, 1},
+    time.Now(),
+)
 
-cache.Set(record)
+cache.Set([]domain.ResourceRecord{record})
 
 // Immediate access - cache hit
-if _, found := cache.Get(record.CacheKey()); found {
-    fmt.Println("Found in cache")
+if records, found := cache.Get(record.CacheKey()); found {
+    fmt.Printf("Found %d records in cache\n", len(records))
 }
 
 // Wait 5 minutes + 1 second
 time.Sleep(301 * time.Second)
 
-// Access after expiration - cache miss, record removed
-if _, found := cache.Get(record.CacheKey()); !found {
-    fmt.Println("Record expired and removed")
+// Access after expiration - cache miss, records automatically filtered out
+if records, found := cache.Get(record.CacheKey()); !found {
+    fmt.Println("Records expired and removed")
+}
+```
+
+## Error Handling
+
+The cache handles various error conditions:
+
+```go
+// ErrMultipleKeys: Attempting to cache records with different cache keys together
+records := []domain.ResourceRecord{recordA, recordB} // different cache keys
+err := cache.Set(records)
+if err == dnscache.ErrMultipleKeys {
+    // Handle the error - records must have same cache key
+}
+
+// Invalid cache size
+cache, err := dnscache.New(-1)
+if err != nil {
+    // Handle invalid cache size
 }
 ```
 
@@ -174,11 +235,22 @@ Total memory ≈ cache_size × 150 bytes
 
 ## Performance Characteristics
 
-- **Lookup Time**: O(1) average case
-- **Insertion Time**: O(1) average case  
-- **Memory Overhead**: Minimal - single LRU structure
+Based on benchmarks with the value-based implementation:
+
+- **Lookup Time**: ~93ns per Get operation (sub-microsecond)
+- **Insertion Time**: ~350ns per Set operation  
+- **Memory Overhead**: ~160B per Set, ~64B per Get
 - **Thread Safety**: Built-in concurrent access support
 - **Cache Hit Ratio**: Typically 80-95% for normal DNS workloads
+- **Multiple Records**: ~428ns for retrieving 5 records together
+
+### Benchmark Results
+```
+BenchmarkDnsCache_Set-16            3394304    350.7 ns/op    160 B/op    5 allocs/op
+BenchmarkDnsCache_Get-16           12613561     93.00 ns/op     64 B/op    1 allocs/op
+BenchmarkDnsCache_SetMultiple-16    1292930    929.3 ns/op    288 B/op   12 allocs/op
+BenchmarkDnsCache_GetMultiple-16    2841843    427.9 ns/op    848 B/op    4 allocs/op
+```
 
 ## Architecture Integration
 
@@ -216,19 +288,23 @@ type DNSResolver struct {
 
 func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
     // 1. Check local zones first
-    if record := r.zones.Find(query); record != nil {
-        return createResponse(query, record)
+    if records := r.zones.Find(query); len(records) > 0 {
+        return createResponse(query, records)
     }
     
     // 2. Check cache
-    if record, found := r.cache.Get(query.CacheKey()); found {
-        return createResponse(query, record)
+    if records, found := r.cache.Get(query.CacheKey()); found {
+        return createResponse(query, records)
     }
     
     // 3. Query upstream and cache result
     response := r.upstream.Resolve(query)
-    for _, record := range response.Answers {
-        r.cache.Set(&record)
+    if len(response.Answers) > 0 {
+        err := r.cache.Set(response.Answers)
+        if err != nil {
+            // Log but don't fail - caching errors shouldn't break resolution
+            log.Printf("Cache error: %v", err)
+        }
     }
     
     return response
@@ -247,7 +323,14 @@ The package includes comprehensive tests covering:
 
 Run tests with:
 ```bash
+# Run all tests
 go test ./internal/dns/repos/dnscache/
+
+# Run with coverage
+go test -cover ./internal/dns/repos/dnscache/
+
+# Run benchmarks
+go test -bench=. -benchmem ./internal/dns/repos/dnscache/
 ```
 
 ## Dependencies
@@ -258,10 +341,13 @@ go test ./internal/dns/repos/dnscache/
 ## Implementation Notes
 
 - **Lazy Expiration**: Records are only checked for expiration on access
+- **Value-Based Storage**: Records stored as values for better performance
 - **No Background Threads**: Avoids goroutine overhead and complexity
 - **Memory Efficient**: Single LRU structure minimizes memory overhead
 - **Thread Safe**: Built-in synchronization for concurrent access
-- **Cache Key Strategy**: Uses domain-provided cache key format for consistency
+- **Automatic Filtering**: Expired records filtered during Get operations
+- **Bulk Operations**: Multiple records with same cache key supported
+- **Error Handling**: Validates cache key consistency across record sets
 
 ## Monitoring and Metrics
 

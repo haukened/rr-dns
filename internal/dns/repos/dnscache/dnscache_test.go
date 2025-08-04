@@ -19,8 +19,20 @@ func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr := &domain.ResourceRecord{Name: "example.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(10 * time.Second)}
-	err = cache.Set([]*domain.ResourceRecord{rr})
+
+	rr, err := domain.NewCachedResourceRecord(
+		"example.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		10, // 10 second TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create resource record: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr})
 	if err != nil {
 		t.Fatalf("failed to set record: %v", err)
 	}
@@ -29,8 +41,11 @@ func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected record to be found")
 	}
-	if len(got) != 1 || got[0] != rr {
-		t.Errorf("expected [%v], got %v", rr, got)
+	if len(got) != 1 {
+		t.Errorf("expected 1 record, got %d", len(got))
+	}
+	if got[0].Name != rr.Name || got[0].Type != rr.Type {
+		t.Errorf("expected record %+v, got %+v", rr, got[0])
 	}
 }
 
@@ -39,8 +54,21 @@ func TestDnsCache_Get_ReturnsFalseIfExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
-	err = cache.Set([]*domain.ResourceRecord{rr}) // already expired
+
+	// Create expired record by setting timestamp in the past
+	rr, err := domain.NewCachedResourceRecord(
+		"expired.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		1, // 1 second TTL
+		[]byte{192, 0, 2, 1},
+		time.Now().Add(-2*time.Second), // created 2 seconds ago, so already expired
+	)
+	if err != nil {
+		t.Fatalf("failed to create resource record: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr}) // already expired
 	if err != nil {
 		t.Fatalf("failed to set record: %v", err)
 	}
@@ -60,7 +88,7 @@ func TestDnsCache_Get_ReturnsFalseIfNotPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	got, ok := cache.Get("missing.com:A")
+	got, ok := cache.Get("missing.com.|missing.com.|A|IN")
 	if ok {
 		t.Errorf("expected not found for missing key, got %v", got)
 	}
@@ -71,19 +99,52 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	rr3 := &domain.ResourceRecord{Name: "c.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	err = cache.Set([]*domain.ResourceRecord{rr1})
+	rr1, err := domain.NewCachedResourceRecord(
+		"a.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"b.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	rr3, err := domain.NewCachedResourceRecord(
+		"c.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 3},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr3: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr1})
 	if err != nil {
 		t.Fatalf("failed to set rr1: %v", err)
 	}
-	err = cache.Set([]*domain.ResourceRecord{rr2})
+	err = cache.Set([]domain.ResourceRecord{rr2})
 	if err != nil {
 		t.Fatalf("failed to set rr2: %v", err)
 	}
-	err = cache.Set([]*domain.ResourceRecord{rr3})
+	err = cache.Set([]domain.ResourceRecord{rr3})
 	if err != nil {
 		t.Fatalf("failed to set rr3: %v", err)
 	}
@@ -109,14 +170,38 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "expired.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(-1 * time.Second)}
-	rr2 := &domain.ResourceRecord{Name: "valid.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
 
-	err = cache.Set([]*domain.ResourceRecord{rr1}) // expired
+	// Create expired record
+	rr1, err := domain.NewCachedResourceRecord(
+		"expired.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		1, // 1 second TTL
+		[]byte{192, 0, 2, 1},
+		time.Now().Add(-2*time.Second), // created 2 seconds ago, so already expired
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	// Create valid record
+	rr2, err := domain.NewCachedResourceRecord(
+		"valid.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr1}) // expired
 	if err != nil {
 		t.Fatalf("failed to set rr1: %v", err)
 	}
-	err = cache.Set([]*domain.ResourceRecord{rr2}) // valid
+	err = cache.Set([]domain.ResourceRecord{rr2}) // valid
 	if err != nil {
 		t.Fatalf("failed to set rr2: %v", err)
 	}
@@ -146,8 +231,20 @@ func TestDnsCache_Delete_RemovesEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr := &domain.ResourceRecord{Name: "delete.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	err = cache.Set([]*domain.ResourceRecord{rr})
+
+	rr, err := domain.NewCachedResourceRecord(
+		"delete.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create resource record: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr})
 	if err != nil {
 		t.Fatalf("failed to set record: %v", err)
 	}
@@ -169,7 +266,7 @@ func TestDnsCache_Delete_NonExistentKey_NoPanic(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 	// Should not panic or error
-	cache.Delete("nonexistent.com:A")
+	cache.Delete("nonexistent.com.|nonexistent.com.|A|IN")
 	// Cache should still be empty
 	if cache.Len() != 0 {
 		t.Errorf("expected cache to be empty, got %d", cache.Len())
@@ -181,13 +278,36 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	rr1 := &domain.ResourceRecord{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	rr2 := &domain.ResourceRecord{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)}
-	err = cache.Set([]*domain.ResourceRecord{rr1})
+
+	rr1, err := domain.NewCachedResourceRecord(
+		"a.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"b.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	err = cache.Set([]domain.ResourceRecord{rr1})
 	if err != nil {
 		t.Fatalf("failed to set rr1: %v", err)
 	}
-	err = cache.Set([]*domain.ResourceRecord{rr2})
+	err = cache.Set([]domain.ResourceRecord{rr2})
 	if err != nil {
 		t.Fatalf("failed to set rr2: %v", err)
 	}
@@ -195,10 +315,10 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	cache.Delete(rr1.CacheKey())
 
 	if _, ok := cache.Get(rr1.CacheKey()); ok {
-		t.Errorf("expected 'a.com:A' to be deleted")
+		t.Errorf("expected rr1 to be deleted")
 	}
 	if _, ok := cache.Get(rr2.CacheKey()); !ok {
-		t.Errorf("expected 'b.com:A' to remain")
+		t.Errorf("expected rr2 to remain")
 	}
 	if cache.Len() != 1 {
 		t.Errorf("expected cache length 1, got %d", cache.Len())
@@ -210,7 +330,7 @@ func TestDnsCache_SetZeroRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	err = cache.Set([]*domain.ResourceRecord{})
+	err = cache.Set([]domain.ResourceRecord{})
 	if err != nil {
 		t.Fatalf("failed to set zero records: %v", err)
 	}
@@ -225,13 +345,182 @@ func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 
-	records := []*domain.ResourceRecord{
-		{Name: "a.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)},
-		{Name: "b.com.", Type: 1, Class: 1, ExpiresAt: time.Now().Add(1 * time.Minute)},
+	rr1, err := domain.NewCachedResourceRecord(
+		"a.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
 	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"b.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	records := []domain.ResourceRecord{rr1, rr2}
 
 	err = cache.Set(records)
 	if err == nil {
 		t.Errorf("expected error for multiple records with different keys, got nil")
+	}
+	if err != ErrMultipleKeys {
+		t.Errorf("expected ErrMultipleKeys, got %v", err)
+	}
+}
+
+func TestDnsCache_SetMultipleRecordsSameKey(t *testing.T) {
+	cache, err := New(2)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	// Create multiple A records for the same domain
+	rr1, err := domain.NewCachedResourceRecord(
+		"multi.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"multi.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	records := []domain.ResourceRecord{rr1, rr2}
+
+	err = cache.Set(records)
+	if err != nil {
+		t.Fatalf("failed to set multiple records with same key: %v", err)
+	}
+
+	got, ok := cache.Get(rr1.CacheKey())
+	if !ok {
+		t.Fatalf("expected records to be found")
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 records, got %d", len(got))
+	}
+}
+
+func TestDnsCache_Len(t *testing.T) {
+	cache, err := New(3)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	if cache.Len() != 0 {
+		t.Errorf("expected empty cache length 0, got %d", cache.Len())
+	}
+
+	rr1, err := domain.NewCachedResourceRecord(
+		"test1.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60,
+		[]byte{192, 0, 2, 1},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	cache.Set([]domain.ResourceRecord{rr1})
+	if cache.Len() != 1 {
+		t.Errorf("expected cache length 1, got %d", cache.Len())
+	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"test2.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60,
+		[]byte{192, 0, 2, 2},
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	cache.Set([]domain.ResourceRecord{rr2})
+	if cache.Len() != 2 {
+		t.Errorf("expected cache length 2, got %d", cache.Len())
+	}
+}
+
+func TestDnsCache_FilterExpiredRecords(t *testing.T) {
+	cache, err := New(2)
+	if err != nil {
+		t.Fatalf("failed to create cache: %v", err)
+	}
+
+	now := time.Now()
+
+	// Create mix of expired and valid records with same cache key
+	rr1, err := domain.NewCachedResourceRecord(
+		"mixed.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		1, // 1 second TTL
+		[]byte{192, 0, 2, 1},
+		now.Add(-2*time.Second), // expired
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr1: %v", err)
+	}
+
+	rr2, err := domain.NewCachedResourceRecord(
+		"mixed.com.",
+		domain.RRTypeFromString("A"),
+		domain.RRClass(1),
+		60, // 1 minute TTL
+		[]byte{192, 0, 2, 2},
+		now, // valid
+	)
+	if err != nil {
+		t.Fatalf("failed to create rr2: %v", err)
+	}
+
+	records := []domain.ResourceRecord{rr1, rr2}
+	err = cache.Set(records)
+	if err != nil {
+		t.Fatalf("failed to set records: %v", err)
+	}
+
+	// Get should filter out expired records
+	got, ok := cache.Get(rr1.CacheKey())
+	if !ok {
+		t.Fatalf("expected to find valid records")
+	}
+	if len(got) != 1 {
+		t.Errorf("expected 1 valid record after filtering, got %d", len(got))
+	}
+	// The remaining record should be the valid one
+	if len(got[0].Data) == 0 || got[0].Data[3] != 2 {
+		t.Errorf("expected valid record with IP ending in .2, got %v", got[0].Data)
 	}
 }
