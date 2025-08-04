@@ -197,5 +197,3 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 		"size":     len(responseData),
 	}, "Sent DNS response")
 }
-
-var _ resolver.ServerTransport = (*UDPTransport)(nil)

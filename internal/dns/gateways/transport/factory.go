@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/haukened/rr-dns/internal/dns/common/log"
@@ -8,10 +9,19 @@ import (
 	"github.com/haukened/rr-dns/internal/dns/services/resolver"
 )
 
+// ServerTransport defines the interface for DNS transport implementations.
+// This interface is defined here temporarily until we have a higher-level
+// coordination layer (e.g., in cmd/rr-dnsd).
+type ServerTransport interface {
+	Start(ctx context.Context, handler resolver.DNSResponder) error
+	Stop() error
+	Address() string
+}
+
 // NewTransport creates a new transport instance based on the specified type.
 // This factory function allows for easy extension to support additional transport
 // protocols in the future while maintaining a consistent interface.
-func NewTransport(transportType TransportType, addr string, codec wire.DNSCodec, logger log.Logger) (resolver.ServerTransport, error) {
+func NewTransport(transportType TransportType, addr string, codec wire.DNSCodec, logger log.Logger) (ServerTransport, error) {
 	switch transportType {
 	case TransportUDP:
 		return NewUDPTransport(addr, codec, logger), nil
