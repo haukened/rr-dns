@@ -126,6 +126,12 @@ func (n *noopLogger) Warn(map[string]any, string)  {}
 func (n *noopLogger) Panic(map[string]any, string) {}
 func (n *noopLogger) Fatal(map[string]any, string) {}
 
+// NewNoopLogger returns a Logger that discards all log messages.
+// Useful for testing or when you want to disable logging.
+func NewNoopLogger() Logger {
+	return &noopLogger{}
+}
+
 // Warn logs at warn level using the global logger.
 func Warn(fields map[string]any, msg string) {
 	global.Warn(fields, msg)
