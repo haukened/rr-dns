@@ -142,11 +142,20 @@ mail:
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["www.example.com"] || !names["mail.example.com"] {
+	if !names["www.example.com."] || !names["mail.example.com."] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
 		t.Errorf("unexpected record types: %v", types)
+	}
+	aCount := 0
+	for _, r := range records {
+		if r.Name == "www.example.com." && r.Type.String() == "A" {
+			aCount++
+		}
+	}
+	if aCount != 2 {
+		t.Errorf("expected 2 A records for www, got %d", aCount)
 	}
 }
 
@@ -170,7 +179,7 @@ func TestLoadZoneFile_JSON(t *testing.T) {
 		t.Errorf("expected 1 record, got %d", len(records))
 	}
 	r := records[0]
-	if r.Name != "api.example.org" {
+	if r.Name != "api.example.org." {
 		t.Errorf("unexpected name: %s", r.Name)
 	}
 	if r.Type.String() != "A" {
@@ -179,8 +188,8 @@ func TestLoadZoneFile_JSON(t *testing.T) {
 	if string(r.Data) != "5.6.7.8" {
 		t.Errorf("unexpected data: %s", string(r.Data))
 	}
-	if r.TTL != 120 {
-		t.Errorf("unexpected TTL: %d", r.TTL)
+	if r.TTL() != 120 {
+		t.Errorf("unexpected TTL: %d", r.TTL())
 	}
 }
 
@@ -210,15 +219,15 @@ MX = "mx.example.net"
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["web.example.net"] || !names["mx.example.net"] {
+	if !names["web.example.net."] || !names["mx.example.net."] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
 		t.Errorf("unexpected record types: %v", types)
 	}
 	for _, r := range records {
-		if r.TTL != 180 {
-			t.Errorf("unexpected TTL: %d", r.TTL)
+		if r.TTL() != 180 {
+			t.Errorf("unexpected TTL: %d", r.TTL())
 		}
 	}
 }
@@ -286,7 +295,7 @@ www:
 	}
 }
 
-func TestLoadZoneFile_BadAuthoratativeRecord(t *testing.T) {
+func TestLoadZoneFile_BadResourceRecord(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "testzone.yaml")
 	content := `
 zone_root: example.com
@@ -297,19 +306,19 @@ www:
 	}
 	records, err := loadZoneFile(tmpFile, 60*time.Second)
 	if err == nil {
-		t.Errorf("expected error for bad authoritative record, got nil")
+		t.Errorf("expected error for bad resource record, got nil")
 	}
 	if records != nil {
-		t.Errorf("expected nil records for bad authoritative record, got %v", records)
+		t.Errorf("expected nil records for bad resource record, got %v", records)
 	}
 }
 
-func TestBuildAuthoritativeRecord(t *testing.T) {
+func TestBuildResourceRecord(t *testing.T) {
 	fqdn := "foo.example.com."
 	rrType := "A"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	records, err := buildAuthoritativeRecord(fqdn, rrType, val, defaultTTL)
+	records, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -326,31 +335,31 @@ func TestBuildAuthoritativeRecord(t *testing.T) {
 	if ar.Class != 1 {
 		t.Errorf("Class = %v, want 1", ar.Class)
 	}
-	if ar.TTL != 60 {
-		t.Errorf("TTL = %v, want 60", ar.TTL)
+	if ar.TTL() != 60 {
+		t.Errorf("TTL = %v, want 60", ar.TTL())
 	}
 	if string(ar.Data) != val {
 		t.Errorf("Data = %v, want %v", ar.Data, val)
 	}
 }
 
-func TestBuildAuthoritativeRecord_InvalidType(t *testing.T) {
+func TestBuildResourceRecord_InvalidType(t *testing.T) {
 	fqdn := "foo.example.com."
 	rrType := "INVALID"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	_, err := buildAuthoritativeRecord(fqdn, rrType, val, defaultTTL)
+	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
 	if err == nil {
 		t.Errorf("expected error for invalid RRType, got nil")
 	}
 }
 
-func TestBuildAuthoritativeRecord_Multi(t *testing.T) {
+func TestBuildResourceRecord_Multi(t *testing.T) {
 	fqdn := "foo.example.com."
 	rrType := "A"
 	val := []any{"1.2.3.4", "5.6.7.8"}
 	defaultTTL := 60 * time.Second
-	records, err := buildAuthoritativeRecord(fqdn, rrType, val, defaultTTL)
+	records, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

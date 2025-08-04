@@ -1,6 +1,6 @@
 # Zone File Loader
 
-This package provides comprehensive DNS zone file loading and parsing capabilities, supporting multiple file formats and converting zone data into domain objects.
+This package provides comprehensive DNS zone file loading and parsing capabilities with value-based record storage, supporting multiple file formats and converting zone data into domain objects for optimal performance.
 
 ## Overview
 
@@ -9,8 +9,30 @@ The `zone` package handles:
 - **Multi-format support** for YAML, JSON, and TOML zone files
 - **Directory scanning** to load all zone files from a configured directory
 - **Domain name expansion** with proper FQDN handling and root zone support
-- **Authoritative record creation** from zone file data
+- **Value-based record creation** from zone file data for improved performance
 - **Error handling** with detailed validation and parsing feedback
+- **High-performance parsing** optimized for startup-time zone loading
+
+## Performance Characteristics
+
+Based on benchmarks with value-based record storage:
+
+- **YAML Loading**: ~57.5μs per file, 46.5KB/op, 818 allocs/op
+- **JSON Loading**: ~37.8μs per file, 28.3KB/op, 566 allocs/op (fastest)
+- **TOML Loading**: ~51.8μs per file, 51.5KB/op, 911 allocs/op
+- **Directory Loading**: ~159μs for 3 files, 134KB/op, 2319 allocs/op
+- **Record Building**: ~62.7ns per single record, 80B/op, 2 allocs/op
+
+### Benchmark Results
+```
+BenchmarkLoadZoneFile_YAML-16        20794    57520 ns/op   46530 B/op    818 allocs/op
+BenchmarkLoadZoneFile_JSON-16        31630    37832 ns/op   28341 B/op    566 allocs/op
+BenchmarkLoadZoneFile_TOML-16        23068    51757 ns/op   51506 B/op    911 allocs/op
+BenchmarkLoadZoneDirectory-16         6910   159302 ns/op  134441 B/op   2319 allocs/op
+BenchmarkBuildResourceRecord_Single  19497298   62.73 ns/op    80 B/op      2 allocs/op
+```
+
+**JSON format provides the best performance** for zone file loading.
 
 ## Supported File Formats
 
@@ -96,31 +118,60 @@ import (
 )
 
 func main() {
-    // Load all zone files from directory
+    // Load all zone files from directory (returns values, not pointers)
     records, err := zone.LoadZoneDirectory("/etc/rr-dns/zones/", 300*time.Second)
     if err != nil {
         log.Fatalf("Failed to load zones: %v", err)
     }
     
-    // Process loaded records
+    // Process loaded records - using value semantics
     for _, record := range records {
-        fmt.Printf("Loaded: %s %s %s\n", 
+        fmt.Printf("Loaded: %s %s %s (TTL: %d)\n", 
             record.Name, 
             record.Type.String(), 
-            string(record.Data))
+            string(record.Data),
+            record.TTL())
     }
+    
+    fmt.Printf("Loaded %d records from zone directory\n", len(records))
 }
 ```
 
 ### Single File Loading
 
 ```go
-// Load specific zone file
+// Load specific zone file - returns []domain.ResourceRecord (values)
 records, err := zone.LoadZoneFile("/etc/rr-dns/zones/example.com.yaml", 300*time.Second)
 if err != nil {
     log.Fatalf("Failed to load zone file: %v", err)
 }
+
+// Records are value-based, providing better performance
+for _, record := range records {
+    fmt.Printf("Name: %s, Type: %s\n", record.Name, record.Type.String())
+}
 ```
+
+### Integration with DNS Cache
+
+```go
+// Value-based records integrate seamlessly with cache
+cache, _ := dnscache.New(1000)
+
+// Load zone and cache records
+records, _ := zone.LoadZoneDirectory("/etc/zones/", 300*time.Second)
+
+// Group records by cache key for efficient caching
+recordsByKey := make(map[string][]domain.ResourceRecord)
+for _, record := range records {
+    key := record.CacheKey()
+    recordsByKey[key] = append(recordsByKey[key], record)
+}
+
+// Cache grouped records
+for _, groupedRecords := range recordsByKey {
+    cache.Set(groupedRecords)
+}
 
 ## Zone File Structure
 
@@ -193,19 +244,22 @@ error loading zone directory: open /etc/zones/: permission denied
 
 ## Architecture Integration
 
-This zone loader follows CLEAN architecture principles:
+This zone loader follows CLEAN architecture principles with value-based optimizations:
 
 - **Infrastructure Layer**: Handles file I/O and external format parsing
-- **Domain Integration**: Converts file data to `domain.AuthoritativeRecord` objects
+- **Domain Integration**: Converts file data to `domain.ResourceRecord` values (not pointers)
 - **Error Isolation**: File parsing errors don't affect other zones
 - **Format Abstraction**: Service layer doesn't need to know about file formats
+- **Value Semantics**: Returns records as values for better CPU cache locality
+- **Memory Efficiency**: Reduced heap allocations compared to pointer-based approaches
 
-## Performance Characteristics
+## Performance Benefits
 
-- **Startup Loading**: All zones loaded once at application startup
-- **Memory Efficient**: Streaming parsers used where possible
-- **Fail Fast**: Invalid zone files prevent server startup
-- **Concurrent Safe**: Loaded records are immutable after parsing
+The value-based approach provides:
+- **Better CPU Cache Locality**: Records stored as values improve access patterns
+- **Reduced GC Pressure**: Fewer heap allocations during zone loading
+- **Efficient Integration**: Direct compatibility with value-based cache systems
+- **Fast Startup**: Optimized parsing for quick server initialization
 
 ## Testing
 
@@ -219,7 +273,14 @@ The package includes comprehensive tests covering:
 
 Run tests with:
 ```bash
+# Run all tests
 go test ./internal/dns/repos/zone/
+
+# Run with coverage
+go test -cover ./internal/dns/repos/zone/
+
+# Run benchmarks to measure performance
+go test -bench=. -benchmem ./internal/dns/repos/zone/
 ```
 
 ## Dependencies
@@ -274,7 +335,10 @@ www:
 - Use absolute paths for zone directory configuration
 
 ### Performance Tips
+- **Use JSON format** for fastest zone loading (~37μs vs ~57μs for YAML)
 - Keep zone files reasonably sized (< 10MB each)
 - Use consistent file formats within deployment
 - Minimize complex label expansions
 - Group related records in single files
+- **Value-based integration**: Leverage value semantics for cache compatibility
+- **Batch loading**: Load zones at startup rather than on-demand for better performance

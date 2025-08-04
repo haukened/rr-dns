@@ -19,10 +19,10 @@ import (
 )
 
 // LoadZoneDirectory walks the given directory, loading all supported zone files (YAML, JSON, TOML)
-// and returning a slice of AuthoritativeRecord pointers. Each file is parsed and its records are appended.
+// and returning a slice of ResourceRecord values. Each file is parsed and its records are appended.
 // Returns an error if any file fails to parse.
-func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]*domain.AuthoritativeRecord, error) {
-	var records []*domain.AuthoritativeRecord
+func LoadZoneDirectory(dir string, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
+	var records []domain.ResourceRecord
 
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -73,13 +73,13 @@ func normalize(val any) []string {
 	}
 }
 
-// buildAuthoritativeRecord creates one or more AuthoritativeRecord objects for a given FQDN, RR type,
+// buildResourceRecord creates one or more ResourceRecord objects for a given FQDN, RR type,
 // and value. The value may be a string or a slice of strings. Returns an error if record creation fails.
-func buildAuthoritativeRecord(fqdn string, rrType string, val any, defaultTTL time.Duration) ([]*domain.AuthoritativeRecord, error) {
+func buildResourceRecord(fqdn string, rrType string, val any, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
 	strs := normalize(val)
-	var records []*domain.AuthoritativeRecord
+	var records []domain.ResourceRecord
 	for _, s := range strs {
-		ar, err := domain.NewAuthoritativeRecord(
+		rr, err := domain.NewAuthoritativeResourceRecord(
 			fqdn,
 			domain.RRTypeFromString(rrType),
 			domain.RRClass(1),
@@ -89,14 +89,14 @@ func buildAuthoritativeRecord(fqdn string, rrType string, val any, defaultTTL ti
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, ar)
+		records = append(records, rr)
 	}
 	return records, nil
 }
 
 // loadZoneFile loads and parses a single zone file at the given path, using the appropriate parser
-// for the file extension (YAML, JSON, TOML). Returns a slice of AuthoritativeRecord pointers or an error.
-func loadZoneFile(path string, defaultTTL time.Duration) ([]*domain.AuthoritativeRecord, error) {
+// for the file extension (YAML, JSON, TOML). Returns a slice of ResourceRecord values or an error.
+func loadZoneFile(path string, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	var parser koanf.Parser
 	switch ext {
@@ -120,7 +120,7 @@ func loadZoneFile(path string, defaultTTL time.Duration) ([]*domain.Authoritativ
 		return nil, fmt.Errorf("zone file %s missing 'zone_root'", path)
 	}
 
-	var records []*domain.AuthoritativeRecord
+	var records []domain.ResourceRecord
 	for name, raw := range k.Raw() {
 		if name == "zone_root" {
 			continue
@@ -131,7 +131,7 @@ func loadZoneFile(path string, defaultTTL time.Duration) ([]*domain.Authoritativ
 		}
 		fqdn := expandName(name, root)
 		for rrType, val := range rawMap {
-			recs, err := buildAuthoritativeRecord(fqdn, rrType, val, defaultTTL)
+			recs, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
 			if err != nil {
 				return nil, fmt.Errorf("invalid record in %s: %w", path, err)
 			}
