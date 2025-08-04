@@ -137,8 +137,9 @@ func (t *UDPTransport) listenLoop(ctx context.Context, handler resolver.DNSRespo
 				continue
 			}
 
-			// Handle packet in separate goroutine to avoid blocking the listen loop
-			go t.handlePacket(ctx, buffer[:n], clientAddr, handler)
+			packet := make([]byte, n)
+			copy(packet, buffer[:n])
+			go t.handlePacket(ctx, packet, clientAddr, handler)
 		}
 	}
 }
