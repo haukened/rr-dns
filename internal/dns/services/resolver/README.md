@@ -103,8 +103,8 @@ The main service that coordinates all DNS resolution activities:
 ```go
 type Resolver struct {
     blocklist     Blocklist
+    clock         clock.Clock
     logger        log.Logger
-    transport     ServerTransport
     upstream      UpstreamClient
     upstreamCache Cache
     zoneCache     ZoneCache
@@ -118,8 +118,8 @@ Configuration struct for dependency injection:
 ```go
 type ResolverOptions struct {
     Blocklist     Blocklist
+    Clock         clock.Clock
     Logger        log.Logger
-    Transport     ServerTransport
     Upstream      UpstreamClient
     UpstreamCache Cache
     ZoneCache     ZoneCache
@@ -134,7 +134,7 @@ type ResolverOptions struct {
 Handles DNS query processing and response generation:
 ```go
 type DNSResponder interface {
-    HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
+    HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error)
 }
 ```
 
@@ -203,6 +203,7 @@ import (
     "context"
     "github.com/haukened/rr-dns/internal/dns/services/resolver"
     "github.com/haukened/rr-dns/internal/dns/common/log"
+    "github.com/haukened/rr-dns/internal/dns/common/clock"
 )
 
 func main() {
@@ -212,18 +213,19 @@ func main() {
     // Create resolver with dependencies
     resolver := resolver.NewResolver(resolver.ResolverOptions{
         Blocklist:     myBlocklist,
+        Clock:         clock.NewRealClock(),
         Logger:        log.GetLogger(),
-        Transport:     udpTransport,
         Upstream:      upstreamClient,
         UpstreamCache: responseCache,
         ZoneCache:     authorityCache,
     })
     
-    // Start serving DNS requests
+    // Create transport and inject resolver
+    transport := udp.NewTransport(":53")
     ctx := context.Background()
-    err := resolver.Start(ctx)
+    err := transport.Start(ctx, resolver)
     if err != nil {
-        log.Fatal(map[string]any{"error": err}, "Failed to start resolver")
+        log.Fatal(map[string]any{"error": err}, "Failed to start transport")
     }
 }
 ```
@@ -329,8 +331,8 @@ func TestResolver(t *testing.T) {
     // Create resolver with test doubles
     resolver := resolver.NewResolver(resolver.ResolverOptions{
         Blocklist:     mockBlocklist,
+        Clock:         &clock.MockClock{},
         Logger:        &log.NoopLogger{},
-        Transport:     mockTransport,
         Upstream:      mockUpstream,
         UpstreamCache: testCache,
         ZoneCache:     testZones,
@@ -338,10 +340,11 @@ func TestResolver(t *testing.T) {
     
     // Test query resolution
     query := domain.DNSQuery{Name: "test.example.com.", Type: domain.A}
-    response := resolver.HandleRequest(context.Background(), query, nil)
+    response, err := resolver.HandleQuery(context.Background(), query, nil)
     
     // Verify response
-    assert.Equal(t, domain.NOERROR, response.ResponseCode)
+    assert.NoError(t, err)
+    assert.Equal(t, domain.NOERROR, response.RCode)
 }
 ```
 

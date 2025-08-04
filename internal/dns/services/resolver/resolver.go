@@ -15,7 +15,6 @@ type Resolver struct {
 	blocklist     Blocklist
 	clock         clock.Clock
 	logger        log.Logger
-	transport     ServerTransport
 	upstream      UpstreamClient
 	upstreamCache Cache
 	zoneCache     ZoneCache
@@ -25,7 +24,6 @@ type ResolverOptions struct {
 	Blocklist     Blocklist
 	Clock         clock.Clock
 	Logger        log.Logger
-	Transport     ServerTransport
 	Upstream      UpstreamClient
 	UpstreamCache Cache
 	ZoneCache     ZoneCache
@@ -36,7 +34,6 @@ func NewResolver(opts ResolverOptions) *Resolver {
 		blocklist:     opts.Blocklist,
 		clock:         opts.Clock,
 		logger:        opts.Logger,
-		transport:     opts.Transport,
 		upstream:      opts.Upstream,
 		upstreamCache: opts.UpstreamCache,
 		zoneCache:     opts.ZoneCache,
@@ -66,7 +63,10 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.DNSQuery, clien
 	}
 
 	// 4. If not found, resolve via upstream client
-	response, err := r.resolveUpstream(query, r.clock.Now())
+	// if the ctx is cancelled, this will return an error
+	// This allows the resolver to respect cancellation requests from the transport layer.
+	// It also allows for timeouts to be applied at the transport level.
+	response, err := r.resolveUpstream(ctx, query, r.clock.Now())
 	if err != nil {
 		r.logger.Error(map[string]any{
 			"error":     err,
@@ -113,11 +113,11 @@ func (r *Resolver) checkUpstreamCache(query domain.DNSQuery) ([]domain.ResourceR
 	return r.upstreamCache.Get(query.CacheKey())
 }
 
-func (r *Resolver) resolveUpstream(query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveUpstream(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
 	if r.upstream == nil {
 		return domain.DNSResponse{}, fmt.Errorf("no upstream client configured")
 	}
-	return r.upstream.Resolve(context.Background(), query, now)
+	return r.upstream.Resolve(ctx, query, now)
 }
 
 func (r *Resolver) cacheUpstreamResponse(response domain.DNSResponse) error {
