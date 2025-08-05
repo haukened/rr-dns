@@ -522,6 +522,344 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 	}
 }
 
+func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
+	codec := &udpCodec{}
+	timeFixture := time.Unix(1234567890, 0)
+
+	tests := []struct {
+		name       string
+		data       []byte
+		expectedID uint16
+		checkResp  func(domain.DNSResponse) bool
+		wantErr    string
+	}{
+		{
+			name: "valid response with authority records",
+			data: func() []byte {
+				data := make([]byte, 0, 200)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=1, ARCOUNT=0
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // NSCOUNT (1 authority record)
+				data = binary.BigEndian.AppendUint16(data, 0)      // ARCOUNT
+
+				// Question: example.com A
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                        // end of name
+				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
+				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
+
+				// Authority record: example.com SOA
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                           // end of name
+				data = binary.BigEndian.AppendUint16(data, 6)    // TYPE SOA
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 1)                // dummy SOA data
+
+				return data
+			}(),
+			expectedID: 12345,
+			checkResp: func(r domain.DNSResponse) bool {
+				return r.RCode == domain.NOERROR &&
+					len(r.Answers) == 0 &&
+					len(r.Authority) == 1
+			},
+		},
+		{
+			name: "response with multiple authority records",
+			data: func() []byte {
+				data := make([]byte, 0, 300)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=2, ARCOUNT=0
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8403) // flags: response, authoritative, NXDOMAIN
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 2)      // NSCOUNT (2 authority records)
+				data = binary.BigEndian.AppendUint16(data, 0)      // ARCOUNT
+
+				// Question: missing.example.com A
+				data = append(data, 7) // length of "missing"
+				data = append(data, []byte("missing")...)
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                        // end of name
+				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
+				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
+
+				// First authority record: example.com SOA
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                           // end of name
+				data = binary.BigEndian.AppendUint16(data, 6)    // TYPE SOA
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 1)                // dummy SOA data
+
+				// Second authority record: example.com NS
+				// Use compression pointer to "example.com" from question section (offset 12+8=20)
+				data = append(data, 192, 20)                     // compression pointer to "example.com"
+				data = binary.BigEndian.AppendUint16(data, 2)    // TYPE NS
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 2)                // dummy NS data
+
+				return data
+			}(),
+			expectedID: 12345,
+			checkResp: func(r domain.DNSResponse) bool {
+				return r.RCode == domain.NXDOMAIN &&
+					len(r.Answers) == 0 &&
+					len(r.Authority) == 2
+			},
+		},
+		{
+			name: "authority record parsing error",
+			data: func() []byte {
+				data := make([]byte, 0, 100)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=1, ARCOUNT=0
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // NSCOUNT (1 authority record)
+				data = binary.BigEndian.AppendUint16(data, 0)      // ARCOUNT
+
+				// Question: example.com A
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                        // end of name
+				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
+				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
+
+				// Malformed authority record (truncated after name)
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0) // end of name
+				// Missing TYPE, CLASS, TTL, RDLENGTH, RDATA
+
+				return data
+			}(),
+			expectedID: 12345,
+			wantErr:    "truncated record section after name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := codec.DecodeResponse(tt.data, tt.expectedID, timeFixture)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				if tt.checkResp != nil {
+					assert.True(t, tt.checkResp(result), "response validation failed")
+				}
+			}
+		})
+	}
+}
+
+func TestUdpCodec_DecodeResponse_AdditionalRecords(t *testing.T) {
+	codec := &udpCodec{}
+	timeFixture := time.Unix(1234567890, 0)
+
+	tests := []struct {
+		name       string
+		data       []byte
+		expectedID uint16
+		checkResp  func(domain.DNSResponse) bool
+		wantErr    string
+	}{
+		{
+			name: "valid response with additional records",
+			data: func() []byte {
+				data := make([]byte, 0, 200)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=1, NSCOUNT=0, ARCOUNT=1
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // NSCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // ARCOUNT (1 additional record)
+
+				// Question: example.com MX
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                         // end of name
+				data = binary.BigEndian.AppendUint16(data, 15) // QTYPE MX
+				data = binary.BigEndian.AppendUint16(data, 1)  // QCLASS IN
+
+				// Answer record: example.com MX
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                           // end of name
+				data = binary.BigEndian.AppendUint16(data, 15)   // TYPE MX
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 10)               // dummy MX data
+
+				// Additional record: mail.example.com A
+				data = append(data, 4) // length of "mail"
+				data = append(data, []byte("mail")...)
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                           // end of name
+				data = binary.BigEndian.AppendUint16(data, 1)    // TYPE A
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 100)              // IP address 192.0.2.100
+
+				return data
+			}(),
+			expectedID: 12345,
+			checkResp: func(r domain.DNSResponse) bool {
+				return r.RCode == domain.NOERROR &&
+					len(r.Answers) == 1 &&
+					len(r.Additional) == 1
+			},
+		},
+		{
+			name: "response with multiple additional records",
+			data: func() []byte {
+				data := make([]byte, 0, 300)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=1, ARCOUNT=2
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // NSCOUNT
+				data = binary.BigEndian.AppendUint16(data, 2)      // ARCOUNT (2 additional records)
+
+				// Question: example.com NS
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                        // end of name
+				data = binary.BigEndian.AppendUint16(data, 2) // QTYPE NS
+				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
+
+				// Authority record: example.com NS ns1.example.com
+				data = append(data, 192, 12)                     // compression pointer to "example.com"
+				data = binary.BigEndian.AppendUint16(data, 2)    // TYPE NS
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 1)                // dummy NS data
+
+				// First additional record: ns1.example.com A
+				data = append(data, 3) // length of "ns1"
+				data = append(data, []byte("ns1")...)
+				data = append(data, 192, 12)                     // compression pointer to "example.com"
+				data = binary.BigEndian.AppendUint16(data, 1)    // TYPE A
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 1)                // IP address 192.0.2.1
+
+				// Second additional record: ns2.example.com A
+				data = append(data, 3) // length of "ns2"
+				data = append(data, []byte("ns2")...)
+				data = append(data, 192, 12)                     // compression pointer to "example.com"
+				data = binary.BigEndian.AppendUint16(data, 1)    // TYPE A
+				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
+				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
+				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
+				data = append(data, 192, 0, 2, 2)                // IP address 192.0.2.2
+
+				return data
+			}(),
+			expectedID: 12345,
+			checkResp: func(r domain.DNSResponse) bool {
+				return r.RCode == domain.NOERROR &&
+					len(r.Answers) == 0 &&
+					len(r.Authority) == 1 &&
+					len(r.Additional) == 2
+			},
+		},
+		{
+			name: "additional record parsing error",
+			data: func() []byte {
+				data := make([]byte, 0, 100)
+				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=0, ARCOUNT=1
+				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
+				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
+				data = binary.BigEndian.AppendUint16(data, 1)      // QDCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // ANCOUNT
+				data = binary.BigEndian.AppendUint16(data, 0)      // NSCOUNT
+				data = binary.BigEndian.AppendUint16(data, 1)      // ARCOUNT (1 additional record)
+
+				// Question: example.com A
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0)                        // end of name
+				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
+				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
+
+				// Malformed additional record (truncated after name)
+				data = append(data, 7) // length of "example"
+				data = append(data, []byte("example")...)
+				data = append(data, 3) // length of "com"
+				data = append(data, []byte("com")...)
+				data = append(data, 0) // end of name
+				// Missing TYPE, CLASS, TTL, RDLENGTH, RDATA
+
+				return data
+			}(),
+			expectedID: 12345,
+			wantErr:    "truncated record section after name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := codec.DecodeResponse(tt.data, tt.expectedID, timeFixture)
+
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+				if tt.checkResp != nil {
+					assert.True(t, tt.checkResp(result), "response validation failed")
+				}
+			}
+		})
+	}
+}
+
 func TestDecodeName(t *testing.T) {
 	tests := []struct {
 		name       string
