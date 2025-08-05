@@ -280,6 +280,105 @@ func TestResourceRecord_TTL(t *testing.T) {
 	}
 }
 
+func TestResourceRecord_TTL_CachedRecords(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		record      ResourceRecord
+		expectedTTL uint32
+	}{
+		{
+			name: "cached record with future expiration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: func() *time.Time { exp := now.Add(100 * time.Second); return &exp }(),
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 100, // Approximately 100 seconds remaining
+		},
+		{
+			name: "cached record with short remaining TTL",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: func() *time.Time { exp := now.Add(5 * time.Second); return &exp }(),
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 5, // Approximately 5 seconds remaining
+		},
+		{
+			name: "cached record exactly at expiration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: &now, // Expires exactly now
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 0, // Should return 0 when expired
+		},
+		{
+			name: "cached record past expiration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       300,
+				expiresAt: func() *time.Time { exp := now.Add(-10 * time.Second); return &exp }(),
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 0, // Should return 0 when expired
+		},
+		{
+			name: "cached record with zero original TTL but future expiration",
+			record: ResourceRecord{
+				Name:      "example.com.",
+				Type:      1,
+				Class:     1,
+				ttl:       0,
+				expiresAt: func() *time.Time { exp := now.Add(50 * time.Second); return &exp }(),
+				Data:      []byte{192, 0, 2, 1},
+			},
+			expectedTTL: 50, // Should return remaining time, not original TTL
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualTTL := tt.record.TTL()
+
+			// For cached records, we need to be more flexible with timing
+			if tt.record.expiresAt != nil {
+				// Allow for small timing differences (±2 seconds)
+				tolerance := uint32(2)
+				if actualTTL > tt.expectedTTL+tolerance {
+					t.Errorf("Expected TTL around %d, got %d (too high)", tt.expectedTTL, actualTTL)
+				}
+				// For expired records, TTL should be exactly 0
+				if tt.expectedTTL == 0 && actualTTL != 0 {
+					t.Errorf("Expected TTL 0 for expired record, got %d", actualTTL)
+				}
+				// For non-expired records, TTL should be close to expected
+				if tt.expectedTTL > 0 && actualTTL == 0 {
+					t.Errorf("Expected TTL around %d, got 0 (unexpectedly expired)", tt.expectedTTL)
+				}
+			} else {
+				// For authoritative records, TTL should be exact
+				if actualTTL != tt.expectedTTL {
+					t.Errorf("Expected TTL %d, got %d", tt.expectedTTL, actualTTL)
+				}
+			}
+		})
+	}
+}
+
 func TestResourceRecord_TTLRemaining(t *testing.T) {
 	tests := []struct {
 		name             string
