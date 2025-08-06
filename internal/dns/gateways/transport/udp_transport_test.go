@@ -274,7 +274,6 @@ func TestUDPTransport_CodecDecodeError(t *testing.T) {
 
 	err := transport.Start(ctx, handler)
 	require.NoError(t, err)
-	defer transport.Stop()
 
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
 
@@ -292,6 +291,9 @@ func TestUDPTransport_CodecDecodeError(t *testing.T) {
 	// Verify expectations
 	codec.AssertExpectations(t)
 	mockLogger.AssertExpectations(t)
+
+	err = transport.Stop()
+	require.NoError(t, err)
 }
 
 func TestUDPTransport_CodecEncodeError(t *testing.T) {
@@ -332,7 +334,6 @@ func TestUDPTransport_CodecEncodeError(t *testing.T) {
 
 	err := transport.Start(ctx, handler)
 	require.NoError(t, err)
-	defer transport.Stop()
 
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
 
@@ -351,6 +352,9 @@ func TestUDPTransport_CodecEncodeError(t *testing.T) {
 	codec.AssertExpectations(t)
 	handler.AssertExpectations(t)
 	mockLogger.AssertExpectations(t)
+
+	err = transport.Stop()
+	require.NoError(t, err)
 }
 
 func TestUDPTransport_ContextCancellation(t *testing.T) {
@@ -415,7 +419,6 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 
 	err := transport.Start(ctx, handler)
 	require.NoError(t, err)
-	defer transport.Stop()
 
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
 
@@ -442,7 +445,12 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 			}
 
 			responseBuffer := make([]byte, 512)
-			clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			err = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if err != nil {
+				t.Errorf("Failed to set read deadline: %v", err)
+				return
+			}
+
 			n, err := clientConn.Read(responseBuffer)
 			if err != nil {
 				t.Errorf("Failed to read response: %v", err)
@@ -456,6 +464,9 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	err = transport.Stop()
+	require.NoError(t, err)
 }
 
 func TestUDPTransport_InvalidPortBind(t *testing.T) {
