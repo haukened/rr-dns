@@ -286,6 +286,50 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 			},
 			wantErr: "label too long",
 		},
+		{
+			name: "too many answer records",
+			response: domain.DNSResponse{
+				ID:    1,
+				RCode: 0,
+				Answers: func() []domain.ResourceRecord {
+					// Create more than 65535 answer records to trigger bounds check
+					answers := make([]domain.ResourceRecord, 65536)
+					for i := range answers {
+						answers[i] = domain.ResourceRecord{
+							Name:  "example.com.",
+							Type:  1,
+							Class: 1,
+							Data:  []byte{192, 0, 2, 1},
+						}
+					}
+					return answers
+				}(),
+			},
+			wantErr: "too many answer records: 65536 (max 65535)",
+		},
+		{
+			name: "resource record data too large",
+			response: domain.DNSResponse{
+				ID:    1,
+				RCode: 0,
+				Answers: []domain.ResourceRecord{
+					{
+						Name:  "example.com.",
+						Type:  1,
+						Class: 1,
+						Data: func() []byte {
+							// Create data larger than 65535 bytes to trigger bounds check
+							data := make([]byte, 65536)
+							for i := range data {
+								data[i] = byte(i % 256)
+							}
+							return data
+						}(),
+					},
+				},
+			},
+			wantErr: "resource record data too large: 65536 bytes (max 65535)",
+		},
 	}
 
 	for _, tt := range tests {

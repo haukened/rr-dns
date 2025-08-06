@@ -130,7 +130,14 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 	_ = binary.Write(&buf, binary.BigEndian, resp.ID)
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0x8180)) // Flags: standard response, RA=1
 	_ = binary.Write(&buf, binary.BigEndian, uint16(1))      // QDCOUNT
-	_ = binary.Write(&buf, binary.BigEndian, uint16(len(resp.Answers)))
+
+	// Safely convert slice length to uint16 with bounds check
+	answerCount := len(resp.Answers)
+	if answerCount > 65535 {
+		return nil, fmt.Errorf("too many answer records: %d (max 65535)", answerCount)
+	}
+	_ = binary.Write(&buf, binary.BigEndian, uint16(answerCount))
+
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // NSCOUNT
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // ARCOUNT
 
@@ -153,7 +160,14 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 		_ = binary.Write(&buf, binary.BigEndian, uint16(rr.Type))
 		_ = binary.Write(&buf, binary.BigEndian, uint16(rr.Class))
 		_ = binary.Write(&buf, binary.BigEndian, uint32(rr.TTLRemaining().Seconds()))
-		_ = binary.Write(&buf, binary.BigEndian, uint16(len(rr.Data)))
+
+		// Safely convert data length to uint16 with bounds check
+		dataLen := len(rr.Data)
+		if dataLen > 65535 {
+			return nil, fmt.Errorf("resource record data too large: %d bytes (max 65535)", dataLen)
+		}
+		_ = binary.Write(&buf, binary.BigEndian, uint16(dataLen))
+
 		buf.Write(rr.Data)
 	}
 	return buf.Bytes(), nil
@@ -172,7 +186,7 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time)
 
 	// Parse flags to extract RCode (lower 4 bits of byte 3)
 	flags := binary.BigEndian.Uint16(data[2:4])
-	rcode := domain.RCode(flags & 0x000F)
+	rcode := domain.RCode(uint8(flags & 0x000F))
 
 	qdCount := binary.BigEndian.Uint16(data[4:6])
 	anCount := binary.BigEndian.Uint16(data[6:8])
