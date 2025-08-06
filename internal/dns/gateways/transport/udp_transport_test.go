@@ -492,3 +492,151 @@ func TestUDPTransport_InterfaceCompliance(t *testing.T) {
 	addr := transport.Address()
 	assert.IsType(t, "", addr)
 }
+
+// TestUDPTransport_StopWithNilConnection tests Stop() method when connection is nil
+func TestUDPTransport_StopWithNilConnection(t *testing.T) {
+	codec := &MockDNSCodec{}
+	logger := &MockLogger{}
+
+	logger.On("Info", mock.Anything, "DNS transport stopped").Once()
+
+	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
+
+	// Simulate running state with nil connection
+	transport.mu.Lock()
+	transport.running = true
+	transport.conn = nil
+	transport.mu.Unlock()
+
+	err := transport.Stop()
+	assert.NoError(t, err)
+	assert.False(t, transport.running)
+
+	logger.AssertExpectations(t)
+}
+
+// TestUDPTransport_WriteToUDPError tests handlePacket when WriteToUDP fails
+func TestUDPTransport_WriteToUDPError(t *testing.T) {
+	codec := &MockDNSCodec{}
+	logger := &testLogger{} // Use simple logger instead of mock to avoid complexity
+	handler := &MockDNSResponder{}
+
+	// Setup test data
+	testQuery := domain.DNSQuery{
+		ID:   12345,
+		Name: "example.com.",
+		Type: 1,
+	}
+
+	testResponse := domain.DNSResponse{
+		ID:    12345,
+		RCode: 0,
+	}
+
+	queryData := []byte{0x01, 0x02, 0x03}
+	responseData := []byte{0x04, 0x05, 0x06}
+	clientAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+
+	// Setup mocks
+	codec.On("DecodeQuery", queryData).Return(testQuery, nil)
+	codec.On("EncodeResponse", testResponse).Return(responseData, nil)
+	handler.On("HandleQuery", mock.Anything, testQuery, clientAddr).Return(testResponse, nil)
+
+	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
+
+	// Start transport to get a real connection
+	ctx := context.Background()
+	err := transport.Start(ctx, handler)
+	require.NoError(t, err)
+
+	// Close the connection to force WriteToUDP to fail
+	transport.conn.Close()
+
+	// Call handlePacket directly to test write error path
+	transport.handlePacket(ctx, queryData, clientAddr, handler)
+
+	// Clean up
+	transport.Stop()
+
+	codec.AssertExpectations(t)
+	handler.AssertExpectations(t)
+}
+
+// TestUDPTransport_HandlerError tests handlePacket when DNS handler returns error
+func TestUDPTransport_HandlerError(t *testing.T) {
+	codec := &MockDNSCodec{}
+	logger := &testLogger{} // Use simple logger instead of mock
+	handler := &MockDNSResponder{}
+
+	// Setup test data
+	testQuery := domain.DNSQuery{
+		ID:   12345,
+		Name: "example.com.",
+		Type: 1,
+	}
+
+	queryData := []byte{0x01, 0x02, 0x03}
+	clientAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+
+	// Setup mocks
+	codec.On("DecodeQuery", queryData).Return(testQuery, nil)
+	handler.On("HandleQuery", mock.Anything, testQuery, clientAddr).Return(domain.DNSResponse{}, assert.AnError)
+
+	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
+
+	// Call handlePacket directly to test handler error path
+	ctx := context.Background()
+	transport.handlePacket(ctx, queryData, clientAddr, handler)
+
+	codec.AssertExpectations(t)
+	handler.AssertExpectations(t)
+}
+
+// TestUDPTransport_ListenLoopReadError tests listenLoop handling read errors during normal operation
+func TestUDPTransport_ListenLoopReadError(t *testing.T) {
+	codec := &MockDNSCodec{}
+	logger := &testLogger{} // Use simple logger to avoid mock complexity
+	handler := &MockDNSResponder{}
+
+	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
+
+	// Start transport to get into running state
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := transport.Start(ctx, handler)
+	require.NoError(t, err)
+
+	// Force a read error by closing connection while transport is still marked as running
+	transport.conn.Close()
+
+	// Give the listen loop a moment to process the read error
+	time.Sleep(10 * time.Millisecond)
+
+	// Clean up
+	transport.Stop()
+}
+
+// TestUDPTransport_ContextCancellationInListenLoop tests the context cancellation path in listenLoop
+func TestUDPTransport_ContextCancellationInListenLoop(t *testing.T) {
+	codec := &MockDNSCodec{}
+	logger := &testLogger{}
+	handler := &MockDNSResponder{}
+
+	transport := NewUDPTransport("127.0.0.1:0", codec, logger)
+
+	// Create a context that we can cancel
+	ctx, cancel := context.WithCancel(context.Background())
+
+	err := transport.Start(ctx, handler)
+	require.NoError(t, err)
+
+	// Cancel the context to trigger the ctx.Done() case in listenLoop
+	cancel()
+
+	// Give the listen loop a moment to process the context cancellation
+	time.Sleep(10 * time.Millisecond)
+
+	// Clean up
+	transport.Stop()
+}

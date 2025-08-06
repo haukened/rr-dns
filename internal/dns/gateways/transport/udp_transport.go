@@ -83,10 +83,12 @@ func (t *UDPTransport) Stop() error {
 	// Signal stop and close connection
 	close(t.stopCh)
 
+	var closeErr error
 	if t.conn != nil {
-		if err := t.conn.Close(); err != nil {
+		closeErr = t.conn.Close()
+		if closeErr != nil {
 			t.logger.Warn(map[string]any{
-				"error": err.Error(),
+				"error": closeErr.Error(),
 			}, "Error closing UDP connection")
 		}
 	}
@@ -98,7 +100,7 @@ func (t *UDPTransport) Stop() error {
 		"address":   t.addr,
 	}, "DNS transport stopped")
 
-	return nil
+	return closeErr
 }
 
 // Address returns the network address the transport is bound to.
