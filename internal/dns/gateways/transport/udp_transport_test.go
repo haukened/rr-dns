@@ -486,7 +486,8 @@ func TestUDPTransport_InvalidPortBind(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to bind UDP socket")
 	} else {
 		// If it succeeds (running as root), clean up
-		transport.Stop()
+		err = transport.Stop()
+		assert.NoError(t, err)
 	}
 }
 
@@ -569,8 +570,10 @@ func TestUDPTransport_WriteToUDPError(t *testing.T) {
 	// Call handlePacket directly to test write error path
 	transport.handlePacket(ctx, queryData, clientAddr, handler)
 
-	// Clean up
-	transport.Stop()
+	// Clean up - we've already closed the connection, so just stop the transport
+	// this should throw
+	err = transport.Stop()
+	require.Error(t, err)
 
 	codec.AssertExpectations(t)
 	handler.AssertExpectations(t)
@@ -628,7 +631,8 @@ func TestUDPTransport_ListenLoopReadError(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Clean up
-	transport.Stop()
+	err = transport.Stop()
+	require.Error(t, err)
 }
 
 // TestUDPTransport_ContextCancellationInListenLoop tests the context cancellation path in listenLoop
@@ -652,5 +656,6 @@ func TestUDPTransport_ContextCancellationInListenLoop(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Clean up
-	transport.Stop()
+	err = transport.Stop()
+	require.NoError(t, err)
 }
