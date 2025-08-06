@@ -114,9 +114,9 @@ jobs:
         GOARCH: ${{ matrix.goarch }}
       run: |
         if [ "${{ matrix.goos }}" = "windows" ]; then
-          go build -o rrdnsd-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/rrdnsd
+          go build -o rrdnsd-${{ matrix.goos }}-${{ matrix.goarch }}.exe ./cmd/rr-dnsd
         else
-          go build -o rrdnsd-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/rrdnsd
+          go build -o rrdnsd-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/rr-dnsd
         fi
 
     - name: Upload binary artifacts

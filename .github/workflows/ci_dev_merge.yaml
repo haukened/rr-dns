@@ -34,7 +34,7 @@ jobs:
       run: go mod download
 
     - name: Build binary
-      run: go build -o rrdnsd ./cmd/rrdnsd
+      run: go build -o rrdnsd ./cmd/rr-dnsd
 
     - name: Run tests with coverage
       run: go test -v -coverprofile=coverage.txt ./...
