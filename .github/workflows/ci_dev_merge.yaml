@@ -1,0 +1,52 @@
+name: Post-Merge CI on Develop
+
+on:
+  push:
+    branches: [ develop ]
+
+env:
+  GO_VERSION: '1.24'
+
+jobs:
+  build-binary:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build binary
+      run: go build -o rrdnsd ./cmd/rrdnsd
+
+    - name: Run tests with coverage
+      run: go test -v -coverprofile=coverage.txt ./...
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        # Codecov now requires a token for all uploads (public and private)
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rrdnsd-binary
+        path: rrdnsd
