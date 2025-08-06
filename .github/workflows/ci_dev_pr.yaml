@@ -3,6 +3,11 @@ name: CI on PR to Develop
 on:
   pull_request:
     branches: [ develop ]
+    paths-ignore:
+      - '.github/**'
+      - '**/README.md'
+      - 'docs/**'
+      - './Makefile'
 
 env:
   GO_VERSION: '1.24'
