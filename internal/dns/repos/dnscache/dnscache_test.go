@@ -449,7 +449,12 @@ func TestDnsCache_Len(t *testing.T) {
 		t.Fatalf("failed to create rr1: %v", err)
 	}
 
-	cache.Set([]domain.ResourceRecord{rr1})
+	err = cache.Set([]domain.ResourceRecord{rr1})
+	if err != nil {
+		t.Fatalf("failed to set rr1: %v", err)
+	}
+
+	// After setting one record, cache length should be 1
 	if cache.Len() != 1 {
 		t.Errorf("expected cache length 1, got %d", cache.Len())
 	}
@@ -466,7 +471,10 @@ func TestDnsCache_Len(t *testing.T) {
 		t.Fatalf("failed to create rr2: %v", err)
 	}
 
-	cache.Set([]domain.ResourceRecord{rr2})
+	err = cache.Set([]domain.ResourceRecord{rr2})
+	if err != nil {
+		t.Fatalf("failed to set rr2: %v", err)
+	}
 	if cache.Len() != 2 {
 		t.Errorf("expected cache length 2, got %d", cache.Len())
 	}
