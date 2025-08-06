@@ -159,7 +159,12 @@ func buildRepositories(cfg *config.AppConfig, logger log.Logger) (*repositories,
 		upstreamCache = nil // No caching
 		log.Info(map[string]any{"disabled": true}, "DNS response caching disabled")
 	} else {
-		upstreamCache, err = dnscache.New(int(cfg.CacheSize))
+		// Safely convert uint to int with bounds check
+		cacheSize := cfg.CacheSize
+		if cacheSize > uint(^uint(0)>>1) { // Check if it exceeds max int
+			return nil, fmt.Errorf("cache size too large: %d (max %d)", cacheSize, ^uint(0)>>1)
+		}
+		upstreamCache, err = dnscache.New(int(cacheSize))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create upstream cache: %w", err)
 		}
