@@ -26,7 +26,6 @@ func BenchmarkUDPTransport_QueryProcessing(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to start transport: %v", err)
 	}
-	defer transport.Stop()
 
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
 
@@ -46,13 +45,21 @@ func BenchmarkUDPTransport_QueryProcessing(b *testing.B) {
 			}
 
 			responseBuffer := make([]byte, 512)
-			clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			err = clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			if err != nil {
+				b.Errorf("Failed to set read deadline: %v", err)
+			}
 			_, err = clientConn.Read(responseBuffer)
 			if err != nil {
 				b.Errorf("Failed to read response: %v", err)
 			}
 		}
 	})
+
+	err = transport.Stop()
+	if err != nil {
+		b.Fatalf("Failed to stop transport: %v", err)
+	}
 }
 
 // BenchmarkUDPTransport_StartStop benchmarks the start/stop performance
@@ -95,7 +102,6 @@ func BenchmarkUDPTransport_ConcurrentConnections(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to start transport: %v", err)
 	}
-	defer transport.Stop()
 
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
 	// Use sync.Pool to reuse UDP connections and avoid port exhaustion.
@@ -134,7 +140,10 @@ func BenchmarkUDPTransport_ConcurrentConnections(b *testing.B) {
 			}
 
 			responseBuffer := make([]byte, 512)
-			clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			err = clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			if err != nil {
+				b.Errorf("Failed to set read deadline: %v", err)
+			}
 			_, err = clientConn.Read(responseBuffer)
 			if err != nil {
 				b.Errorf("Failed to read response: %v", err)
@@ -143,6 +152,11 @@ func BenchmarkUDPTransport_ConcurrentConnections(b *testing.B) {
 			connPool.Put(clientConn)
 		}
 	})
+
+	err = transport.Stop()
+	if err != nil {
+		b.Fatalf("Failed to stop transport: %v", err)
+	}
 }
 
 type StubDNSCodec struct{}

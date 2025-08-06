@@ -220,7 +220,6 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 
 	err := transport.Start(ctx, handler)
 	require.NoError(t, err)
-	defer transport.Stop()
 
 	// Get the actual address the transport is bound to
 	actualAddr := transport.conn.LocalAddr().(*net.UDPAddr)
@@ -236,7 +235,8 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 
 	// Read response
 	responseBuffer := make([]byte, 512)
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	err = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	require.NoError(t, err)
 	n, err := clientConn.Read(responseBuffer)
 	require.NoError(t, err)
 
@@ -246,6 +246,9 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 	// Verify mock expectations
 	codec.AssertExpectations(t)
 	handler.AssertExpectations(t)
+
+	err = transport.Stop()
+	require.NoError(t, err)
 }
 
 func TestUDPTransport_CodecDecodeError(t *testing.T) {
