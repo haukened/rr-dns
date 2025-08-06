@@ -96,8 +96,8 @@ RR-DNS currently supports:
 - [x] **Configuration Management**: Environment variables and CLI argument support
 - [x] **Comprehensive Testing**: 100% test coverage on core infrastructure
 - [x] **Error Handling**: Robust error handling for malformed packets and edge cases
-- [ ] **UDP Server**: DNS query server implementation
-- [ ] **Query Resolution Service**: Orchestration of upstream, cache, and zone lookups
+- [x] **UDP Server**: DNS query server implementation
+- [x] **Query Resolution Service**: Orchestration of upstream, cache, and zone lookups
 - [ ] **Ad/Tracker Blocking**: Blocklist subscription and filtering
 
 ---
@@ -106,7 +106,7 @@ RR-DNS currently supports:
 
 | Phase       | Features                                       | Status |
 |-------------|------------------------------------------------|---------|
-| **v0.1**    | Complete DNS server: wire codec, UDP server, upstream resolution, caching, zone support | 🚧 In Progress |
+| **v0.1**    | Complete DNS server: wire codec, UDP server, upstream resolution, caching, zone support | ✅ Complete! |
 | **v0.2**    | Blocklist subscriptions (ad/tracker blocking) | 📋 Planned |
 | **v0.3**    | Docker support, metrics, health checks        | 📋 Planned |
 | **v0.4**    | Web admin UI, config reloading                | 📋 Planned |
@@ -121,11 +121,12 @@ RR-DNS currently supports:
 - Structured logging with development and production modes
 - Configuration management with environment variables
 - Comprehensive test coverage on all infrastructure components
-
-### Remaining for v0.1 🚧
 - UDP DNS server implementation
 - Query resolution service orchestration
 - Integration testing and end-to-end validation
+
+### Remaining for v0.1 🚧
+- None! 🎉
 
 ---
 
