@@ -186,6 +186,7 @@ func (c *udpCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time)
 
 	// Parse flags to extract RCode (lower 4 bits of byte 3)
 	flags := binary.BigEndian.Uint16(data[2:4])
+	//gosec:disable G115 -- uint16 & 0x000F always results in a uint8 value, so this is safe.
 	rcode := domain.RCode(uint8(flags & 0x000F))
 
 	qdCount := binary.BigEndian.Uint16(data[4:6])
