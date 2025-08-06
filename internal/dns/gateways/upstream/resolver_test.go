@@ -41,8 +41,9 @@ func (m *MockCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 // MockConn implements net.Conn for testing
 type MockConn struct {
 	mock.Mock
-	readData  []byte
-	writeData []byte
+	readData         []byte
+	writeData        []byte
+	setDeadlineError error // if non-nil, SetDeadline will return this error
 }
 
 func (m *MockConn) Read(b []byte) (n int, err error) {
@@ -66,9 +67,14 @@ func (m *MockConn) Close() error {
 	return args.Error(0)
 }
 
-func (m *MockConn) LocalAddr() net.Addr                { return nil }
-func (m *MockConn) RemoteAddr() net.Addr               { return nil }
-func (m *MockConn) SetDeadline(t time.Time) error      { return nil }
+func (m *MockConn) LocalAddr() net.Addr  { return nil }
+func (m *MockConn) RemoteAddr() net.Addr { return nil }
+func (m *MockConn) SetDeadline(t time.Time) error {
+	if m.setDeadlineError != nil {
+		return m.setDeadlineError
+	}
+	return nil
+}
 func (m *MockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
 
@@ -568,4 +574,40 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 			conn.AssertExpectations(t)
 		})
 	}
+}
+
+func TestResolver_queryServerWithContext_SetDeadlineError(t *testing.T) {
+	query := createTestQuery()
+	tf := createTimeFixture()
+
+	codec := &MockCodec{}
+	conn := &MockConn{
+		setDeadlineError: errors.New("set deadline failed"),
+	}
+
+	conn.On("Close").Return(nil)
+
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		return conn, nil
+	}
+
+	resolver, err := NewResolver(Options{
+		Servers: []string{"1.1.1.1:53"},
+		Timeout: time.Second,
+		Codec:   codec,
+		Dial:    dial,
+	})
+	assert.NoError(t, err)
+
+	// Create context with deadline to trigger SetDeadline call
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	_, err = resolver.queryServerWithContext(ctx, "1.1.1.1:53", query, tf)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to set connection deadline")
+	assert.Contains(t, err.Error(), "set deadline failed")
+
+	conn.AssertExpectations(t)
 }

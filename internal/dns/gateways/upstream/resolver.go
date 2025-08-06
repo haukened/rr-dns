@@ -15,6 +15,7 @@ import (
 const (
 	errNoServersProvided = "no upstream DNS servers provided"
 	errCodecRequired     = "DNS codec is required"
+	errConnDeadline      = "failed to set connection deadline: %w"
 	errServerFailed      = "server %s: %w"
 	errAllServersFailed  = "all %d upstream servers failed"
 	errQueryTimeout      = "query timeout after %v"
@@ -177,7 +178,10 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 
 	// Set deadline from context
 	if deadline, ok := ctx.Deadline(); ok {
-		conn.SetDeadline(deadline)
+		err = conn.SetDeadline(deadline)
+		if err != nil {
+			return domain.DNSResponse{}, fmt.Errorf(errConnDeadline, err)
+		}
 	}
 
 	// Encode and send query
