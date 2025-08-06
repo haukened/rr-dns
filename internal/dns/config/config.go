@@ -96,6 +96,14 @@ var envLoader = func(k *koanf.Koanf) error {
 	}), nil)
 }
 
+// defaultLoader loads default configuration values into the provided Koanf instance
+// using the structs provider and the DEFAULT_APP_CONFIG struct. It returns an error
+// if loading fails.
+var defaultLoader = func(k *koanf.Koanf) error {
+	// Load default values using structs provider.
+	return k.Load(structs.Provider(DEFAULT_APP_CONFIG, "koanf"), nil)
+}
+
 // registerValidation registers a custom validation function "ip_port" with the provided validator.
 // It associates the "ip_port" tag with the validIPPort validation logic.
 // Returns an error if registration fails.
@@ -109,10 +117,13 @@ func Load() (*AppConfig, error) {
 	k := koanf.New(".")
 
 	// Load default values using structs provider.
-	k.Load(structs.Provider(DEFAULT_APP_CONFIG, "koanf"), nil)
+	err := defaultLoader(k)
+	if err != nil {
+		return nil, fmt.Errorf("error loading default config: %w", err)
+	}
 
 	// Load environment variables with prefix "UDNS_", using koanf/providers/env/v2 and Opt pattern.
-	err := envLoader(k)
+	err = envLoader(k)
 	if err != nil {
 		return nil, fmt.Errorf("error loading env: %w", err)
 	}

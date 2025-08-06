@@ -82,7 +82,20 @@ func TestLoad_ValidOverrides(t *testing.T) {
 	}
 }
 
-func TestLoad_WhenKoanfLoadFails(t *testing.T) {
+func TestLoad_WhenKoanfDefaultLoadFails(t *testing.T) {
+	orig := defaultLoader
+	defaultLoader = func(k *koanf.Koanf) error {
+		return errors.New("mocked error")
+	}
+	defer func() { defaultLoader = orig }()
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "mocked error") {
+		t.Fatal("expected error when loading defaults, got nil")
+	}
+}
+
+func TestLoad_WhenKoanfEnvLoadFails(t *testing.T) {
 	orig := envLoader
 	envLoader = func(k *koanf.Koanf) error {
 		return errors.New("mocked error")
@@ -241,5 +254,80 @@ func TestValidIPPort(t *testing.T) {
 		if !tc.expected && err == nil {
 			t.Errorf("validIPPort(%q) = true, want false", tc.input)
 		}
+	}
+}
+func TestDefaultLoader_LoadsDefaults(t *testing.T) {
+	k := koanf.New(".")
+	err := defaultLoader(k)
+	if err != nil {
+		t.Fatalf("defaultLoader returned error: %v", err)
+	}
+
+	var cfg AppConfig
+	if err := k.Unmarshal("", &cfg); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if cfg.CacheSize != DEFAULT_APP_CONFIG.CacheSize {
+		t.Errorf("expected CacheSize=%d, got %d", DEFAULT_APP_CONFIG.CacheSize, cfg.CacheSize)
+	}
+	if cfg.DisableCache != DEFAULT_APP_CONFIG.DisableCache {
+		t.Errorf("expected DisableCache=%v, got %v", DEFAULT_APP_CONFIG.DisableCache, cfg.DisableCache)
+	}
+	if cfg.Env != DEFAULT_APP_CONFIG.Env {
+		t.Errorf("expected Env=%q, got %q", DEFAULT_APP_CONFIG.Env, cfg.Env)
+	}
+	if cfg.LogLevel != DEFAULT_APP_CONFIG.LogLevel {
+		t.Errorf("expected LogLevel=%q, got %q", DEFAULT_APP_CONFIG.LogLevel, cfg.LogLevel)
+	}
+	if cfg.Port != DEFAULT_APP_CONFIG.Port {
+		t.Errorf("expected Port=%d, got %d", DEFAULT_APP_CONFIG.Port, cfg.Port)
+	}
+	if cfg.ZoneDir != DEFAULT_APP_CONFIG.ZoneDir {
+		t.Errorf("expected ZoneDir=%q, got %q", DEFAULT_APP_CONFIG.ZoneDir, cfg.ZoneDir)
+	}
+	if len(cfg.Servers) != len(DEFAULT_APP_CONFIG.Servers) {
+		t.Errorf("expected Servers length %d, got %d", len(DEFAULT_APP_CONFIG.Servers), len(cfg.Servers))
+	} else {
+		for i, v := range DEFAULT_APP_CONFIG.Servers {
+			if cfg.Servers[i] != v {
+				t.Errorf("expected Servers[%d]=%q, got %q", i, v, cfg.Servers[i])
+			}
+		}
+	}
+}
+
+func TestDefaultLoader_ErrorPropagation(t *testing.T) {
+	orig := DEFAULT_APP_CONFIG
+	defer func() { DEFAULT_APP_CONFIG = orig }()
+
+	// Simulate an invalid default config that cannot be unmarshalled (e.g., invalid type)
+	DEFAULT_APP_CONFIG = AppConfig{
+		Servers:   []string{"not_a_valid_ip_port"},
+		Env:       "prod",
+		LogLevel:  "info",
+		Port:      53,
+		ZoneDir:   "/etc/rr-dns/zones/",
+		CacheSize: 1000,
+	}
+
+	k := koanf.New(".")
+	err := defaultLoader(k)
+	if err != nil {
+		t.Fatalf("defaultLoader returned error: %v", err)
+	}
+
+	var cfg AppConfig
+	err = k.Unmarshal("", &cfg)
+	if err != nil {
+		// Should fail validation, not unmarshalling
+		return
+	}
+
+	validate := validator.New(validator.WithRequiredStructEnabled())
+	_ = validate.RegisterValidation("ip_port", validIPPort)
+	err = validate.Struct(&cfg)
+	if err == nil {
+		t.Fatal("expected validation error for invalid default Servers, got nil")
 	}
 }
