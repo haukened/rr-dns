@@ -405,7 +405,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
 			expectedCount:   1,
-			shouldCallCache: false, // nil cache, so no Set() call
+			shouldCallCache: false, // nil cache, so no Get() or Set() calls
 		},
 	}
 
@@ -436,7 +436,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 
 			mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return(tt.upstreamResp, tt.upstreamErr)
 
-			if tt.shouldCallCache && mockUpstreamCache != nil {
+			if tt.shouldCallCache && mockUpstreamCache != nil && tt.upstreamErr == nil {
 				mockUpstreamCache.(*MockCache).On("Set", tt.upstreamResp.Answers).Return(tt.cacheSetErr)
 			}
 
