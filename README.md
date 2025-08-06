@@ -98,35 +98,31 @@ RR-DNS currently supports:
 - [x] **Error Handling**: Robust error handling for malformed packets and edge cases
 - [x] **UDP Server**: DNS query server implementation
 - [x] **Query Resolution Service**: Orchestration of upstream, cache, and zone lookups
+- [ ] **Docker Deployment**: Support deploying in docker containers.
 - [ ] **Ad/Tracker Blocking**: Blocklist subscription and filtering
+- [ ] **Snap Packaging**: Published on snapcraft.io
+- [ ] **Apt Packaging**: Apt packages for Debian/Ubuntu/Derivates
+- [ ] **DNS over HTTPS**: DoH support for extra privacy.
+- [ ] **DNS over TLS**: Secure DNS queries with DoT support
+- [ ] **REST API**: Admin endpoints for health checks and metrics
+- [ ] **Web Admin UI**: Modern web interface for configuration and monitoring
 
 ---
 
 ## 🗺️ Roadmap
 
-| Phase       | Features                                       | Status |
-|-------------|------------------------------------------------|---------|
-| **v0.1**    | Complete DNS server: wire codec, UDP server, upstream resolution, caching, zone support | ✅ Complete! |
-| **v0.2**    | Blocklist subscriptions (ad/tracker blocking) | 📋 Planned |
-| **v0.3**    | Docker support, metrics, health checks        | 📋 Planned |
-| **v0.4**    | Web admin UI, config reloading                | 📋 Planned |
-| **v1.0**    | Snap/apt packages, TLS/DoH support            | 📋 Planned |
-| **v1.1**    | TLS/DoH support                               | 📋 Planned |
-
-### Infrastructure Completed ✅
-- DNS wire format encoding/decoding (100% RFC 1035 compliant)
-- Upstream DNS resolver with connection pooling
-- In-memory DNS response caching with TTL management  
-- Static zone file loading (JSON/YAML/TOML)
-- Structured logging with development and production modes
-- Configuration management with environment variables
-- Comprehensive test coverage on all infrastructure components
-- UDP DNS server implementation
-- Query resolution service orchestration
-- Integration testing and end-to-end validation
-
-### Remaining for v0.1 🚧
-- None! 🎉
+| Version   | Features                                  | Status       |
+|-----------|-------------------------------------------|--------------|
+| **v0.1**  | Core DNS Resolution features              | ✅ Complete  |
+| **v0.2**  | Docker support                            | 📋 Planned   |
+| **v0.3**  | Blocklist subscriptions                   | 📋 Planned   |
+| **v0.4**  | Snap package support                      | 📋 Planned   |
+| **v0.5**  | Apt package support                       | 📋 Planned   |
+| **v1.0**  | Stable release (no UI)                    | 📋 Planned   |
+| **v1.1**  | TLS/DoH support                           | 📋 Planned   |
+| **v1.2**  | REST API for config/query/logs            | 📋 Planned   |
+| **v1.3**  | Web Admin UI                              | 📋 Planned   |
+| **v2.0**  | Stable release with Admin UI              | 📋 Planned   |
 
 ---
 
