@@ -47,7 +47,11 @@ func main() {
 	}
 
 	// Configure global logging
-	log.Configure(cfg.Env, cfg.LogLevel)
+	err = log.Configure(cfg.Env, cfg.LogLevel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Logging configuration error: %v\n", err)
+		os.Exit(1)
+	}
 
 	log.Info(map[string]any{
 		"version":    version,
