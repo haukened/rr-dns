@@ -34,7 +34,10 @@ func BenchmarkDnsCache_Set(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		cache.Set([]domain.ResourceRecord{records[i]})
+		err := cache.Set([]domain.ResourceRecord{records[i]})
+		if err != nil {
+			b.Fatalf("failed to set record: %v", err)
+		}
 	}
 }
 
@@ -57,7 +60,10 @@ func BenchmarkDnsCache_Get(b *testing.B) {
 		b.Fatalf("failed to create record: %v", err)
 	}
 
-	cache.Set([]domain.ResourceRecord{rr})
+	err = cache.Set([]domain.ResourceRecord{rr})
+	if err != nil {
+		b.Fatalf("failed to set record: %v", err)
+	}
 	key := rr.CacheKey()
 
 	b.ResetTimer()
@@ -95,7 +101,10 @@ func BenchmarkDnsCache_SetMultiple(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		cache.Set(records)
+		err = cache.Set(records)
+		if err != nil {
+			b.Fatalf("failed to set records: %v", err)
+		}
 	}
 }
 
@@ -122,7 +131,10 @@ func BenchmarkDnsCache_GetMultiple(b *testing.B) {
 		records[i] = rr
 	}
 
-	cache.Set(records)
+	err = cache.Set(records)
+	if err != nil {
+		b.Fatalf("failed to set records: %v", err)
+	}
 	key := records[0].CacheKey()
 
 	b.ResetTimer()
