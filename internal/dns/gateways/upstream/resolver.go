@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -60,13 +61,13 @@ type Options struct {
 // Sets default timeout to 5 seconds and default dial function if not provided.
 func NewResolver(opts Options) (*Resolver, error) {
 	if len(opts.Servers) == 0 {
-		return nil, fmt.Errorf(errNoServersProvided)
+		return nil, errors.New(errNoServersProvided)
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = 5 * time.Second
 	}
 	if opts.Codec == nil {
-		return nil, fmt.Errorf(errCodecRequired)
+		return nil, errors.New(errCodecRequired)
 	}
 	if opts.Dial == nil {
 		opts.Dial = (&net.Dialer{}).DialContext
