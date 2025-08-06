@@ -1,6 +1,14 @@
-[![Static Badge](https://img.shields.io/badge/Arc42-Docs-blue)](docs/arc42.md) ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/haukened/rr-dns) ![GitHub License](https://img.shields.io/github/license/haukened/rr-dns?color=blue) ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/haukened/rr-dns?color=blue) ![Codecov](https://img.shields.io/codecov/c/github/haukened/rr-dns?color=blue) ![CodeFactor Grade](https://img.shields.io/codefactor/grade/github/haukened/rr-dns?color=blue)
+[![Static Badge](https://img.shields.io/badge/Arc42-Docs-blue)](docs/arc42.md) 
+[![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/haukened/rr-dns)](https://go.dev/dl/)
+[![GitHub License](https://img.shields.io/github/license/haukened/rr-dns?color=blue)](LICENSE) 
+[![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/haukened/rr-dns?color=blue)](https://github.com/haukened/rr-dns/issues)
+[![Codecov](https://img.shields.io/codecov/c/github/haukened/rr-dns?color=blue)](https://app.codecov.io/gh/haukened/rr-dns)
+[![CodeFactor Grade](https://img.shields.io/codefactor/grade/github/haukened/rr-dns?color=blue)](https://www.codefactor.io/repository/github/haukened/rr-dns)
+[![Static Badge](https://img.shields.io/badge/pkg.go.dev-rr--dns-blue)](https://pkg.go.dev/github.com/haukened/rr-dns)
 
- [![Release CI](https://github.com/haukened/rr-dns/actions/workflows/ci_release.yaml/badge.svg)](https://github.com/haukened/rr-dns/actions/workflows/ci_release.yaml) [![Security Scan](https://github.com/haukened/rr-dns/actions/workflows/ci_security.yaml/badge.svg)](https://github.com/haukened/rr-dns/actions/workflows/ci_security.yaml)
+
+ [![Release CI](https://github.com/haukened/rr-dns/actions/workflows/ci_release.yaml/badge.svg)](https://github.com/haukened/rr-dns/actions/workflows/ci_release.yaml) 
+ [![Security Scan](https://github.com/haukened/rr-dns/actions/workflows/ci_security.yaml/badge.svg)](https://github.com/haukened/rr-dns/actions/workflows/ci_security.yaml)
 
 # RR-DNS
 A small, lightning fast, local DNS caching resolver with Ad-Blocking. Written in Go. RR is a [double entendre](https://en.wikipedia.org/wiki/Double_entendre) for "Rapid Resolver" (what it does) and "Resource Record" (the core object of DNS servers).
