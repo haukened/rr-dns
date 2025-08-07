@@ -112,14 +112,15 @@ func (c *udpCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
 	if qdCount != 1 {
 		return domain.DNSQuery{}, errors.New("expected exactly one question")
 	}
-	name, qtype, _, _, err := decodeQuestion(data, 12)
+	name, qtype, qclass, _, err := decodeQuestion(data, 12)
 	if err != nil {
 		return domain.DNSQuery{}, err
 	}
 	return domain.DNSQuery{
-		ID:   id,
-		Name: name,
-		Type: domain.RRType(qtype),
+		ID:    id,
+		Name:  name,
+		Type:  domain.RRType(qtype),
+		Class: domain.RRClass(qclass),
 	}, nil
 }
 
