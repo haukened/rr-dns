@@ -6,10 +6,36 @@ import "fmt"
 // See IANA DNS Parameters for assigned codes.
 type RRType uint16
 
+// DNS Resource Record Type constants
+const (
+	RRTypeA      RRType = 1   // A - IPv4 address
+	RRTypeNS     RRType = 2   // NS - Name server
+	RRTypeCNAME  RRType = 5   // CNAME - Canonical name
+	RRTypeSOA    RRType = 6   // SOA - Start of authority
+	RRTypePTR    RRType = 12  // PTR - Pointer
+	RRTypeMX     RRType = 15  // MX - Mail exchange
+	RRTypeTXT    RRType = 16  // TXT - Text
+	RRTypeAAAA   RRType = 28  // AAAA - IPv6 address
+	RRTypeSRV    RRType = 33  // SRV - Service
+	RRTypeNAPTR  RRType = 35  // NAPTR - Naming authority pointer
+	RRTypeOPT    RRType = 41  // OPT - EDNS option
+	RRTypeDS     RRType = 43  // DS - Delegation signer
+	RRTypeRRSIG  RRType = 46  // RRSIG - Resource record signature
+	RRTypeNSEC   RRType = 47  // NSEC - Next secure
+	RRTypeDNSKEY RRType = 48  // DNSKEY - DNS key
+	RRTypeTLSA   RRType = 52  // TLSA - TLS association
+	RRTypeSVCB   RRType = 64  // SVCB - Service binding
+	RRTypeHTTPS  RRType = 65  // HTTPS - HTTPS binding
+	RRTypeANY    RRType = 255 // ANY - Any type (query only)
+	RRTypeCAA    RRType = 257 // CAA - Certificate authority authorization
+)
+
 // IsValid returns true if the RRType is one of the supported types.
 func (t RRType) IsValid() bool {
 	switch t {
-	case 1, 2, 5, 6, 12, 15, 16, 28, 33, 35, 41, 43, 46, 47, 48, 52, 64, 65, 255, 257:
+	case RRTypeA, RRTypeNS, RRTypeCNAME, RRTypeSOA, RRTypePTR, RRTypeMX, RRTypeTXT,
+		RRTypeAAAA, RRTypeSRV, RRTypeNAPTR, RRTypeOPT, RRTypeDS, RRTypeRRSIG,
+		RRTypeNSEC, RRTypeDNSKEY, RRTypeTLSA, RRTypeSVCB, RRTypeHTTPS, RRTypeANY, RRTypeCAA:
 		return true
 	default:
 		return false
@@ -20,45 +46,45 @@ func (t RRType) IsValid() bool {
 // For unknown types, it returns "UNKNOWN(<value>)".
 func (t RRType) String() string {
 	switch t {
-	case 1:
+	case RRTypeA:
 		return "A"
-	case 2:
+	case RRTypeNS:
 		return "NS"
-	case 5:
+	case RRTypeCNAME:
 		return "CNAME"
-	case 6:
+	case RRTypeSOA:
 		return "SOA"
-	case 12:
+	case RRTypePTR:
 		return "PTR"
-	case 15:
+	case RRTypeMX:
 		return "MX"
-	case 16:
+	case RRTypeTXT:
 		return "TXT"
-	case 28:
+	case RRTypeAAAA:
 		return "AAAA"
-	case 33:
+	case RRTypeSRV:
 		return "SRV"
-	case 35:
+	case RRTypeNAPTR:
 		return "NAPTR"
-	case 41:
+	case RRTypeOPT:
 		return "OPT"
-	case 43:
+	case RRTypeDS:
 		return "DS"
-	case 46:
+	case RRTypeRRSIG:
 		return "RRSIG"
-	case 47:
+	case RRTypeNSEC:
 		return "NSEC"
-	case 48:
+	case RRTypeDNSKEY:
 		return "DNSKEY"
-	case 52:
+	case RRTypeTLSA:
 		return "TLSA"
-	case 64:
+	case RRTypeSVCB:
 		return "SVCB"
-	case 65:
+	case RRTypeHTTPS:
 		return "HTTPS"
-	case 255:
+	case RRTypeANY:
 		return "ANY"
-	case 257:
+	case RRTypeCAA:
 		return "CAA"
 	default:
 		return fmt.Sprintf("UNKNOWN(%d)", t)
@@ -69,45 +95,45 @@ func (t RRType) String() string {
 func RRTypeFromString(s string) RRType {
 	switch s {
 	case "A":
-		return 1
+		return RRTypeA
 	case "NS":
-		return 2
+		return RRTypeNS
 	case "CNAME":
-		return 5
+		return RRTypeCNAME
 	case "SOA":
-		return 6
+		return RRTypeSOA
 	case "PTR":
-		return 12
+		return RRTypePTR
 	case "MX":
-		return 15
+		return RRTypeMX
 	case "TXT":
-		return 16
+		return RRTypeTXT
 	case "AAAA":
-		return 28
+		return RRTypeAAAA
 	case "SRV":
-		return 33
+		return RRTypeSRV
 	case "NAPTR":
-		return 35
+		return RRTypeNAPTR
 	case "OPT":
-		return 41
+		return RRTypeOPT
 	case "DS":
-		return 43
+		return RRTypeDS
 	case "RRSIG":
-		return 46
+		return RRTypeRRSIG
 	case "NSEC":
-		return 47
+		return RRTypeNSEC
 	case "DNSKEY":
-		return 48
+		return RRTypeDNSKEY
 	case "TLSA":
-		return 52
+		return RRTypeTLSA
 	case "SVCB":
-		return 64
+		return RRTypeSVCB
 	case "HTTPS":
-		return 65
+		return RRTypeHTTPS
 	case "ANY":
-		return 255
+		return RRTypeANY
 	case "CAA":
-		return 257
+		return RRTypeCAA
 	default:
 		return 0 // invalid/unknown
 	}
