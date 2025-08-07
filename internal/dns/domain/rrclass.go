@@ -3,10 +3,19 @@ package domain
 // RRClass represents a DNS class (usually IN for Internet).
 type RRClass uint16
 
+// DNS Resource Record Class constants
+const (
+	RRClassIN   RRClass = 1   // IN - Internet
+	RRClassCH   RRClass = 3   // CH - Chaos
+	RRClassHS   RRClass = 4   // HS - Hesiod
+	RRClassNONE RRClass = 254 // NONE - No class
+	RRClassANY  RRClass = 255 // ANY - Any class (query only)
+)
+
 // IsValid returns true if the RRClass is one of the supported classes.
 func (c RRClass) IsValid() bool {
 	switch c {
-	case 1, 3, 4, 254, 255:
+	case RRClassIN, RRClassCH, RRClassHS, RRClassNONE, RRClassANY:
 		return true
 	default:
 		return false
@@ -16,15 +25,15 @@ func (c RRClass) IsValid() bool {
 // String returns the textual representation of the RRClass.
 func (c RRClass) String() string {
 	switch c {
-	case 1:
+	case RRClassIN:
 		return "IN"
-	case 3:
+	case RRClassCH:
 		return "CH"
-	case 4:
+	case RRClassHS:
 		return "HS"
-	case 254:
+	case RRClassNONE:
 		return "NONE"
-	case 255:
+	case RRClassANY:
 		return "ANY"
 	default:
 		return "UNKNOWN"
@@ -35,15 +44,15 @@ func (c RRClass) String() string {
 func ParseRRClass(s string) RRClass {
 	switch s {
 	case "IN":
-		return 1
+		return RRClassIN
 	case "CH":
-		return 3
+		return RRClassCH
 	case "HS":
-		return 4
+		return RRClassHS
 	case "NONE":
-		return 254
+		return RRClassNONE
 	case "ANY":
-		return 255
+		return RRClassANY
 	default:
 		return 0
 	}
