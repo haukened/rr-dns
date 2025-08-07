@@ -11,12 +11,12 @@ import (
 )
 
 func TestLoad_Defaults(t *testing.T) {
-	os.Unsetenv("UDNS_ENV")
-	os.Unsetenv("UDNS_LOG_LEVEL")
-	os.Unsetenv("UDNS_PORT")
-	os.Unsetenv("UDNS_CACHE_SIZE")
-	os.Unsetenv("UDNS_ZONE_DIR")
-	os.Unsetenv("UDNS_SERVERS")
+	os.Unsetenv("DNS_ENV")
+	os.Unsetenv("DNS_LOG_LEVEL")
+	os.Unsetenv("DNS_PORT")
+	os.Unsetenv("DNS_CACHE_SIZE")
+	os.Unsetenv("DNS_ZONE_DIR")
+	os.Unsetenv("DNS_SERVERS")
 
 	cfg, err := Load()
 	if err != nil {
@@ -47,12 +47,12 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_ValidOverrides(t *testing.T) {
-	t.Setenv("UDNS_ENV", "prod")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "9953")
-	t.Setenv("UDNS_CACHE_SIZE", "2000")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_SERVERS", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "prod")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "9953")
+	t.Setenv("DNS_CACHE_SIZE", "2000")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_SERVERS", "8.8.8.8:53,8.8.4.4:53")
 
 	cfg, err := Load()
 	if err != nil {
@@ -122,26 +122,26 @@ func TestLoad_RegisterValidationFails(t *testing.T) {
 }
 
 func TestLoad_InvalidEnv(t *testing.T) {
-	t.Setenv("UDNS_ENV", "staging")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "53")
-	t.Setenv("UDNS_CACHE_SIZE", "1000")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "staging")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "53")
+	t.Setenv("DNS_CACHE_SIZE", "1000")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected error for invalid UDNS_ENV, got nil")
+		t.Fatal("expected error for invalid DNS_ENV, got nil")
 	}
 }
 
 func TestLoad_InvalidLogLevel(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "trace")
-	t.Setenv("UDNS_PORT", "53")
-	t.Setenv("UDNS_CACHE_SIZE", "1000")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "trace")
+	t.Setenv("DNS_PORT", "53")
+	t.Setenv("DNS_CACHE_SIZE", "1000")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -150,12 +150,12 @@ func TestLoad_InvalidLogLevel(t *testing.T) {
 }
 
 func TestLoad_InvalidPort(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "99999")
-	t.Setenv("UDNS_CACHE_SIZE", "1000")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "99999")
+	t.Setenv("DNS_CACHE_SIZE", "1000")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -164,11 +164,11 @@ func TestLoad_InvalidPort(t *testing.T) {
 }
 
 func TestLoad_PortNaN(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "not_a_number")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "not_a_number")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -177,12 +177,12 @@ func TestLoad_PortNaN(t *testing.T) {
 }
 
 func TestLoad_InvalidCacheSize(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "53")
-	t.Setenv("UDNS_CACHE_SIZE", "-1")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "53")
+	t.Setenv("DNS_CACHE_SIZE", "-1")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -191,12 +191,12 @@ func TestLoad_InvalidCacheSize(t *testing.T) {
 }
 
 func TestLoad_InvalidZoneDir(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "53")
-	t.Setenv("UDNS_CACHE_SIZE", "1000")
-	t.Setenv("UDNS_ZONE_DIR", "") // required
-	t.Setenv("UDNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "53")
+	t.Setenv("DNS_CACHE_SIZE", "1000")
+	t.Setenv("DNS_ZONE_DIR", "") // required
+	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
 
 	_, err := Load()
 	if err == nil {
@@ -205,12 +205,12 @@ func TestLoad_InvalidZoneDir(t *testing.T) {
 }
 
 func TestLoad_InvalidUpstream(t *testing.T) {
-	t.Setenv("UDNS_ENV", "dev")
-	t.Setenv("UDNS_LOG_LEVEL", "info")
-	t.Setenv("UDNS_PORT", "53")
-	t.Setenv("UDNS_CACHE_SIZE", "1000")
-	t.Setenv("UDNS_ZONE_DIR", "/tmp/zones/")
-	t.Setenv("UDNS_SERVERS", "not_a_server") // invalid format
+	t.Setenv("DNS_ENV", "dev")
+	t.Setenv("DNS_LOG_LEVEL", "info")
+	t.Setenv("DNS_PORT", "53")
+	t.Setenv("DNS_CACHE_SIZE", "1000")
+	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
+	t.Setenv("DNS_SERVERS", "not_a_server") // invalid format
 
 	_, err := Load()
 	if err == nil {

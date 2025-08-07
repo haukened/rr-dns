@@ -69,15 +69,15 @@ func validIPPort(fl validator.FieldLevel) bool {
 	return err == nil && portNum > 0 && portNum < 65536
 }
 
-// envLoader is a function that loads environment variables with the prefix "UDNS_".
+// envLoader is a function that loads environment variables with the prefix "DNS_".
 // It transforms the keys to lowercase and removes the prefix.
 // and can be mocked in tests.
 var envLoader = func(k *koanf.Koanf) error {
-	// Load environment variables with prefix "UDNS_".
+	// Load environment variables with prefix "DNS_".
 	return k.Load(env.Provider(".", env.Opt{
-		Prefix: "UDNS_",
+		Prefix: "DNS_",
 		TransformFunc: func(key, value string) (string, any) {
-			key = strings.ToLower(strings.TrimPrefix(key, "UDNS_"))
+			key = strings.ToLower(strings.TrimPrefix(key, "DNS_"))
 			value = strings.TrimSpace(value)
 
 			if value == "" {
