@@ -15,7 +15,17 @@ import (
 )
 
 // udpCodec implements the DNSCodec interface for standard DNS over UDP messages.
-type udpCodec struct{}
+type udpCodec struct {
+	logger log.Logger
+}
+
+// NewUDPCodec creates and returns a new instance of udpCodec using the provided logger.
+// The logger is used for logging within the codec.
+func NewUDPCodec(logger log.Logger) *udpCodec {
+	return &udpCodec{
+		logger: logger,
+	}
+}
 
 // EncodeQuery serializes a Question into a binary format suitable for sending via UDP.
 func (c *udpCodec) EncodeQuery(query domain.Question) ([]byte, error) {
@@ -126,7 +136,7 @@ func (c *udpCodec) DecodeQuery(data []byte) (domain.Question, error) {
 }
 
 // EncodeResponse serializes a DNSResponse into a binary format suitable for sending via UDP.
-func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([]byte, error) {
+func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 	var buf bytes.Buffer
 
 	_ = binary.Write(&buf, binary.BigEndian, resp.ID)
@@ -143,7 +153,7 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // NSCOUNT
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // ARCOUNT
 
-	logger.Debug(map[string]any{
+	c.logger.Debug(map[string]any{
 		"step": "header_written",
 		"id":   resp.ID,
 		"qd":   1,
@@ -160,7 +170,7 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([
 	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Answers[0].Class))
 	qnameOffset := 12 // QNAME always starts right after the 12-byte header
 
-	logger.Debug(map[string]any{
+	c.logger.Debug(map[string]any{
 		"step":  "question_written",
 		"name":  resp.Answers[0].Name,
 		"type":  resp.Answers[0].Type.String(),
@@ -196,7 +206,7 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([
 
 		buf.Write(rr.Data)
 
-		logger.Debug(map[string]any{
+		c.logger.Debug(map[string]any{
 			"step":  "answer_written",
 			"name":  rr.Name,
 			"type":  rr.Type.String(),
@@ -206,7 +216,7 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([
 		}, "Wrote answer record")
 	}
 
-	logger.Debug(map[string]any{
+	c.logger.Debug(map[string]any{
 		"step": "final_packet",
 		"size": buf.Len(),
 		"raw":  fmt.Sprintf("%x", buf.Bytes()),
@@ -337,4 +347,4 @@ func (c *udpCodec) parseResourceRecord(data []byte, offset int, now time.Time) (
 	return rr, offset, nil
 }
 
-var UDP DNSCodec = &udpCodec{}
+var _ DNSCodec = &udpCodec{}

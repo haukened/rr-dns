@@ -3,7 +3,6 @@ package wire
 import (
 	"time"
 
-	"github.com/haukened/rr-dns/internal/dns/common/log"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
@@ -16,5 +15,5 @@ type DNSCodec interface {
 	// Authoritative Functions
 	// These methods handle encoding and decoding of authoritative records for zone file management.
 	DecodeQuery(data []byte) (domain.Question, error)
-	EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([]byte, error)
+	EncodeResponse(resp domain.DNSResponse) ([]byte, error)
 }

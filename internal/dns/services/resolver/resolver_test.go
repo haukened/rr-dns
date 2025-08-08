@@ -100,7 +100,7 @@ func (m *MockZoneCache) Count() int {
 
 // Test helpers
 func createTestQuery(name string, qtype domain.RRType) domain.Question {
-	query, _ := domain.NewDNSQuery(1, name, qtype, domain.RRClass(1)) // IN class
+	query, _ := domain.NewQuestion(1, name, qtype, domain.RRClass(1)) // IN class
 	return query
 }
 

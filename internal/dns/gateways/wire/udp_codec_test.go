@@ -7,11 +7,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/haukened/rr-dns/internal/dns/common/log"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
 func TestUdpCodec_EncodeQuery(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 
 	tests := []struct {
 		name       string
@@ -110,7 +113,9 @@ func TestUdpCodec_EncodeQuery(t *testing.T) {
 }
 
 func TestUdpCodec_DecodeQuery(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 
 	tests := []struct {
 		name     string
@@ -203,7 +208,9 @@ func TestUdpCodec_DecodeQuery(t *testing.T) {
 }
 
 func TestUdpCodec_EncodeResponse(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 
 	// Create a test resource record
 	rr, err := domain.NewAuthoritativeResourceRecord(
@@ -330,6 +337,47 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 			},
 			wantErr: "resource record data too large: 65536 bytes (max 65535)",
 		},
+		{
+			name: "multiple answers with different names",
+			response: domain.DNSResponse{
+				ID:    54321,
+				RCode: 0,
+				Answers: []domain.ResourceRecord{
+					{
+						Name:  "first.example.com.",
+						Type:  1,
+						Class: 1,
+						Data:  []byte{192, 0, 2, 1},
+					},
+					{
+						Name:  "second.example.com.",
+						Type:  1,
+						Class: 1,
+						Data:  []byte{192, 0, 2, 2},
+					},
+					{
+						Name:  "third.example.com.",
+						Type:  1,
+						Class: 1,
+						Data:  []byte{192, 0, 2, 3},
+					},
+				},
+			},
+			checkBytes: func(data []byte) bool {
+				if len(data) < 12 {
+					return false
+				}
+				// Check ID
+				if binary.BigEndian.Uint16(data[0:2]) != 54321 {
+					return false
+				}
+				// Check ANCOUNT = 3
+				if binary.BigEndian.Uint16(data[6:8]) != 3 {
+					return false
+				}
+				return true
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -352,7 +400,9 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 }
 
 func TestUdpCodec_DecodeResponse(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 	timeFixture := time.Date(2099, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -567,7 +617,9 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 }
 
 func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 	timeFixture := time.Unix(1234567890, 0)
 
 	tests := []struct {
@@ -726,7 +778,9 @@ func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
 }
 
 func TestUdpCodec_DecodeResponse_AdditionalRecords(t *testing.T) {
-	codec := &udpCodec{}
+	codec := &udpCodec{
+		logger: log.NewNoopLogger(),
+	}
 	timeFixture := time.Unix(1234567890, 0)
 
 	tests := []struct {
@@ -1071,13 +1125,20 @@ func TestEncodeDomainName(t *testing.T) {
 		})
 	}
 }
+func TestNewUDPCodec(t *testing.T) {
+	t.Run("returns non-nil codec with provided logger", func(t *testing.T) {
+		logger := log.NewNoopLogger()
+		codec := NewUDPCodec(logger)
+		assert.NotNil(t, codec)
+		assert.Equal(t, logger, codec.logger)
+	})
 
-func TestUDP_Variable(t *testing.T) {
-	// Test that the exported UDP variable is properly initialized
-	assert.NotNil(t, UDP)
-	assert.IsType(t, &udpCodec{}, UDP)
-
-	// Test that it implements the DNSCodec interface
-	var codec DNSCodec = UDP
-	assert.NotNil(t, codec)
+	t.Run("returns distinct instances for different loggers", func(t *testing.T) {
+		logger1 := log.NewNoopLogger()
+		logger2 := log.NewNoopLogger()
+		codec1 := NewUDPCodec(logger1)
+		codec2 := NewUDPCodec(logger2)
+		assert.NotSame(t, codec1, codec2)
+		assert.NotSame(t, codec1.logger, codec2.logger)
+	})
 }
