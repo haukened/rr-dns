@@ -39,15 +39,15 @@ web:
 	}
 
 	// Set environment
-	originalZoneDir := os.Getenv("UDNS_ZONE_DIR")
+	originalZoneDir := os.Getenv("DNS_ZONE_DIR")
 	defer func() {
 		if originalZoneDir == "" {
-			os.Unsetenv("UDNS_ZONE_DIR")
+			os.Unsetenv("DNS_ZONE_DIR")
 		} else {
-			os.Setenv("UDNS_ZONE_DIR", originalZoneDir)
+			os.Setenv("DNS_ZONE_DIR", originalZoneDir)
 		}
 	}()
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_ZONE_DIR", tempDir)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -87,7 +87,7 @@ api:
 	}
 
 	originalEnv := map[string]string{
-		"UDNS_ZONE_DIR": os.Getenv("UDNS_ZONE_DIR"),
+		"DNS_ZONE_DIR": os.Getenv("DNS_ZONE_DIR"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -99,7 +99,7 @@ api:
 		}
 	}()
 
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_ZONE_DIR", tempDir)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -144,14 +144,14 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 
 	// Set environment - no need for actual port since we're testing resolver directly
 	originalEnv := map[string]string{
-		"UDNS_ZONE_DIR":      os.Getenv("UDNS_ZONE_DIR"),
-		"UDNS_CACHE_SIZE":    os.Getenv("UDNS_CACHE_SIZE"),
-		"UDNS_DISABLE_CACHE": os.Getenv("UDNS_DISABLE_CACHE"),
+		"DNS_ZONE_DIR":      os.Getenv("DNS_ZONE_DIR"),
+		"DNS_CACHE_SIZE":    os.Getenv("DNS_CACHE_SIZE"),
+		"DNS_DISABLE_CACHE": os.Getenv("DNS_DISABLE_CACHE"),
 	}
 
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
-	os.Setenv("UDNS_CACHE_SIZE", "1000") // Larger cache for testing
-	os.Unsetenv("UDNS_DISABLE_CACHE")    // CRITICAL: Ensure cache is enabled
+	os.Setenv("DNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_CACHE_SIZE", "1000") // Larger cache for testing
+	os.Unsetenv("DNS_DISABLE_CACHE")    // CRITICAL: Ensure cache is enabled
 
 	// Build application
 	cfg, err := config.Load()
@@ -303,7 +303,7 @@ local:
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				queryDNSServer(b, app, query) // Now all cached
 			}
 		})
@@ -333,13 +333,15 @@ local:
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		var i int
+		for b.Loop() {
 			b.StopTimer() // Stop timer during query to avoid timing cache hits
 			// Force a fresh query each time by using a different query ID
 			freshQuery := createTestQuery("unique"+fmt.Sprintf("%d", i)+".google.", domain.RRType(1))
 			b.StartTimer()
 
 			queryDNSServer(b, app, freshQuery)
+			i++
 		}
 	})
 
@@ -357,7 +359,7 @@ local:
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			queryDNSServer(b, app, testQuery) // Same query each time = cache hit
 		}
 	})
@@ -389,8 +391,10 @@ cdn:
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	var i int
+	for b.Loop() {
 		query := queries[i%len(queries)]
 		queryDNSServer(b, app, query)
+		i++
 	}
 }

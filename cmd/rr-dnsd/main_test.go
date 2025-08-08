@@ -32,10 +32,10 @@ www:
 
 	// Set environment variables for test configuration
 	originalEnv := map[string]string{
-		"UDNS_PORT":       os.Getenv("UDNS_PORT"),
-		"UDNS_ZONE_DIR":   os.Getenv("UDNS_ZONE_DIR"),
-		"UDNS_LOG_LEVEL":  os.Getenv("UDNS_LOG_LEVEL"),
-		"UDNS_CACHE_SIZE": os.Getenv("UDNS_CACHE_SIZE"),
+		"DNS_PORT":       os.Getenv("DNS_PORT"),
+		"DNS_ZONE_DIR":   os.Getenv("DNS_ZONE_DIR"),
+		"DNS_LOG_LEVEL":  os.Getenv("DNS_LOG_LEVEL"),
+		"DNS_CACHE_SIZE": os.Getenv("DNS_CACHE_SIZE"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -53,10 +53,10 @@ www:
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 
-	os.Setenv("UDNS_PORT", fmt.Sprintf("%d", port))
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
-	os.Setenv("UDNS_LOG_LEVEL", "debug")
-	os.Setenv("UDNS_CACHE_SIZE", "100")
+	os.Setenv("DNS_PORT", fmt.Sprintf("%d", port))
+	os.Setenv("DNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_LOG_LEVEL", "debug")
+	os.Setenv("DNS_CACHE_SIZE", "100")
 
 	// Build application
 	cfg, err := config.Load()
@@ -120,14 +120,14 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "minimal valid config",
 			setupEnv: func() {
-				os.Setenv("UDNS_ZONE_DIR", t.TempDir())
+				os.Setenv("DNS_ZONE_DIR", t.TempDir())
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid zone directory",
 			setupEnv: func() {
-				os.Setenv("UDNS_ZONE_DIR", "/nonexistent/path")
+				os.Setenv("DNS_ZONE_DIR", "/nonexistent/path")
 			},
 			wantErr:       true,
 			errorContains: "failed to load zone directory",
@@ -135,8 +135,8 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "cache disabled",
 			setupEnv: func() {
-				os.Setenv("UDNS_ZONE_DIR", t.TempDir())
-				os.Setenv("UDNS_DISABLE_CACHE", "true")
+				os.Setenv("DNS_ZONE_DIR", t.TempDir())
+				os.Setenv("DNS_DISABLE_CACHE", "true")
 			},
 			wantErr: false,
 		},
@@ -145,7 +145,7 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
-			for _, key := range []string{"UDNS_PORT", "UDNS_ZONE_DIR", "UDNS_DISABLE_CACHE"} {
+			for _, key := range []string{"DNS_PORT", "DNS_ZONE_DIR", "DNS_DISABLE_CACHE"} {
 				os.Unsetenv(key)
 			}
 
@@ -191,11 +191,11 @@ web:
 	require.NoError(t, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	// Set test environment
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
-	os.Setenv("UDNS_CACHE_SIZE", "50")
+	os.Setenv("DNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_CACHE_SIZE", "50")
 	defer func() {
-		os.Unsetenv("UDNS_ZONE_DIR")
-		os.Unsetenv("UDNS_CACHE_SIZE")
+		os.Unsetenv("DNS_ZONE_DIR")
+		os.Unsetenv("DNS_CACHE_SIZE")
 	}()
 
 	cfg, err := config.Load()

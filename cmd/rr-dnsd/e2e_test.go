@@ -43,9 +43,9 @@ web:
 
 	// Set environment
 	originalEnv := map[string]string{
-		"UDNS_PORT":      os.Getenv("UDNS_PORT"),
-		"UDNS_ZONE_DIR":  os.Getenv("UDNS_ZONE_DIR"),
-		"UDNS_LOG_LEVEL": os.Getenv("UDNS_LOG_LEVEL"),
+		"DNS_PORT":      os.Getenv("DNS_PORT"),
+		"DNS_ZONE_DIR":  os.Getenv("DNS_ZONE_DIR"),
+		"DNS_LOG_LEVEL": os.Getenv("DNS_LOG_LEVEL"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -57,9 +57,9 @@ web:
 		}
 	}()
 
-	os.Setenv("UDNS_PORT", fmt.Sprintf("%d", port))
-	os.Setenv("UDNS_ZONE_DIR", tempDir)
-	os.Setenv("UDNS_LOG_LEVEL", "error") // Reduce noise
+	os.Setenv("DNS_PORT", fmt.Sprintf("%d", port))
+	os.Setenv("DNS_ZONE_DIR", tempDir)
+	os.Setenv("DNS_LOG_LEVEL", "error") // Reduce noise
 
 	// Start application
 	cfg, err := config.Load()
