@@ -161,8 +161,8 @@ func BenchmarkUDPTransport_ConcurrentConnections(b *testing.B) {
 
 type StubDNSCodec struct{}
 
-func (s *StubDNSCodec) DecodeQuery([]byte) (domain.DNSQuery, error) {
-	return domain.DNSQuery{ID: 12345, Name: "example.com.", Type: 1}, nil
+func (s *StubDNSCodec) DecodeQuery([]byte) (domain.Question, error) {
+	return domain.Question{ID: 12345, Name: "example.com.", Type: 1}, nil
 }
 
 func (s *StubDNSCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
@@ -173,12 +173,12 @@ func (s *StubDNSCodec) DecodeResponse(_ []byte, _ uint16, _ time.Time) (domain.D
 	return domain.DNSResponse{}, nil
 }
 
-func (s *StubDNSCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+func (s *StubDNSCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 	return []byte{0x01, 0x02, 0x03}, nil
 }
 
 type StubDNSResponder struct{}
 
-func (s *StubDNSResponder) HandleQuery(ctx context.Context, query domain.DNSQuery, client net.Addr) (domain.DNSResponse, error) {
+func (s *StubDNSResponder) HandleQuery(ctx context.Context, query domain.Question, client net.Addr) (domain.DNSResponse, error) {
 	return domain.DNSResponse{ID: query.ID, RCode: 0}, nil
 }

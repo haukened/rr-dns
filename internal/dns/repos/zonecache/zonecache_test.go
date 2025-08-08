@@ -132,13 +132,13 @@ func TestZoneCache_PutZone_Replace(t *testing.T) {
 	}
 
 	// Verify old records are gone
-	query := domain.DNSQuery{Name: "www.example.com.", Type: 1, Class: 1}
+	query := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(query); found {
 		t.Error("expected old record to be removed")
 	}
 
 	// Verify new record exists
-	newQuery := domain.DNSQuery{Name: "api.example.com.", Type: 1, Class: 1}
+	newQuery := domain.Question{Name: "api.example.com.", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(newQuery); !found {
 		t.Error("expected new record to be found")
 	}
@@ -159,67 +159,67 @@ func TestZoneCache_FindRecords(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		query     domain.DNSQuery
+		query     domain.Question
 		wantFound bool
 		wantCount int
 	}{
 		{
 			name:      "find existing A record with multiple values",
-			query:     domain.DNSQuery{Name: "www.example.com.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "www.example.com.", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2, // Two A records for www.example.com
 		},
 		{
 			name:      "find existing MX record",
-			query:     domain.DNSQuery{Name: "example.com.", Type: 15, Class: 1},
+			query:     domain.Question{Name: "example.com.", Type: 15, Class: 1},
 			wantFound: true,
 			wantCount: 1,
 		},
 		{
 			name:      "find existing AAAA record",
-			query:     domain.DNSQuery{Name: "example.com.", Type: 28, Class: 1},
+			query:     domain.Question{Name: "example.com.", Type: 28, Class: 1},
 			wantFound: true,
 			wantCount: 1,
 		},
 		{
 			name:      "query without trailing dot",
-			query:     domain.DNSQuery{Name: "www.example.com", Type: 1, Class: 1},
+			query:     domain.Question{Name: "www.example.com", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2,
 		},
 		{
 			name:      "query with mixed case",
-			query:     domain.DNSQuery{Name: "WwW.ExAmPlE.CoM.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "WwW.ExAmPlE.CoM.", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2,
 		},
 		{
 			name:      "query with whitespace",
-			query:     domain.DNSQuery{Name: "  www.example.com.  ", Type: 1, Class: 1},
+			query:     domain.Question{Name: "  www.example.com.  ", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2,
 		},
 		{
 			name:      "nonexistent record",
-			query:     domain.DNSQuery{Name: "nonexistent.example.com.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "nonexistent.example.com.", Type: 1, Class: 1},
 			wantFound: false,
 			wantCount: 0,
 		},
 		{
 			name:      "wrong record type",
-			query:     domain.DNSQuery{Name: "www.example.com.", Type: 28, Class: 1}, // AAAA for A record
+			query:     domain.Question{Name: "www.example.com.", Type: 28, Class: 1}, // AAAA for A record
 			wantFound: false,
 			wantCount: 0,
 		},
 		{
 			name:      "wrong record class",
-			query:     domain.DNSQuery{Name: "www.example.com.", Type: 1, Class: 3}, // CH instead of IN
+			query:     domain.Question{Name: "www.example.com.", Type: 1, Class: 3}, // CH instead of IN
 			wantFound: false,
 			wantCount: 0,
 		},
 		{
 			name:      "different zone",
-			query:     domain.DNSQuery{Name: "www.other.com.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "www.other.com.", Type: 1, Class: 1},
 			wantFound: false,
 			wantCount: 0,
 		},
@@ -273,13 +273,13 @@ func TestZoneCache_RemoveZone(t *testing.T) {
 	}
 
 	// Verify removed zone is gone
-	query1 := domain.DNSQuery{Name: "www.example.com.", Type: 1, Class: 1}
+	query1 := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(query1); found {
 		t.Error("expected removed zone records to be gone")
 	}
 
 	// Verify other zone still exists
-	query2 := domain.DNSQuery{Name: "www.test.com.", Type: 1, Class: 1}
+	query2 := domain.Question{Name: "www.test.com.", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(query2); !found {
 		t.Error("expected other zone to still exist")
 	}
@@ -433,7 +433,7 @@ func TestZoneCache_ConcurrentAccess(t *testing.T) {
 
 	// Test concurrent reads
 	done := make(chan bool, 10)
-	query := domain.DNSQuery{Name: "www.example.com.", Type: 1, Class: 1}
+	query := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
 
 	for i := 0; i < 10; i++ {
 		go func() {
@@ -491,7 +491,7 @@ func TestZoneCache_EdgeCases(t *testing.T) {
 	t.Run("find with invalid query", func(t *testing.T) {
 		zc := New()
 		// Query for empty name
-		query := domain.DNSQuery{Name: "", Type: 1, Class: 1}
+		query := domain.Question{Name: "", Type: 1, Class: 1}
 		_, found := zc.FindRecords(query)
 		if found {
 			t.Error("expected not to find record for empty name")

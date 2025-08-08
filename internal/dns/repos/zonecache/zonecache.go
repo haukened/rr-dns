@@ -23,9 +23,9 @@ func New() *ZoneCache {
 	}
 }
 
-// FindRecords returns authoritative records matching the DNSQuery.
+// FindRecords returns authoritative records matching the Question.
 // Zero allocations - returns slice directly from cache.
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
 	zc.mu.RLock()
 	defer zc.mu.RUnlock()
 

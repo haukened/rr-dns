@@ -19,7 +19,7 @@ type MockBlocklist struct {
 	mock.Mock
 }
 
-func (m *MockBlocklist) IsBlocked(q domain.DNSQuery) bool {
+func (m *MockBlocklist) IsBlocked(q domain.Question) bool {
 	args := m.Called(q)
 	return args.Bool(0)
 }
@@ -66,7 +66,7 @@ type MockUpstreamClient struct {
 	mock.Mock
 }
 
-func (m *MockUpstreamClient) Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (m *MockUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	args := m.Called(ctx, query, now)
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
@@ -75,7 +75,7 @@ type MockZoneCache struct {
 	mock.Mock
 }
 
-func (m *MockZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (m *MockZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
 	args := m.Called(query)
 	return args.Get(0).([]domain.ResourceRecord), args.Bool(1)
 }
@@ -99,7 +99,7 @@ func (m *MockZoneCache) Count() int {
 }
 
 // Test helpers
-func createTestQuery(name string, qtype domain.RRType) domain.DNSQuery {
+func createTestQuery(name string, qtype domain.RRType) domain.Question {
 	query, _ := domain.NewDNSQuery(1, name, qtype, domain.RRClass(1)) // IN class
 	return query
 }
@@ -112,7 +112,7 @@ func createTestRecord(name string, rtype domain.RRType, data []byte) domain.Reso
 func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 	tests := []struct {
 		name          string
-		query         domain.DNSQuery
+		query         domain.Question
 		zoneRecords   []domain.ResourceRecord
 		zoneFound     bool
 		expectedRCode domain.RCode
@@ -192,7 +192,7 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 func TestResolver_HandleQuery_Blocklist(t *testing.T) {
 	tests := []struct {
 		name          string
-		query         domain.DNSQuery
+		query         domain.Question
 		isBlocked     bool
 		expectedRCode domain.RCode
 	}{
@@ -266,7 +266,7 @@ func TestResolver_HandleQuery_Blocklist(t *testing.T) {
 func TestResolver_HandleQuery_UpstreamCache(t *testing.T) {
 	tests := []struct {
 		name          string
-		query         domain.DNSQuery
+		query         domain.Question
 		cachedRecords []domain.ResourceRecord
 		cacheHit      bool
 		expectedRCode domain.RCode
@@ -347,7 +347,7 @@ func TestResolver_HandleQuery_UpstreamCache(t *testing.T) {
 func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 	tests := []struct {
 		name            string
-		query           domain.DNSQuery
+		query           domain.Question
 		upstreamResp    domain.DNSResponse
 		upstreamErr     error
 		cacheSetErr     error
@@ -660,7 +660,7 @@ func TestBuildResponse(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		query         domain.DNSQuery
+		query         domain.Question
 		rcode         domain.RCode
 		records       []domain.ResourceRecord
 		expectedID    uint16

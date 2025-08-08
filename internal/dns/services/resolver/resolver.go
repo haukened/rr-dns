@@ -40,7 +40,7 @@ func NewResolver(opts ResolverOptions) *Resolver {
 	}
 }
 
-func (r *Resolver) HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error) {
+func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error) {
 	// 1. Check authoritative zone cache first
 	records, found := r.checkZoneCache(query)
 	if found {
@@ -92,28 +92,28 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.DNSQuery, clien
 	return response, nil
 }
 
-func (r *Resolver) checkZoneCache(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (r *Resolver) checkZoneCache(query domain.Question) ([]domain.ResourceRecord, bool) {
 	if r.zoneCache == nil {
 		return nil, false
 	}
 	return r.zoneCache.FindRecords(query)
 }
 
-func (r *Resolver) checkBlocklist(query domain.DNSQuery) bool {
+func (r *Resolver) checkBlocklist(query domain.Question) bool {
 	if r.blocklist == nil {
 		return false
 	}
 	return r.blocklist.IsBlocked(query)
 }
 
-func (r *Resolver) checkUpstreamCache(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (r *Resolver) checkUpstreamCache(query domain.Question) ([]domain.ResourceRecord, bool) {
 	if r.upstreamCache == nil {
 		return nil, false
 	}
 	return r.upstreamCache.Get(query.CacheKey())
 }
 
-func (r *Resolver) resolveUpstream(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveUpstream(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	if r.upstream == nil {
 		return domain.DNSResponse{}, fmt.Errorf("no upstream client configured")
 	}
@@ -128,11 +128,12 @@ func (r *Resolver) cacheUpstreamResponse(response domain.DNSResponse) error {
 }
 
 // buildResponse creates a DNS response with the specified RCode and optional records
-func buildResponse(query domain.DNSQuery, rcode domain.RCode, records []domain.ResourceRecord) domain.DNSResponse {
+func buildResponse(query domain.Question, rcode domain.RCode, records []domain.ResourceRecord) domain.DNSResponse {
 	return domain.DNSResponse{
-		ID:      query.ID,
-		RCode:   rcode,
-		Answers: records,
+		ID:       query.ID,
+		RCode:    rcode,
+		Answers:  records,
+		Question: query,
 		// TODO: Set additional response fields as needed (Authority, Additional sections)
 	}
 }

@@ -15,7 +15,7 @@ type stubBlocklist struct {
 	blocked bool
 }
 
-func (s *stubBlocklist) IsBlocked(q domain.DNSQuery) bool {
+func (s *stubBlocklist) IsBlocked(q domain.Question) bool {
 	return s.blocked
 }
 
@@ -47,7 +47,7 @@ type stubUpstreamClient struct {
 	err      error
 }
 
-func (s *stubUpstreamClient) Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (s *stubUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	return s.response, s.err
 }
 
@@ -56,7 +56,7 @@ type stubZoneCache struct {
 	found   bool
 }
 
-func (s *stubZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (s *stubZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
 	return s.records, s.found
 }
 

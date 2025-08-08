@@ -15,13 +15,13 @@ func TestUdpCodec_EncodeQuery(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		query      domain.DNSQuery
+		query      domain.Question
 		wantErr    string
 		checkBytes func([]byte) bool
 	}{
 		{
 			name: "valid A query",
-			query: domain.DNSQuery{
+			query: domain.Question{
 				ID:   12345,
 				Name: "example.com.",
 				Type: 1, // A record
@@ -54,7 +54,7 @@ func TestUdpCodec_EncodeQuery(t *testing.T) {
 		},
 		{
 			name: "empty domain name",
-			query: domain.DNSQuery{
+			query: domain.Question{
 				ID:   1,
 				Name: "",
 				Type: 1,
@@ -67,7 +67,7 @@ func TestUdpCodec_EncodeQuery(t *testing.T) {
 		},
 		{
 			name: "long label error",
-			query: domain.DNSQuery{
+			query: domain.Question{
 				ID:   1,
 				Name: "this-is-a-very-long-label-that-exceeds-the-maximum-allowed-length-of-63-characters-for-dns-labels.com.",
 				Type: 1,
@@ -76,7 +76,7 @@ func TestUdpCodec_EncodeQuery(t *testing.T) {
 		},
 		{
 			name: "single label",
-			query: domain.DNSQuery{
+			query: domain.Question{
 				ID:   1,
 				Name: "localhost.",
 				Type: 1,
@@ -116,7 +116,7 @@ func TestUdpCodec_DecodeQuery(t *testing.T) {
 		name     string
 		data     []byte
 		wantErr  string
-		expected domain.DNSQuery
+		expected domain.Question
 	}{
 		{
 			name: "valid query",
@@ -143,7 +143,7 @@ func TestUdpCodec_DecodeQuery(t *testing.T) {
 
 				return data
 			}(),
-			expected: domain.DNSQuery{
+			expected: domain.Question{
 				ID:   12345,
 				Name: "example.com",
 				Type: 1, // A record

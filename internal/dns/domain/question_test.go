@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestNewDNSQuery(t *testing.T) {
+func TestNewQuestion(t *testing.T) {
 	tests := []struct {
 		name        string
 		id          uint16
@@ -65,7 +65,7 @@ func TestNewDNSQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			query, err := NewDNSQuery(tt.id, tt.queryName, tt.rrtype, tt.class)
+			query, err := NewQuestion(tt.id, tt.queryName, tt.rrtype, tt.class)
 
 			if tt.expectError {
 				if err == nil {
@@ -96,16 +96,16 @@ func TestNewDNSQuery(t *testing.T) {
 	}
 }
 
-func TestDNSQuery_Validate(t *testing.T) {
+func TestQuestion_Validate(t *testing.T) {
 	tests := []struct {
 		name        string
-		query       DNSQuery
+		query       Question
 		expectError bool
 		errorMsg    string
 	}{
 		{
 			name: "valid query",
-			query: DNSQuery{
+			query: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
@@ -115,7 +115,7 @@ func TestDNSQuery_Validate(t *testing.T) {
 		},
 		{
 			name: "empty name should fail",
-			query: DNSQuery{
+			query: Question{
 				ID:    12346,
 				Name:  "",
 				Type:  1, // A record
@@ -126,7 +126,7 @@ func TestDNSQuery_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid RRType should fail",
-			query: DNSQuery{
+			query: Question{
 				ID:    12347,
 				Name:  "example.com.",
 				Type:  999, // Invalid RRType
@@ -137,7 +137,7 @@ func TestDNSQuery_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid RRClass should fail",
-			query: DNSQuery{
+			query: Question{
 				ID:    12348,
 				Name:  "example.com.",
 				Type:  1,   // A record
@@ -169,22 +169,22 @@ func TestDNSQuery_Validate(t *testing.T) {
 	}
 }
 
-func TestDNSQuery_CacheKey(t *testing.T) {
+func TestQuestion_CacheKey(t *testing.T) {
 	tests := []struct {
 		name     string
-		query1   DNSQuery
-		query2   DNSQuery
+		query1   Question
+		query2   Question
 		expected bool // true if cache keys should be equal
 	}{
 		{
 			name: "identical queries should have same cache key",
-			query1: DNSQuery{
+			query1: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
 				Class: 1, // IN class
 			},
-			query2: DNSQuery{
+			query2: Question{
 				ID:    54321, // Different ID should not affect cache key
 				Name:  "example.com.",
 				Type:  1, // A record
@@ -194,13 +194,13 @@ func TestDNSQuery_CacheKey(t *testing.T) {
 		},
 		{
 			name: "different names should have different cache keys",
-			query1: DNSQuery{
+			query1: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
 				Class: 1, // IN class
 			},
-			query2: DNSQuery{
+			query2: Question{
 				ID:    12345,
 				Name:  "different.com.",
 				Type:  1, // A record
@@ -210,13 +210,13 @@ func TestDNSQuery_CacheKey(t *testing.T) {
 		},
 		{
 			name: "different types should have different cache keys",
-			query1: DNSQuery{
+			query1: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
 				Class: 1, // IN class
 			},
-			query2: DNSQuery{
+			query2: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  28, // AAAA record
@@ -226,13 +226,13 @@ func TestDNSQuery_CacheKey(t *testing.T) {
 		},
 		{
 			name: "different classes should have different cache keys",
-			query1: DNSQuery{
+			query1: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
 				Class: 1, // IN class
 			},
-			query2: DNSQuery{
+			query2: Question{
 				ID:    12345,
 				Name:  "example.com.",
 				Type:  1, // A record
@@ -263,9 +263,9 @@ func TestDNSQuery_CacheKey(t *testing.T) {
 	}
 }
 
-func TestDNSQuery_CacheKey_Consistency(t *testing.T) {
+func TestQuestion_CacheKey_Consistency(t *testing.T) {
 	// Test that the same query always generates the same cache key
-	query := DNSQuery{
+	query := Question{
 		ID:    12345,
 		Name:  "example.com.",
 		Type:  1, // A record

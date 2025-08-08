@@ -69,7 +69,7 @@ func BenchmarkZoneCache_FindRecords_Hit(b *testing.B) {
 	}
 	zc.PutZone("example.com.", records)
 
-	query := domain.DNSQuery{
+	query := domain.Question{
 		Name:  "www.example.com.",
 		Type:  1,
 		Class: 1,
@@ -90,7 +90,7 @@ func BenchmarkZoneCache_FindRecords_Miss(b *testing.B) {
 	}
 	zc.PutZone("example.com.", records)
 
-	query := domain.DNSQuery{
+	query := domain.Question{
 		Name:  "nonexistent.example.com.",
 		Type:  1,
 		Class: 1,
@@ -111,7 +111,7 @@ func BenchmarkZoneCache_FindRecords_WrongZone(b *testing.B) {
 	}
 	zc.PutZone("example.com.", records)
 
-	query := domain.DNSQuery{
+	query := domain.Question{
 		Name:  "www.different.com.",
 		Type:  1,
 		Class: 1,
@@ -136,7 +136,7 @@ func BenchmarkZoneCache_FindRecords_MultipleRecords(b *testing.B) {
 	}
 	zc.PutZone("example.com.", records)
 
-	query := domain.DNSQuery{
+	query := domain.Question{
 		Name:  "www.example.com.",
 		Type:  1,
 		Class: 1,
@@ -210,7 +210,7 @@ func BenchmarkZoneCache_ConcurrentReads(b *testing.B) {
 	}
 	zc.PutZone("example.com.", records)
 
-	query := domain.DNSQuery{
+	query := domain.Question{
 		Name:  "www.example.com.",
 		Type:  1,
 		Class: 1,

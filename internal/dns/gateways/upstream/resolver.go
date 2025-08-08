@@ -101,7 +101,7 @@ func (r *Resolver) setTimeout(d time.Duration) {
 // Resolve forwards a DNS query to upstream servers and returns the response.
 // It tries either parallel or serial resolution depending on the Resolver's parallel flag.
 // The method respects the deadline set in the context or applies the default timeout.
-func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	ctx, cancel := r.ensureContextDeadline(ctx)
 	if cancel != nil {
 		defer cancel()
@@ -114,7 +114,7 @@ func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery, now time.
 }
 
 // resolveSerialWithContext attempts to query each server in order until one responds successfully.
-func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	var lastErr error
 	for _, server := range r.servers {
 		resp, err := r.queryServerWithContext(ctx, server, query, now)
@@ -127,7 +127,7 @@ func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.DN
 }
 
 // resolveWithContext forwards a DNS query using parallel server attempts for better performance.
-func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	// Channel to receive the first successful response
 	responseChan := make(chan domain.DNSResponse, 1)
 	errorChan := make(chan error, len(r.servers))
@@ -169,7 +169,7 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.DNSQuery
 }
 
 // queryServerWithContext performs DNS query with context cancellation support.
-func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.Question, now time.Time) (domain.DNSResponse, error) {
 	// Create UDP connection
 	conn, err := r.dial(ctx, "udp", server)
 	if err != nil {

@@ -18,7 +18,7 @@ type MockDNSCodec struct {
 	mock.Mock
 }
 
-func (m *MockDNSCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+func (m *MockDNSCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 	args := m.Called(query)
 	return args.Get(0).([]byte), args.Error(1)
 }
@@ -28,9 +28,9 @@ func (m *MockDNSCodec) DecodeResponse(data []byte, expectedID uint16, now time.T
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
 
-func (m *MockDNSCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
+func (m *MockDNSCodec) DecodeQuery(data []byte) (domain.Question, error) {
 	args := m.Called(data)
-	return args.Get(0).(domain.DNSQuery), args.Error(1)
+	return args.Get(0).(domain.Question), args.Error(1)
 }
 
 func (m *MockDNSCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
@@ -43,7 +43,7 @@ type MockDNSResponder struct {
 	mock.Mock
 }
 
-func (m *MockDNSResponder) HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error) {
+func (m *MockDNSResponder) HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error) {
 	args := m.Called(ctx, query, clientAddr)
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
@@ -178,7 +178,7 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 	handler := &MockDNSResponder{}
 
 	// Setup test data
-	testQuery := domain.DNSQuery{
+	testQuery := domain.Question{
 		ID:   12345,
 		Name: "example.com.",
 		Type: 1, // A record
@@ -259,7 +259,7 @@ func TestUDPTransport_CodecDecodeError(t *testing.T) {
 	invalidData := []byte{0xFF, 0xFF, 0xFF}
 
 	// Setup codec to return decode error
-	codec.On("DecodeQuery", invalidData).Return(domain.DNSQuery{}, assert.AnError)
+	codec.On("DecodeQuery", invalidData).Return(domain.Question{}, assert.AnError)
 
 	// Expect warning to be logged
 	mockLogger.On("Warn", mock.MatchedBy(func(fields map[string]any) bool {
@@ -301,7 +301,7 @@ func TestUDPTransport_CodecEncodeError(t *testing.T) {
 	mockLogger := &MockLogger{}
 	handler := &MockDNSResponder{}
 
-	testQuery := domain.DNSQuery{
+	testQuery := domain.Question{
 		ID:   12345,
 		Name: "example.com.",
 		Type: 1, // A record
@@ -394,7 +394,7 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 	handler := &MockDNSResponder{}
 
 	// Setup test data
-	testQuery := domain.DNSQuery{
+	testQuery := domain.Question{
 		ID:   12345,
 		Name: "example.com.",
 		Type: 1, // A record
@@ -537,7 +537,7 @@ func TestUDPTransport_WriteToUDPError(t *testing.T) {
 	handler := &MockDNSResponder{}
 
 	// Setup test data
-	testQuery := domain.DNSQuery{
+	testQuery := domain.Question{
 		ID:   12345,
 		Name: "example.com.",
 		Type: 1,
@@ -586,7 +586,7 @@ func TestUDPTransport_HandlerError(t *testing.T) {
 	handler := &MockDNSResponder{}
 
 	// Setup test data
-	testQuery := domain.DNSQuery{
+	testQuery := domain.Question{
 		ID:   12345,
 		Name: "example.com.",
 		Type: 1,

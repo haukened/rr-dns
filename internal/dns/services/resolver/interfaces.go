@@ -12,17 +12,17 @@ import (
 // Implementations of this interface are responsible for sending DNS queries
 // to an upstream server and returning the corresponding DNS response.
 // The Resolve method takes a context for cancellation and timeout control,
-// as well as a DNSQuery object, and returns a DNSResponse or an error.
+// as well as a Question object, and returns a DNSResponse or an error.
 type UpstreamClient interface {
-	Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error)
+	Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error)
 }
 
 // Blocklist defines an interface for checking whether a DNS query is blocked.
-// Implementations should provide logic to determine if a given DNSQuery
+// Implementations should provide logic to determine if a given Question
 // should be considered blocked, typically for filtering or security purposes.
 type Blocklist interface {
 	// current no-op. Future roadmap for blocking will expand this interface.
-	IsBlocked(q domain.DNSQuery) bool
+	IsBlocked(q domain.Question) bool
 }
 
 // Cache defines the interface for a DNS resource record cache.
@@ -50,13 +50,13 @@ type Cache interface {
 type DNSResponder interface {
 	// HandleQuery processes a DNS query and returns a DNS response.
 	// The transport handles all network protocol details - the handler only sees domain objects.
-	HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error)
+	HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error)
 }
 
 // ZoneCache defines the interface for in-memory authoritative record storage with value-based records
 type ZoneCache interface {
 	// Find returns authoritative resource records matching the DNS query (value-based)
-	FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+	FindRecords(query domain.Question) ([]domain.ResourceRecord, bool)
 
 	// PutZone replaces all records for a zone with new records (value-based)
 	PutZone(zoneRoot string, records []domain.ResourceRecord)

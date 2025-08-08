@@ -18,7 +18,7 @@ type MockCodec struct {
 	mock.Mock
 }
 
-func (m *MockCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+func (m *MockCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 	args := m.Called(query)
 	return args.Get(0).([]byte), args.Error(1)
 }
@@ -28,9 +28,9 @@ func (m *MockCodec) DecodeResponse(data []byte, queryID uint16, now time.Time) (
 	return args.Get(0).(domain.DNSResponse), args.Error(1)
 }
 
-func (m *MockCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
+func (m *MockCodec) DecodeQuery(data []byte) (domain.Question, error) {
 	args := m.Called(data)
-	return args.Get(0).(domain.DNSQuery), args.Error(1)
+	return args.Get(0).(domain.Question), args.Error(1)
 }
 
 func (m *MockCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
@@ -79,8 +79,8 @@ func (m *MockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
 
 // Helper functions for creating test data
-func createTestQuery() domain.DNSQuery {
-	return domain.DNSQuery{
+func createTestQuery() domain.Question {
+	return domain.Question{
 		ID:    12345,
 		Name:  "example.com.",
 		Type:  1, // A record

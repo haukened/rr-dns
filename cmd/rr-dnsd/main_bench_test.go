@@ -181,13 +181,13 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 
 	return app, cleanup
 } // createTestQuery creates a DNS query for benchmarking
-func createTestQuery(name string, qtype domain.RRType) domain.DNSQuery {
+func createTestQuery(name string, qtype domain.RRType) domain.Question {
 	query, _ := domain.NewDNSQuery(1, name, qtype, domain.RRClass(1)) // IN class
 	return query
 }
 
 // queryDNSServer performs a DNS query against the test server's resolver
-func queryDNSServer(b *testing.B, app *Application, query domain.DNSQuery) {
+func queryDNSServer(b *testing.B, app *Application, query domain.Question) {
 	// Query directly through the resolver to get real performance
 	ctx := context.Background()
 	clientAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
@@ -380,7 +380,7 @@ cdn:
 	defer cleanup()
 
 	// Mix of authoritative and external queries
-	queries := []domain.DNSQuery{
+	queries := []domain.Question{
 		createTestQuery("www.example.com.", domain.RRType(1)), // Authoritative
 		createTestQuery("api.example.com.", domain.RRType(1)), // Authoritative
 		createTestQuery("dns.google.", domain.RRType(1)),      // External

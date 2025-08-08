@@ -3,10 +3,12 @@ package domain
 import "fmt"
 
 // DNSResponse represents a complete DNS response with answers, authority, and additional sections.
+// The Question field echoes the original query, as specified in RFC 1035 §4.1.1.
 // This follows RFC 1035 §4.1.1 structure for DNS response messages.
 type DNSResponse struct {
 	ID         uint16
 	RCode      RCode
+	Question   Question
 	Answers    []ResourceRecord
 	Authority  []ResourceRecord
 	Additional []ResourceRecord

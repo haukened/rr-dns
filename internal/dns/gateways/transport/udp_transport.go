@@ -148,6 +148,13 @@ func (t *UDPTransport) listenLoop(ctx context.Context, handler resolver.DNSRespo
 
 // handlePacket processes a single UDP DNS packet.
 func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr *net.UDPAddr, handler resolver.DNSResponder) {
+	// Debug log raw incoming data
+	t.logger.Debug(map[string]any{
+		"client": clientAddr.String(),
+		"size":   len(data),
+		"raw":    fmt.Sprintf("%x", data),
+	}, "Received raw DNS query data")
+
 	// Decode wire format to domain object
 	query, err := t.codec.DecodeQuery(data)
 	if err != nil {
@@ -178,7 +185,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	}
 
 	// Encode domain object back to wire format
-	responseData, err := t.codec.EncodeResponse(response)
+	responseData, err := t.codec.EncodeResponse(response, t.logger)
 	if err != nil {
 		t.logger.Error(map[string]any{
 			"client":   clientAddr.String(),
@@ -187,6 +194,14 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 		}, "Failed to encode DNS response")
 		return
 	}
+
+	// Debug log raw outgoing data
+	t.logger.Debug(map[string]any{
+		"client":   clientAddr.String(),
+		"query_id": response.ID,
+		"size":     len(responseData),
+		"raw":      fmt.Sprintf("%x", responseData),
+	}, "Encoded DNS response data")
 
 	// Send response back to client
 	_, err = t.conn.WriteToUDP(responseData, clientAddr)

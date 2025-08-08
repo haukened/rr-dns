@@ -7,7 +7,7 @@ import (
 
 type NoopBlocklist struct{}
 
-func (n *NoopBlocklist) IsBlocked(q domain.DNSQuery) bool {
+func (n *NoopBlocklist) IsBlocked(q domain.Question) bool {
 	// Noop implementation, always returns false
 	return false
 }

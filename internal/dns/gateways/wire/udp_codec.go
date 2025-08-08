@@ -10,14 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/haukened/rr-dns/internal/dns/common/log"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
 // udpCodec implements the DNSCodec interface for standard DNS over UDP messages.
 type udpCodec struct{}
 
-// EncodeQuery serializes a DNSQuery into a binary format suitable for sending via UDP.
-func (c *udpCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+// EncodeQuery serializes a Question into a binary format suitable for sending via UDP.
+func (c *udpCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// Header
@@ -103,20 +104,20 @@ func encodeDomainName(name string) ([]byte, error) {
 }
 
 // DecodeQuery parses a DNS query message from data.
-func (c *udpCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
+func (c *udpCodec) DecodeQuery(data []byte) (domain.Question, error) {
 	if len(data) < 12 {
-		return domain.DNSQuery{}, errors.New("query too short")
+		return domain.Question{}, errors.New("query too short")
 	}
 	id := binary.BigEndian.Uint16(data[0:2])
 	qdCount := binary.BigEndian.Uint16(data[4:6])
 	if qdCount != 1 {
-		return domain.DNSQuery{}, errors.New("expected exactly one question")
+		return domain.Question{}, errors.New("expected exactly one question")
 	}
 	name, qtype, qclass, _, err := decodeQuestion(data, 12)
 	if err != nil {
-		return domain.DNSQuery{}, err
+		return domain.Question{}, err
 	}
-	return domain.DNSQuery{
+	return domain.Question{
 		ID:    id,
 		Name:  name,
 		Type:  domain.RRType(qtype),
@@ -125,7 +126,7 @@ func (c *udpCodec) DecodeQuery(data []byte) (domain.DNSQuery, error) {
 }
 
 // EncodeResponse serializes a DNSResponse into a binary format suitable for sending via UDP.
-func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
+func (c *udpCodec) EncodeResponse(resp domain.DNSResponse, logger log.Logger) ([]byte, error) {
 	var buf bytes.Buffer
 
 	_ = binary.Write(&buf, binary.BigEndian, resp.ID)
@@ -142,6 +143,13 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // NSCOUNT
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0)) // ARCOUNT
 
+	logger.Debug(map[string]any{
+		"step": "header_written",
+		"id":   resp.ID,
+		"qd":   1,
+		"an":   answerCount,
+	}, "Wrote DNS response header")
+
 	// Echo question for response synthesis (stubbed name/type)
 	qname, err := encodeDomainName(resp.Answers[0].Name)
 	if err != nil {
@@ -150,14 +158,31 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 	buf.Write(qname)
 	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Answers[0].Type))
 	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Answers[0].Class))
+	qnameOffset := 12 // QNAME always starts right after the 12-byte header
+
+	logger.Debug(map[string]any{
+		"step":  "question_written",
+		"name":  resp.Answers[0].Name,
+		"type":  resp.Answers[0].Type.String(),
+		"class": resp.Answers[0].Class.String(),
+	}, "Wrote question section")
 
 	// Answers
 	for _, rr := range resp.Answers {
-		name, err := encodeDomainName(rr.Name)
-		if err != nil {
-			return nil, err
+		// Use name compression (pointer to offset where QNAME begins) when the answer name matches the original QNAME.
+		// This reduces packet size and avoids duplicate encoding.
+		if rr.Name == resp.Answers[0].Name {
+			// Use name compression: pointer to the QNAME we just wrote.
+			// This reduces packet size and avoids repeating the domain name.
+			// Format: 0b11xxxxxx xxxxxxxx (pointer to offset in message)
+			buf.Write([]byte{0xC0 | byte(qnameOffset>>8), byte(qnameOffset & 0xFF)})
+		} else {
+			name, err := encodeDomainName(rr.Name)
+			if err != nil {
+				return nil, err
+			}
+			buf.Write(name)
 		}
-		buf.Write(name)
 		_ = binary.Write(&buf, binary.BigEndian, uint16(rr.Type))
 		_ = binary.Write(&buf, binary.BigEndian, uint16(rr.Class))
 		_ = binary.Write(&buf, binary.BigEndian, uint32(rr.TTLRemaining().Seconds()))
@@ -170,7 +195,23 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 		_ = binary.Write(&buf, binary.BigEndian, uint16(dataLen))
 
 		buf.Write(rr.Data)
+
+		logger.Debug(map[string]any{
+			"step":  "answer_written",
+			"name":  rr.Name,
+			"type":  rr.Type.String(),
+			"class": rr.Class.String(),
+			"ttl":   rr.TTLRemaining().Seconds(),
+			"dlen":  len(rr.Data),
+		}, "Wrote answer record")
 	}
+
+	logger.Debug(map[string]any{
+		"step": "final_packet",
+		"size": buf.Len(),
+		"raw":  fmt.Sprintf("%x", buf.Bytes()),
+	}, "Final encoded DNS response")
+
 	return buf.Bytes(), nil
 }
 
