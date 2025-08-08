@@ -80,14 +80,19 @@ func normalize(val any) []string {
 // and value. The value may be a string or a slice of strings. Returns an error if record creation fails.
 func buildResourceRecord(fqdn string, rrType string, val any, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
 	strs := normalize(val)
+	rType := domain.RRTypeFromString(rrType)
 	var records []domain.ResourceRecord
 	for _, s := range strs {
+		data, err := encodeRRData(rType, s)
+		if err != nil {
+			return nil, err
+		}
 		rr, err := domain.NewAuthoritativeResourceRecord(
 			fqdn,
-			domain.RRTypeFromString(rrType),
+			rType,
 			domain.RRClass(1),
 			uint32(defaultTTL.Seconds()),
-			[]byte(s),
+			data,
 		)
 		if err != nil {
 			return nil, err

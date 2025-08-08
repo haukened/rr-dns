@@ -1,6 +1,8 @@
 package zone
 
 import (
+	"bytes"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -138,7 +140,7 @@ www:
     - "1.2.3.4"
     - "5.6.7.8"
 mail:
-  MX: "mail.example.com"
+  MX: ["10 mail.example.com."]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -200,8 +202,10 @@ func TestLoadZoneFile_JSON(t *testing.T) {
 	if r.Type.String() != "A" {
 		t.Errorf("unexpected type: %s", r.Type.String())
 	}
-	if string(r.Data) != "5.6.7.8" {
-		t.Errorf("unexpected data: %s", string(r.Data))
+	// Check binary encoded data
+	expected := net.ParseIP("5.6.7.8").To4()
+	if !bytes.Equal(r.Data, expected) {
+		t.Errorf("unexpected data: got %v, want %v", r.Data, expected)
 	}
 	if r.TTL() != 120 {
 		t.Errorf("unexpected TTL: %d", r.TTL())
@@ -214,8 +218,8 @@ func TestLoadZoneFile_TOML(t *testing.T) {
 
 [web]
 A = "9.8.7.6"
-[mx]
-MX = "mx.example.net"
+[mail]
+MX = ["10 mail.example.com."]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -234,7 +238,7 @@ MX = "mx.example.net"
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["web.example.net."] || !names["mx.example.net."] {
+	if !names["web.example.net."] || !names["mail.example.net."] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
@@ -353,8 +357,8 @@ func TestBuildResourceRecord(t *testing.T) {
 	if ar.TTL() != 60 {
 		t.Errorf("TTL = %v, want 60", ar.TTL())
 	}
-	if string(ar.Data) != val {
-		t.Errorf("Data = %v, want %v", ar.Data, val)
+	if !bytes.Equal(ar.Data, net.ParseIP(val).To4()) {
+		t.Errorf("data does not equal bytes for IP %s", val)
 	}
 }
 
@@ -381,7 +385,7 @@ func TestBuildResourceRecord_Multi(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("expected 2 records, got %d", len(records))
 	}
-	if string(records[0].Data) != "1.2.3.4" || string(records[1].Data) != "5.6.7.8" {
+	if !bytes.Equal(records[0].Data, net.ParseIP("1.2.3.4").To4()) || !bytes.Equal(records[1].Data, net.ParseIP("5.6.7.8").To4()) {
 		t.Errorf("unexpected Data: %v, %v", records[0].Data, records[1].Data)
 	}
 }
@@ -419,5 +423,102 @@ func TestNormalize(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("normalize(%v) = %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+// Additional tests for missing coverage
+
+func TestBuildResourceRecord_EncodeError(t *testing.T) {
+	fqdn := "foo.example.com."
+	rrType := "A"
+	val := "invalid.ip.address"
+	defaultTTL := 60 * time.Second
+	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	if err == nil {
+		t.Errorf("expected error for invalid A record data, got nil")
+	}
+}
+
+func TestBuildResourceRecord_InvalidRRType(t *testing.T) {
+	fqdn := "foo.example.com."
+	rrType := "UNKNOWN"
+	val := "1.2.3.4"
+	defaultTTL := 60 * time.Second
+	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	if err == nil {
+		t.Errorf("expected error for unknown RRType, got nil")
+	}
+}
+
+func TestBuildResourceRecord_ValidationError(t *testing.T) {
+	// Empty FQDN should cause validation error
+	fqdn := ""
+	rrType := "A"
+	val := "1.2.3.4"
+	defaultTTL := 60 * time.Second
+	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	if err == nil {
+		t.Errorf("expected validation error for empty FQDN, got nil")
+	}
+}
+
+func TestLoadZoneDirectory_WalkError(t *testing.T) {
+	// Test with non-existent directory
+	nonExistentDir := "/non/existent/directory"
+	_, err := LoadZoneDirectory(nonExistentDir, 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestLoadZoneDirectory_FileError(t *testing.T) {
+	// Create a temporary directory with a file that has zone parsing errors
+	tmpDir := t.TempDir()
+
+	// Create a file with valid format but encoding errors
+	yamlFile := filepath.Join(tmpDir, "bad.yaml")
+	content := `
+zone_root: example.com
+www:
+  A: "invalid.ip.address.format"
+`
+	if err := os.WriteFile(yamlFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	_, err := LoadZoneDirectory(tmpDir, 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for file with encoding errors, got nil")
+	}
+}
+
+func TestLoadZoneFileWithRoot_FileReadError(t *testing.T) {
+	// Test with non-existent file
+	_, _, err := loadZoneFileWithRoot("/non/existent/file.yaml", 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for non-existent file, got nil")
+	}
+}
+
+func TestLoadZoneFile_NonExistentFile(t *testing.T) {
+	_, err := loadZoneFile("/non/existent/file.yaml", 60*time.Second)
+	if err == nil {
+		t.Errorf("expected error for non-existent file, got nil")
+	}
+}
+
+func TestNormalize_EmptySlice(t *testing.T) {
+	// Test normalize with empty slice - should return nil
+	got := normalize([]any{})
+	if got != nil {
+		t.Errorf("normalize([]any{}) = %v, want nil", got)
+	}
+}
+
+func TestNormalize_NonStringSlice(t *testing.T) {
+	// Test normalize with slice containing only non-strings
+	got := normalize([]any{123, 456, true})
+	if got != nil {
+		t.Errorf("normalize([]any{123, 456, true}) = %v, want nil", got)
 	}
 }
