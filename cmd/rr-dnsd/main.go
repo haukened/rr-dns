@@ -100,7 +100,7 @@ func buildApplication(cfg *config.AppConfig) (*Application, error) {
 	logger := log.GetLogger()
 
 	// Create DNS wire codec
-	codec := wire.UDP
+	codec := wire.NewUDPCodec(logger)
 
 	// Build repository layer
 	repos, err := buildRepositories(cfg, logger)

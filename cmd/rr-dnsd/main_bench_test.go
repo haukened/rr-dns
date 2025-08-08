@@ -182,7 +182,7 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 	return app, cleanup
 } // createTestQuery creates a DNS query for benchmarking
 func createTestQuery(name string, qtype domain.RRType) domain.Question {
-	query, _ := domain.NewDNSQuery(1, name, qtype, domain.RRClass(1)) // IN class
+	query, _ := domain.NewQuestion(1, name, qtype, domain.RRClass(1)) // IN class
 	return query
 }
 
