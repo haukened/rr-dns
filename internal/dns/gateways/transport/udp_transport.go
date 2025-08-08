@@ -185,7 +185,7 @@ func (t *UDPTransport) handlePacket(ctx context.Context, data []byte, clientAddr
 	}
 
 	// Encode domain object back to wire format
-	responseData, err := t.codec.EncodeResponse(response, t.logger)
+	responseData, err := t.codec.EncodeResponse(response)
 	if err != nil {
 		t.logger.Error(map[string]any{
 			"client":   clientAddr.String(),

@@ -16,6 +16,7 @@ import (
 // MockDNSCodec implements wire.DNSCodec for testing
 type MockDNSCodec struct {
 	mock.Mock
+	logger MockLogger
 }
 
 func (m *MockDNSCodec) EncodeQuery(query domain.Question) ([]byte, error) {
