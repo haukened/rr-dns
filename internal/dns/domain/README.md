@@ -8,7 +8,7 @@ This document defines the core domain entities used in RR-DNS. These types are p
 
 - [Domain Philosophy](#domain-philosophy)
 - [Top-Level Entities](#top-level-entities)
-- [DNSQuery](#dnsquery)
+- [Question](#question)
 - [DNSResponse](#dnsresponse)
 - [ResourceRecord](#resourcerecord)
 - [RRType](#rrtype)
@@ -32,7 +32,7 @@ This document defines the core domain entities used in RR-DNS. These types are p
 
 ## Top-Level Entities
 
-- `DNSQuery` – an incoming question from a client
+- `Question` – an incoming question from a client
 - `DNSResponse` – a full structured response (including Answers, Authority, Additional)
 - `ResourceRecord` – a unified DNS RR type supporting both cached and authoritative records
 - `RRType` – DNS record types (A, AAAA, NS, etc.)
@@ -41,7 +41,7 @@ This document defines the core domain entities used in RR-DNS. These types are p
 
 ---
 
-## DNSQuery
+## Question
 
 Represents a single question section from a DNS request, as defined in [RFC 1035 §4.1.2](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2).
 
@@ -54,11 +54,9 @@ Represents a single question section from a DNS request, as defined in [RFC 1035
 **Example:**
 
 ```go
-DNSQuery{
-  ID: 12345,
-  Name: "example.com.",
-  Type: A,
-  Class: IN,
+q, err := NewQuestion(12345, "example.com.", RRTypeA, RRClassIN)
+if err != nil {
+  // handle validation error
 }
 ```
 
@@ -100,7 +98,7 @@ Per [RFC 1035 §3.2.4](https://datatracker.ietf.org/doc/html/rfc1035#section-3.2
 Represents the entire response to a DNS query, as defined in [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1).
 
 **Fields:**
-- `ID`: Must match `DNSQuery.ID`
+- `ID`: Must match `Question.ID`
 - `RCode`: DNS response code (see RCode section)
 - `Answers`: Answer records that directly answer the query
 - `Authority`: Records describing the authoritative source
@@ -159,7 +157,7 @@ Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 
 ```go
 // Create resource record for answer
-rr, _ := NewResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1})
+rr, _ := NewAuthoritativeResourceRecord("example.com.", RRTypeA, RRClassIN, 300, []byte{192, 0, 2, 1})
 
 // Create DNS response
 resp, err := NewDNSResponse(12345, 0, []ResourceRecord{rr}, nil, nil)
@@ -340,7 +338,7 @@ classDiagram
       +IsValid() bool
     }
 
-    class DNSQuery {
+  class Question {
         <<value object>>
         +ID uint16
         +Name string
@@ -364,10 +362,10 @@ classDiagram
         +IsAuthoritative() bool
     }
 
-    class DNSResponse {
+  class DNSResponse {
         +ID uint16
         +RCode RCode
-        +Answers []ResourceRecord
+    +Answers []ResourceRecord
         +Authority []ResourceRecord
         +Additional []ResourceRecord
         +Validate() error
@@ -379,12 +377,12 @@ classDiagram
     }
 
     %% Associations
-    DNSResponse --> RCode
-    DNSResponse --> ResourceRecord : answers/authority/additional
+  DNSResponse --> RCode
+  DNSResponse --> ResourceRecord : answers/authority/additional
     ResourceRecord --> RRType
     ResourceRecord --> RRClass
-    DNSQuery --> RRType
-    DNSQuery --> RRClass
+  Question --> RRType
+  Question --> RRClass
 ```
 
 ---
@@ -402,8 +400,8 @@ sequenceDiagram
     participant Domain as Domain Models
 
     Client->>Infra: raw DNS query packet
-    Infra->>Domain: decode to DNSQuery
-    Infra->>Service: Resolve(DNSQuery)
+  Infra->>Domain: decode to Question
+  Infra->>Service: Resolve(Question)
     Service->>Repo: FindRecords(name, type)
     Repo-->>Service: []ResourceRecord
     Service->>Domain: construct DNSResponse
