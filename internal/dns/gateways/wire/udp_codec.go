@@ -28,11 +28,11 @@ func NewUDPCodec(logger log.Logger) *udpCodec {
 }
 
 // EncodeQuery serializes a Question into a binary format suitable for sending via UDP.
-func (c *udpCodec) EncodeQuery(query domain.Question) ([]byte, error) {
+func (c *udpCodec) EncodeQuery(q domain.Question) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// Header
-	_ = binary.Write(&buf, binary.BigEndian, query.ID)       // ID
+	_ = binary.Write(&buf, binary.BigEndian, q.ID)           // ID
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0x0100)) // Flags: standard query, RD=1
 	_ = binary.Write(&buf, binary.BigEndian, uint16(1))      // QDCOUNT
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0))      // ANCOUNT
@@ -40,7 +40,7 @@ func (c *udpCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 	_ = binary.Write(&buf, binary.BigEndian, uint16(0))      // ARCOUNT
 
 	// Question
-	name := strings.TrimSuffix(query.Name, ".") // Remove trailing dot
+	name := strings.TrimSuffix(q.Name, ".") // Remove trailing dot
 	labels := strings.Split(name, ".")
 	for _, label := range labels {
 		if len(label) > 63 {
@@ -52,8 +52,8 @@ func (c *udpCodec) EncodeQuery(query domain.Question) ([]byte, error) {
 		}
 	}
 	buf.WriteByte(0) // End of name
-	_ = binary.Write(&buf, binary.BigEndian, uint16(query.Type))
-	_ = binary.Write(&buf, binary.BigEndian, uint16(query.Class))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(q.Type))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(q.Class))
 
 	return buf.Bytes(), nil
 }
@@ -160,21 +160,21 @@ func (c *udpCodec) EncodeResponse(resp domain.DNSResponse) ([]byte, error) {
 		"an":   answerCount,
 	}, "Wrote DNS response header")
 
-	// Echo question for response synthesis (stubbed name/type)
-	qname, err := encodeDomainName(resp.Answers[0].Name)
+	// Write the question section based on resp.Question (per RFC)
+	qname, err := encodeDomainName(resp.Question.Name)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(qname)
-	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Answers[0].Type))
-	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Answers[0].Class))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Question.Type))
+	_ = binary.Write(&buf, binary.BigEndian, uint16(resp.Question.Class))
 	qnameOffset := 12 // QNAME always starts right after the 12-byte header
 
 	c.logger.Debug(map[string]any{
 		"step":  "question_written",
-		"name":  resp.Answers[0].Name,
-		"type":  resp.Answers[0].Type.String(),
-		"class": resp.Answers[0].Class.String(),
+		"name":  resp.Question.Name,
+		"type":  resp.Question.Type.String(),
+		"class": resp.Question.Class.String(),
 	}, "Wrote question section")
 
 	// Answers
