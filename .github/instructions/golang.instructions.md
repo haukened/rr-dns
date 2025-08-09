@@ -40,3 +40,4 @@ Follow these general Go conventions when generating code:
 - the second component must be the `import` block.
 - `import` may only appear once in a file.
 - no code may appear before the `package` statement, or between the `package` and `import` statements.
+- do not create random files for testing purposes.
