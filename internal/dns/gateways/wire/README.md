@@ -35,9 +35,9 @@ var UDP domain.DNSCodec = &udpCodec{}
 
 #### EncodeQuery
 ```go
-EncodeQuery(query domain.DNSQuery) ([]byte, error)
+EncodeQuery(query domain.Question) ([]byte, error)
 ```
-Serializes a DNSQuery into binary format suitable for UDP transmission.
+Serializes a Question into binary format suitable for UDP transmission.
 
 **Parameters:**
 - `query`: DNS query with ID, Name, and Type fields
@@ -48,15 +48,15 @@ Serializes a DNSQuery into binary format suitable for UDP transmission.
 
 #### DecodeQuery
 ```go
-DecodeQuery(data []byte) (domain.DNSQuery, error)
+DecodeQuery(data []byte) (domain.Question, error)
 ```
-Parses a binary DNS query message into a DNSQuery struct.
+Parses a binary DNS query message into a Question struct.
 
 **Parameters:**
 - `data`: Raw DNS query bytes
 
 **Returns:**
-- `domain.DNSQuery`: Parsed query structure
+- `domain.Question`: Parsed query structure
 - `error`: Error if malformed packet, wrong question count, etc.
 
 #### EncodeResponse
@@ -74,7 +74,7 @@ Serializes a DNSResponse into binary format suitable for UDP transmission.
 
 #### DecodeResponse
 ```go
-DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error)
+DecodeResponse(data []byte, expectedID uint16, now time.Time) (domain.DNSResponse, error)
 ```
 Parses a binary DNS response message, validating the response ID.
 
@@ -96,11 +96,7 @@ import (
     "github.com/haukened/rr-dns/internal/dns/gateways/wire"
 )
 
-query := domain.DNSQuery{
-    ID:   12345,
-    Name: "example.com.",
-    Type: 1, // A record
-}
+query, _ := domain.NewQuestion(12345, "example.com.", domain.RRTypeA, domain.RRClassIN)
 
 data, err := wire.UDP.EncodeQuery(query)
 if err != nil {
@@ -115,7 +111,7 @@ if err != nil {
 // Assume 'responseData' contains binary DNS response from network
 expectedID := uint16(12345)
 
-response, err := wire.UDP.DecodeResponse(responseData, expectedID)
+response, err := wire.UDP.DecodeResponse(responseData, expectedID, time.Now())
 if err != nil {
     log.Fatal(err)
 }
@@ -131,11 +127,7 @@ for _, answer := range response.Answers {
 
 ```go
 // Create and encode query
-query := domain.DNSQuery{
-    ID:   42,
-    Name: "google.com.",
-    Type: 1, // A record
-}
+query, _ := domain.NewQuestion(42, "google.com.", domain.RRTypeA, domain.RRClassIN)
 
 queryData, _ := wire.UDP.EncodeQuery(query)
 
@@ -143,7 +135,7 @@ queryData, _ := wire.UDP.EncodeQuery(query)
 responseData := sendUDPQuery(queryData)
 
 // Decode response
-response, err := wire.UDP.DecodeResponse(responseData, 42)
+response, err := wire.UDP.DecodeResponse(responseData, 42, time.Now())
 if err != nil {
     log.Fatal(err)
 }
@@ -291,11 +283,11 @@ type secureCodec struct {
     // DNSSEC-specific fields
 }
 
-func (c *secureCodec) EncodeQuery(query domain.DNSQuery) ([]byte, error) {
+func (c *secureCodec) EncodeQuery(query domain.Question) ([]byte, error) {
     // DNSSEC query encoding logic
 }
 
-func (c *secureCodec) DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error) {
+func (c *secureCodec) DecodeResponse(data []byte, expectedID uint16, now time.Time) (domain.DNSResponse, error) {
     // DNSSEC response decoding with signature validation
 }
 

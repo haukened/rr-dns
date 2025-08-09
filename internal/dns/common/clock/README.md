@@ -359,7 +359,7 @@ type ResolverService struct {
     zones ZoneCache
 }
 
-func (r *ResolverService) Resolve(query domain.DNSQuery) domain.DNSResponse {
+func (r *ResolverService) Resolve(query domain.Question) domain.DNSResponse {
     now := r.clock.Now()
     
     // Check cache with current time

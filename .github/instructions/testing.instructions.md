@@ -22,7 +22,7 @@ This guide defines how to structure and write tests for the rr-dns project. It s
 
 ### Domain (`internal/dns/domain`)
 
-- All domain types (e.g. `DNSQuery`, `ResourceRecord`) must have unit tests.
+- All domain types (e.g. `Question`, `ResourceRecord`) must have unit tests.
 - Focus on validation, equality, construction logic.
 - Tests should be deterministic, pure, and have no dependencies.
 
@@ -100,7 +100,7 @@ repo.AssertExpectations(t)
 func TestResolver_Resolve(t *testing.T) {
   tests := []struct {
     name     string
-    query    DNSQuery
+  query    Question
     wantCode RCODE
   }{
     {"valid A record", queryA, NOERROR},

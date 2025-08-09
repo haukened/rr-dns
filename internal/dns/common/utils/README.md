@@ -160,7 +160,7 @@ canonical, apex := processQuery("  API.Service.EXAMPLE.com  ")
 
 ### Zone Cache Implementation
 ```go
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
     fqdn := utils.CanonicalDNSName(query.Name)
     zone := utils.GetApexDomain(fqdn)
     

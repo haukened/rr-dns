@@ -117,7 +117,7 @@ func main() {
 ### Integration with DNS Resolution
 
 ```go
-func resolveDNSQuery(query domain.DNSQuery, blocklist blocklist.Repository) domain.DNSResponse {
+func resolveDNSQuery(query domain.Question, blocklist blocklist.Repository) domain.DNSResponse {
     // Check blocklist first
     blocked, category, err := blocklist.IsBlockedWithCategory(query.Name)
     if err != nil {

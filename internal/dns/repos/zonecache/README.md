@@ -7,7 +7,7 @@ This package provides an in-memory store for authoritative DNS records loaded fr
 The `zonecache` package handles:
 
 - **In-memory storage** of authoritative DNS records grouped by zone root
-- **Fast lookups** by DNSQuery for query resolution  
+- **Fast lookups** by domain.Question for query resolution  
 - **Zone management** with support for replacing and removing entire zones
 - **Thread-safe operations** for concurrent read/write access
 - **Efficient data structure** optimized for DNS query patterns using cache keys
@@ -31,8 +31,8 @@ Zone Files → Zone Loader → ZoneCache → Resolver Service → DNS Response
 
 ```go
 type ZoneCache interface {
-    // FindRecords returns authoritative records matching the DNSQuery
-    FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+    // FindRecords returns authoritative records matching the Question
+    FindRecords(query domain.Question) ([]domain.ResourceRecord, bool)
     
     // PutZone replaces all records for a zone with new records
     PutZone(zoneRoot string, records []domain.ResourceRecord)
@@ -64,10 +64,11 @@ type ZoneCache struct {
 ### Lookup Strategy
 
 1. **Zone Root Lookup**: O(1) access to zone data using apex domain
-2. **Cache Key Lookup**: O(1) access to records using DNSQuery.CacheKey()
+2. **Cache Key Lookup**: O(1) access to records using Question.CacheKey()
 3. **Direct Return**: Records returned directly without additional filtering
 
-The cache key combines FQDN, RRType, and RRClass into a single string for efficient indexing.
+The cache key is zone-aware and combines zone root, FQDN, RRType, and RRClass for efficient indexing.
+Format: "zoneRoot|name|type|class" (e.g., "example.com.|www.example.com.|A|IN")
 
 ## Usage Examples
 
@@ -108,11 +109,7 @@ func main() {
     cache.PutZone("example.com.", records)
     
     // Find records for query
-    query := domain.DNSQuery{
-        Name: "www.example.com.",
-        Type: domain.RRTypeFromString("A"),
-        Class: domain.RRClass(1),
-    }
+    query, _ := domain.NewQuestion(1, "www.example.com.", domain.RRTypeFromString("A"), domain.RRClass(1))
     results, found := cache.FindRecords(query)
     if found {
         fmt.Printf("Found %d A records for www.example.com.\n", len(results))
@@ -128,21 +125,15 @@ type ResolverService struct {
     // ... other dependencies
 }
 
-func (r *ResolverService) resolveAuthoritative(query domain.DNSQuery) (domain.DNSResponse, bool) {
+func (r *ResolverService) resolveAuthoritative(query domain.Question) (domain.DNSResponse, bool) {
     // Look up authoritative records
     records, found := r.zoneCache.FindRecords(query)
     if !found {
         return domain.DNSResponse{}, false
     }
     
-    // Records are already ResourceRecord type, convert to response format
-    var answers []domain.ResourceRecord
-    for _, record := range records {
-        answers = append(answers, *record)
-    }
-    
-    // Create authoritative response
-    response, _ := domain.NewDNSResponse(query.ID, domain.NOERROR, answers, nil, nil)
+    // Create authoritative response directly
+    response, _ := domain.NewDNSResponse(query.ID, domain.NOERROR, records, nil, nil)
     return response, true
 }
 ```
@@ -190,7 +181,7 @@ func deleteZone(cache resolver.ZoneCache, zoneRoot string) {
 ### Memory Usage
 - **Per Zone**: ~50-100 bytes overhead per zone
 - **Per Cache Key**: ~100-200 bytes overhead per unique cache key
-- **Per Record**: Minimal overhead, stores pointers to ResourceRecord
+- **Per Record**: Minimal overhead, value-based ResourceRecord storage
 - **Total**: Approximately records × 100 bytes for overhead estimation
 
 ### Concurrency
@@ -214,7 +205,7 @@ The ZoneCache is designed for high-concurrency DNS query workloads:
 ### Locking Strategy
 ```go
 // Read operations acquire read lock
-func (zc *ZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (zc *ZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
     zc.mu.RLock()
     defer zc.mu.RUnlock()
     // ... lookup logic
@@ -244,7 +235,7 @@ The current implementation uses simple error handling - most operations are desi
 // Get zone information for monitoring
 stats := map[string]any{
     "total_zones": len(cache.Zones()),
-    "total_records": cache.Count(),
+    "total_entries": cache.Count(),
     "zone_list": cache.Zones(),
 }
 ```
@@ -352,7 +343,7 @@ zones:
 
 ## Dependencies
 
-- **[Domain Package](../../domain/)**: Core DNS types (ResourceRecord, DNSQuery, RRType)
+- **[Domain Package](../../domain/)**: Core DNS types (ResourceRecord, Question, RRType)
 - **[Resolver Package](../../services/resolver/)**: ZoneCache interface definition
 - **[Utils Package](../../common/utils/)**: DNS name canonicalization utilities
 - **Standard Library**: `sync` for concurrency

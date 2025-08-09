@@ -148,7 +148,7 @@ resolver, err := upstream.NewResolver(upstream.Options{
 })
 
 // Resolve queries
-response, err := resolver.Resolve(ctx, query)
+answers, err := resolver.Resolve(ctx, query, time.Now())
 ```
 
 ### Wire Format Handling
@@ -157,7 +157,7 @@ response, err := resolver.Resolve(ctx, query)
 queryBytes, err := wire.UDP.EncodeQuery(query)
 
 // Decode response from network
-response, err := wire.UDP.DecodeResponse(responseBytes, expectedID)
+response, err := wire.UDP.DecodeResponse(responseBytes, expectedID, time.Now())
 ```
 
 ## Error Handling

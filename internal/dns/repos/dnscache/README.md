@@ -94,45 +94,41 @@ func main() {
 ### Integration with DNS Resolution
 
 ```go
-func resolveDNSQuery(query domain.DNSQuery, cache *dnscache.Cache) domain.DNSResponse {
+func resolveDNSQuery(query domain.Question, cache resolver.Cache) domain.DNSResponse {
     // Check cache first
     cacheKey := query.CacheKey()
     if cachedRecords, found := cache.Get(cacheKey); found {
         // Cache hit - return cached response with all records
-        return domain.NewDNSResponse(query.ID, 0, cachedRecords, nil, nil)
+    return domain.DNSResponse{ID: query.ID, RCode: domain.NOERROR, Answers: cachedRecords, Question: query}
     }
     
     // Cache miss - resolve upstream
-    response := resolveUpstream(query)
+    // ...resolve via upstream client returning []domain.ResourceRecord...
+    responseRecords := []domain.ResourceRecord{/* filled by upstream */}
     
     // Cache the response records (multiple records can share same cache key)
-    if len(response.Answers) > 0 {
-        err := cache.Set(response.Answers)
+    if len(responseRecords) > 0 {
+        err := cache.Set(responseRecords)
         if err != nil {
             // Log error but continue - caching failure shouldn't break resolution
             log.Printf("Failed to cache DNS response: %v", err)
         }
     }
     
-    return response
+    return domain.DNSResponse{ID: query.ID, RCode: domain.NOERROR, Answers: responseRecords, Question: query}
 }
 
 ### Multiple Records Per Cache Key
 
 ```go
 // DNS responses often contain multiple records for the same query
-aRecords := []domain.ResourceRecord{
-    // Multiple A records for load balancing
-    domain.ResourceRecrd{},
-    domain.ResourceRecrd{},
-    ...
-}
+var aRecords []domain.ResourceRecord // multiple records for same name/type/class
 
 // All records stored together under same cache key
 cache.Set(aRecords)
 
 // Retrieved together as a slice
-if records, found := cache.Get("example.com.|example.com.|A|IN"); found {
+if records, found := cache.Get("example.com.|www.example.com.|A|IN"); found {
     fmt.Printf("Found %d A records for example.com\n", len(records))
     for _, record := range records {
         fmt.Printf("  IP: %v\n", record.Data)
@@ -145,12 +141,12 @@ if records, found := cache.Get("example.com.|example.com.|A|IN"); found {
 The cache uses structured keys based on DNS query parameters:
 
 ```
-Format: "name|name|type|class"
+Format: "zoneRoot|name|type|class"
 Examples:
-├─ "example.com.|example.com.|A|IN"        (A record for example.com)
-├─ "www.example.com.|www.example.com.|AAAA|IN"   (AAAA record for www.example.com)
-├─ "mail.example.com.|mail.example.com.|MX|IN"  (MX record for mail.example.com)
-└─ "_sip._tcp.example.com.|_sip._tcp.example.com.|SRV|IN" (SRV record)
+├─ "example.com.|example.com.|A|IN"        (A record for apex)
+├─ "example.com.|www.example.com.|AAAA|IN"   (AAAA record for www.example.com)
+├─ "example.com.|mail.example.com.|MX|IN"  (MX record for mail.example.com)
+└─ "example.com.|_sip._tcp.example.com.|SRV|IN" (SRV record)
 ```
 
 **Note**: Keys are generated automatically using `record.CacheKey()` method for consistency.
@@ -286,7 +282,7 @@ type DNSResolver struct {
     zones    ZoneRepository
 }
 
-func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
+func (r *DNSResolver) Resolve(query domain.Question) domain.DNSResponse {
     // 1. Check local zones first
     if records := r.zones.Find(query); len(records) > 0 {
         return createResponse(query, records)
@@ -298,16 +294,15 @@ func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
     }
     
     // 3. Query upstream and cache result
-    response := r.upstream.Resolve(query)
-    if len(response.Answers) > 0 {
-        err := r.cache.Set(response.Answers)
-        if err != nil {
+    answers, _ := r.upstream.Resolve(ctx, query, time.Now())
+    if len(answers) > 0 {
+        if err := r.cache.Set(answers); err != nil {
             // Log but don't fail - caching errors shouldn't break resolution
             log.Printf("Cache error: %v", err)
         }
+        return domain.DNSResponse{ID: query.ID, RCode: domain.NOERROR, Answers: answers, Question: query}
     }
-    
-    return response
+    return domain.DNSResponse{ID: query.ID, RCode: domain.SERVFAIL, Answers: nil, Question: query}
 }
 ```
 

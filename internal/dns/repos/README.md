@@ -110,7 +110,7 @@ All repositories implement interfaces defined in the service layer following the
 // Repository implementations comply with these contracts:
 
 // ZoneCache interface (defined in services/resolver/interfaces.go):
-// - FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+// - FindRecords(query domain.Question) ([]domain.ResourceRecord, bool)
 // - PutZone(zoneRoot string, records []domain.ResourceRecord)
 // - RemoveZone(zoneRoot string)
 // - Zones() []string
@@ -118,7 +118,7 @@ All repositories implement interfaces defined in the service layer following the
 
 // Cache interface:
 // - Get(key string) ([]domain.ResourceRecord, bool)
-// - Set(record []domain.ResourceRecord) error
+// - Set(records []domain.ResourceRecord) error
 // - Delete(key string)
 // - Len() int
 // - Keys() []string
@@ -133,9 +133,9 @@ Repositories hide data source implementation details:
 // Service layer doesn't know about file formats or cache implementation
 type DNSService struct {
     zoneCache resolver.ZoneCache     // In-memory authoritative records
-    cache     CacheRepository        // TTL-aware recursive cache
+    cache     resolver.Cache         // TTL-aware recursive cache
     zones     ZoneRepository         // Zone file management
-    blocklist BlocklistRepository    // Domain filtering
+    blocklist resolver.Blocklist     // Domain filtering
 }
 ```
 
@@ -148,7 +148,7 @@ type mockZoneCache struct {
     records map[string][]domain.ResourceRecord
 }
 
-func (m *mockZoneCache) FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool) {
+func (m *mockZoneCache) FindRecords(query domain.Question) ([]domain.ResourceRecord, bool) {
     if records, found := m.records[query.Name]; found {
         var matches []domain.ResourceRecord
         for _, record := range records {
@@ -179,11 +179,11 @@ import "github.com/haukened/rr-dns/internal/dns/services/resolver"
 
 type DNSResolver struct {
     zoneCache resolver.ZoneCache        // Interface defined in service layer
-    cache     resolver.CacheRepository  // Interface defined in service layer
+    cache     resolver.Cache            // Interface defined in service layer
     upstream  resolver.UpstreamClient   // Interface defined in service layer
 }
 
-func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
+func (r *DNSResolver) Resolve(query domain.Question) domain.DNSResponse {
     // 1. Check authoritative zones first
     if records, found := r.zoneCache.FindRecords(query); found {
         return createAuthoritativeResponse(query, records)
@@ -195,12 +195,13 @@ func (r *DNSResolver) Resolve(query domain.DNSQuery) domain.DNSResponse {
     }
     
     // 3. Query upstream and cache result
-    response := r.upstream.Resolve(query)
-    if len(response.Answers) > 0 {
-        r.cache.Set(response.Answers)
+    answers, _ := r.upstream.Resolve(ctx, query, time.Now())
+    if len(answers) > 0 {
+        _ = r.cache.Set(answers)
+        resp, _ := domain.NewDNSResponse(query.ID, domain.NOERROR, answers, nil, nil)
+        return resp
     }
-    
-    return response
+    return domain.DNSResponse{}
 }
 ```
 

@@ -115,7 +115,7 @@ graph TD
         end
         
         subgraph "Domain Layer"
-            Domain[Domain Models<br/>DNSQuery, DNSResponse<br/>ResourceRecord, etc.]
+            Domain[Domain Models<br/>Question, DNSResponse<br/>ResourceRecord, etc.]
         end
         
         subgraph "Infrastructure Layer"
@@ -209,7 +209,7 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 ```mermaid
 graph TD
     subgraph "Domain Layer"
-        DNSQuery[DNSQuery]
+    Question[Question]
         DNSResponse[DNSResponse]
         ResourceRecord[ResourceRecord<br/>Unified type with constructors]
         RRType[RRType]
@@ -218,8 +218,8 @@ graph TD
         Utils[Domain Utils]
     end
     
-    DNSQuery --> RRType
-    DNSQuery --> RRClass
+    Question --> RRType
+    Question --> RRClass
     DNSResponse --> RCode
     DNSResponse --> ResourceRecord
     ResourceRecord --> RRType
@@ -234,7 +234,7 @@ The domain layer contains pure business entities free from infrastructure concer
 
 | **Name** | **Responsibility** |
 |----------|-------------------|
-| DNSQuery | Represents incoming DNS questions from clients |
+| Question | Represents incoming DNS questions from clients |
 | DNSResponse | Complete DNS response with answers, authority, and additional sections |
 | ResourceRecord | Unified DNS record type with dual constructors for cached and authoritative records |
 | RRType | DNS record types (A, AAAA, MX, etc.) |
@@ -401,7 +401,7 @@ type Cache interface {
 ***Interface***
 ```go
 type ZoneCache interface {
-    FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+    FindRecords(query domain.Question) ([]domain.ResourceRecord, bool)
     PutZone(zoneRoot string, records []domain.ResourceRecord)
     RemoveZone(zoneRoot string)
     Zones() []string
@@ -572,7 +572,7 @@ func GetApexDomain(name string) string        // Extract apex domain using PSL
 ***Interface***
 ```go
 // Public API - follows repository interface
-func (r *Resolver) Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error)
 
 // Constructor with dependency injection
 func NewResolver(opts Options) (*Resolver, error)
@@ -629,7 +629,7 @@ type ServerTransport interface {
 }
 
 type RequestHandler interface {
-    HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
+    HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error)
 }
 ```
 
@@ -661,10 +661,10 @@ type RequestHandler interface {
 ***Interface***
 ```go
 type DNSCodec interface {
-    EncodeQuery(query domain.DNSQuery) ([]byte, error)
-    DecodeQuery(data []byte) (domain.DNSQuery, error)
+    EncodeQuery(query domain.Question) ([]byte, error)
+    DecodeQuery(data []byte) (domain.Question, error)
     EncodeResponse(resp domain.DNSResponse) ([]byte, error)
-    DecodeResponse(data []byte, expectedID uint16) (domain.DNSResponse, error)
+    DecodeResponse(data []byte, expectedID uint16, now time.Time) (domain.DNSResponse, error)
 }
 ```
 
@@ -728,7 +728,7 @@ type BlockList interface {
 ## 6.1 Incoming A/AAAA query
 
 - UDPServer receives binary query.
-- Parsed into a DNSQuery domain object.
+- Parsed into a Question domain object.
 - Resolver first checks ZoneCache for authoritative records.
 - If no authoritative records found, resolver checks DNS cache or queries upstream.
 - DNSResponse is created and encoded.
@@ -747,8 +747,8 @@ sequenceDiagram
     participant Domain as Domain Models
 
     Client->>UDPServer: binary DNS packet
-    UDPServer->>Domain: decode to DNSQuery
-    UDPServer->>Resolver: Resolve(DNSQuery)
+    UDPServer->>Domain: decode to Question
+    UDPServer->>Resolver: HandleQuery(Question, clientAddr)
 
     Resolver->>ZoneCache: FindRecords(query)
     ZoneCache-->>Resolver: []ResourceRecord (or nil)
@@ -832,7 +832,7 @@ func NewAuthoritativeRecord(name string, rrType RRType, ttl uint32, data []byte)
 
 // Value-based storage for optimal performance
 type ZoneCache interface {
-    FindRecords(query DNSQuery) ([]ResourceRecord, bool)  // Returns values, not pointers
+    FindRecords(query Question) ([]ResourceRecord, bool)  // Returns values, not pointers
     PutZone(zoneRoot string, records []ResourceRecord)    // Accepts values, not pointers
 }
 ```

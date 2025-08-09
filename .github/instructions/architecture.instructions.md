@@ -23,7 +23,7 @@ CLEAN architecture emphasizes separation of concerns and inward-facing dependenc
 
 /internal
   /dns
-    /domain            # Core types like DNSQuery, DNSResponse
+  /domain            # Core types like Question, DNSResponse
     /service           # Business logic, e.g. Resolver
     /common            # Shared infrastructure (logging, utilities)
     /config            # Configuration management
@@ -103,7 +103,7 @@ internal/
 ### Domain (`internal/dns/domain`)
 - Pure data types with validation
 - No external dependencies or side effects
-- Examples: `DNSQuery`, `ResourceRecord`, `RRType`
+- Examples: `Question`, `ResourceRecord`, `RRType`
 
 ### Service (`internal/dns/service`)
 - Implements business rules and coordination

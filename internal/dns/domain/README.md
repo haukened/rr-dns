@@ -151,7 +151,7 @@ Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 - Response must conform to RFC 1035 structure
 - All ResourceRecord entries must be valid
 - RCode must be one of the supported values listed above
-- ID should match the corresponding DNSQuery ID
+- ID should match the corresponding Question ID
 
 **Example:**
 
@@ -389,7 +389,7 @@ classDiagram
 
 ## Example Request/Response Flow
 
-The following sequence illustrates how `DNSQuery`, `DNSResponse`, and `ResourceRecord` are passed through the system:
+The following sequence illustrates how `Question`, `DNSResponse`, and `ResourceRecord` are passed through the system:
 
 ```mermaid
 sequenceDiagram

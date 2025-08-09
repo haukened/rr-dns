@@ -58,7 +58,7 @@ cmd/rrdnsd            ← CLI entrypoint
 docs/                 ← Project documentation (Arc42, design notes)
 internal/
   dns/
-    domain/           ← Core types like DNSQuery, DNSResponse, ResourceRecord
+  domain/           ← Core types like Question, DNSResponse, ResourceRecord
     infra/
       config/         ← Config loading via env or CLI
       log/            ← Structured logging with zap

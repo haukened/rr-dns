@@ -17,9 +17,9 @@ Follow these general Go conventions when generating code:
 - Do not insert `import` statements mid-file.
 
 ## Naming
-- Use `PascalCase` for exported types, functions, and constants (e.g. `NewDNSQuery`).
+- Use `PascalCase` for exported types, functions, and constants (e.g. `NewQuestion`).
 - Use `camelCase` for unexported variables and functions.
-- Acronyms should be uppercase (e.g. `DNSQuery`, `HTTPServer`).
+- Acronyms should be uppercase (e.g. `HTTPServer`).
 
 ## Structure
 - All type declarations should go near the top of the file.

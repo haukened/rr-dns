@@ -67,7 +67,7 @@ The transport package implements interfaces defined in the service layer:
 // - Address() string
 
 // DNSResponder interface (defined in service layer)
-// - HandleRequest(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) domain.DNSResponse
+// - HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error)
 ```
 
 ## Current Implementation
@@ -149,7 +149,7 @@ The transport-driven request flow reflects the network-first nature of DNS:
 1. **Network Packet Arrives** → UDP socket receives packet into 512-byte buffer
 2. **Transport Takes Ownership** → Transport allocates right-sized packet buffer (exactly packet size)
 3. **Concurrent Processing** → Each packet processed in dedicated goroutine
-4. **Wire Decoding** → `codec.DecodeQuery(data)` → `domain.DNSQuery`
+4. **Wire Decoding** → `codec.DecodeQuery(data)` → `domain.Question`
 5. **Resolver Invocation** → `resolver.HandleQuery(ctx, query, clientAddr)` → `domain.DNSResponse`
 6. **Wire Encoding** → `codec.EncodeResponse(response)` → `[]byte`
 7. **Network Transmission** → Response sent back to client
