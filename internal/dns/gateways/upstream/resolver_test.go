@@ -617,10 +617,12 @@ func TestResolver_queryServerWithContext_SetDeadlineError(t *testing.T) {
 // exercise the post-loop timeout preference in resolveWithContext.
 type fakeCtxErrOnly struct{}
 
-func (f fakeCtxErrOnly) Deadline() (deadline time.Time, ok bool) { return time.Now().Add(time.Minute), true }
-func (f fakeCtxErrOnly) Done() <-chan struct{}                   { return nil }
-func (f fakeCtxErrOnly) Err() error                              { return context.DeadlineExceeded }
-func (f fakeCtxErrOnly) Value(key any) any                       { return nil }
+func (f fakeCtxErrOnly) Deadline() (deadline time.Time, ok bool) {
+	return time.Now().Add(time.Minute), true
+}
+func (f fakeCtxErrOnly) Done() <-chan struct{} { return nil }
+func (f fakeCtxErrOnly) Err() error            { return context.DeadlineExceeded }
+func (f fakeCtxErrOnly) Value(key any) any     { return nil }
 
 func TestResolver_Resolve_Parallel_PostLoopTimeoutPreferred(t *testing.T) {
 	tf := createTimeFixture()

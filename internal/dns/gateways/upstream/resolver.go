@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/domain"
@@ -132,12 +133,25 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question
 	responseChan := make(chan []domain.ResourceRecord, 1)
 	errorChan := make(chan error, len(r.servers))
 
+	// Create a child context so we can proactively cancel outstanding goroutines
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+
+	var wg sync.WaitGroup
+
 	// Launch goroutines for each server
 	for _, server := range r.servers {
+		wg.Add(1)
 		go func(srv string) {
-			response, err := r.queryServerWithContext(ctx, srv, query, now)
+			defer wg.Done()
+			response, err := r.queryServerWithContext(pctx, srv, query, now)
 			if err != nil {
-				errorChan <- fmt.Errorf(errServerFailed, srv, err)
+				// Avoid blocking if the main goroutine already returned
+				select {
+				case errorChan <- fmt.Errorf(errServerFailed, srv, err):
+				case <-pctx.Done():
+				default:
+				}
 				return
 			}
 
@@ -156,16 +170,23 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question
 	for i := 0; i < len(r.servers); i++ {
 		select {
 		case response := <-responseChan:
+			// Cancel remaining work; do not wait synchronously to keep fast path
+			pcancel()
 			return response, nil
 		case err := <-errorChan:
 			errors = append(errors, err)
 		case <-ctx.Done():
+			// Ensure all goroutines observe cancellation and close their connections
+			pcancel()
+			wg.Wait()
 			return nil, fmt.Errorf(errQueryTimeout, r.timeout)
 		}
 	}
 
 	// If context has expired/cancelled by the time we observed all errors, prefer timeout error
 	if ctx.Err() != nil {
+		pcancel()
+		wg.Wait()
 		return nil, fmt.Errorf(errQueryTimeout, r.timeout)
 	}
 
