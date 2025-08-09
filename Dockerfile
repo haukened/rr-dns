@@ -1,35 +1,56 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.7
 
-# Stage 1: Build the static Go binary
+# ---------- Builder ----------
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Copy Go module files only | so docker cache can be used effectively
+# Leverage build cache for deps
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Copy the rest of the source code
+# Copy source
 COPY . .
 
-# Create the config directory
-RUN mkdir -p /etc/rr-dns/zones/
+# Prepare default zones path (mirrors runtime path)
+RUN mkdir -p /zones
 
-# Build statically-linked binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o rrdnsd ./cmd/rr-dnsd
+# Build statically linked binary (multi-arch ready)
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /app/rr-dnsd ./cmd/rr-dnsd
 
-# Stage 2: Create minimal distroless image
+# ---------- Runtime ----------
 FROM gcr.io/distroless/static:nonroot
 
-# Copy the binary from builder
-COPY --from=builder /app/rrdnsd /rrdnsd
+# OCI labels
+LABEL org.opencontainers.image.title="rr-dns" \
+      org.opencontainers.image.description="Small DNS server with upstream and zone support" \
+      org.opencontainers.image.source="https://github.com/haukened/rr-dns" \
+      org.opencontainers.image.licenses="MIT"
 
-# Copy the configuration directory
-COPY --from=builder /etc/rr-dns /etc/rr-dns
+# Default configuration
+ENV DNS_PORT=8053 \
+    DNS_ENV=prod \
+    DNS_LOG_LEVEL=info \
+    DNS_ZONE_DIR=/zones
 
-# Run as non-root user
+# Expose UDP port
+EXPOSE 8053/udp
+
+# Copy artifacts with correct ownership
+COPY --from=builder --chown=nonroot:nonroot /app/rr-dnsd /usr/local/bin/rr-dnsd
+COPY --from=builder --chown=nonroot:nonroot /zones /zones
+
+# Allow mounting zones at runtime
+VOLUME ["/zones"]
+
+# Non-root runtime
 USER nonroot:nonroot
 
 # Entrypoint
-ENTRYPOINT ["/rrdnsd"]
+ENTRYPOINT ["/usr/local/bin/rr-dnsd"]
