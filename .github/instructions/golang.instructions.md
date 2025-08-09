@@ -41,3 +41,7 @@ Follow these general Go conventions when generating code:
 - `import` may only appear once in a file.
 - no code may appear before the `package` statement, or between the `package` and `import` statements.
 - do not create random files for testing purposes.
+
+## Linting
+- Run `golangci-lint` to check for linting issues.
+- Fix all linting errors before submitting code.
