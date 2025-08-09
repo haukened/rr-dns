@@ -611,3 +611,65 @@ func TestResolver_queryServerWithContext_SetDeadlineError(t *testing.T) {
 
 	conn.AssertExpectations(t)
 }
+
+// fakeCtxErrOnly simulates a context that has an error but whose Done channel never closes.
+// This is intentionally non-compliant with context contract, but useful to deterministically
+// exercise the post-loop timeout preference in resolveWithContext.
+type fakeCtxErrOnly struct{}
+
+func (f fakeCtxErrOnly) Deadline() (deadline time.Time, ok bool) { return time.Now().Add(time.Minute), true }
+func (f fakeCtxErrOnly) Done() <-chan struct{}                   { return nil }
+func (f fakeCtxErrOnly) Err() error                              { return context.DeadlineExceeded }
+func (f fakeCtxErrOnly) Value(key any) any                       { return nil }
+
+func TestResolver_Resolve_Parallel_PostLoopTimeoutPreferred(t *testing.T) {
+	tf := createTimeFixture()
+	query := createTestQuery()
+	queryBytes := []byte("query")
+
+	codec := &MockCodec{}
+	conn1 := &MockConn{}
+	conn2 := &MockConn{}
+
+	// Encode succeeds; each connection write succeeds; reads fail immediately
+	codec.On("EncodeQuery", query).Return(queryBytes, nil)
+	codec.On("EncodeQuery", query).Return(queryBytes, nil) // called twice in parallel
+
+	conn1.On("Write", queryBytes).Return(len(queryBytes), nil)
+	conn1.On("Read", mock.AnythingOfType("[]uint8")).Return(0, errors.New("read failed"))
+	conn1.On("Close").Return(nil)
+
+	conn2.On("Write", queryBytes).Return(len(queryBytes), nil)
+	conn2.On("Read", mock.AnythingOfType("[]uint8")).Return(0, errors.New("read failed"))
+	conn2.On("Close").Return(nil)
+
+	// Dial returns distinct conns per address
+	servers := []string{"1.1.1.1:53", "8.8.8.8:53"}
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address == servers[0] {
+			return conn1, nil
+		}
+		return conn2, nil
+	}
+
+	r, err := NewResolver(Options{
+		Servers:  servers,
+		Timeout:  50 * time.Millisecond,
+		Parallel: true,
+		Codec:    codec,
+		Dial:     dial,
+	})
+	assert.NoError(t, err)
+
+	// Use the fake context that reports Err but Done never closes, forcing the
+	// resolve loop to consume all errors and then prefer timeout at the end.
+	ctx := fakeCtxErrOnly{}
+
+	_, err = r.Resolve(ctx, query, tf)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "query timeout after")
+
+	codec.AssertExpectations(t)
+	conn1.AssertExpectations(t)
+	conn2.AssertExpectations(t)
+}

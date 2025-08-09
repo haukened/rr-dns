@@ -164,7 +164,12 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question
 		}
 	}
 
-	// All servers failed
+	// If context has expired/cancelled by the time we observed all errors, prefer timeout error
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf(errQueryTimeout, r.timeout)
+	}
+
+	// All servers failed (not due to context deadline)
 	return nil, fmt.Errorf(errAllServersFailed+": %v", len(r.servers), errors)
 }
 
