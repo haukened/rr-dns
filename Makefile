@@ -25,6 +25,9 @@ vet:
 lint:
 	golangci-lint run
 
+sec:
+	gosec ./...
+
 clean:
 	go clean
 	rm -f $(BINARY_NAME)
