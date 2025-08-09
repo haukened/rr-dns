@@ -12,6 +12,7 @@ import (
 	"github.com/haukened/rr-dns/internal/dns/common/log"
 	"github.com/haukened/rr-dns/internal/dns/config"
 	"github.com/haukened/rr-dns/internal/dns/domain"
+	"github.com/stretchr/testify/require"
 )
 
 // BenchmarkBuildApplication measures the time to construct the full application
@@ -33,33 +34,28 @@ web:
     - "10.0.%d.2"
     - "10.0.%d.3"
 `, i, i, i, i)
-		if err := os.WriteFile(zoneFile, []byte(zoneContent), 0644); err != nil {
-			b.Fatal(err)
-		}
+		err := os.WriteFile(zoneFile, []byte(zoneContent), 0644)
+		require.NoError(b, err)
 	}
 
 	// Set environment
 	originalZoneDir := os.Getenv("DNS_ZONE_DIR")
 	defer func() {
 		if originalZoneDir == "" {
-			os.Unsetenv("DNS_ZONE_DIR")
+			require.NoError(b, os.Unsetenv("DNS_ZONE_DIR"))
 		} else {
-			os.Setenv("DNS_ZONE_DIR", originalZoneDir)
+			require.NoError(b, os.Setenv("DNS_ZONE_DIR", originalZoneDir))
 		}
 	}()
-	os.Setenv("DNS_ZONE_DIR", tempDir)
+	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
 
 	cfg, err := config.Load()
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, err)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		app, err := buildApplication(cfg)
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 		_ = app // Use the app to prevent optimization
 	}
 }
@@ -82,9 +78,7 @@ func BenchmarkApplicationLifecycle(b *testing.B) {
 api:
   A: "127.0.0.1"
 `
-	if err := os.WriteFile(zoneFile, []byte(zoneContent), 0644); err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	originalEnv := map[string]string{
 		"DNS_ZONE_DIR": os.Getenv("DNS_ZONE_DIR"),
@@ -92,26 +86,22 @@ api:
 	defer func() {
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				require.NoError(b, os.Unsetenv(key))
 			} else {
-				os.Setenv(key, value)
+				require.NoError(b, os.Setenv(key, value))
 			}
 		}
 	}()
 
-	os.Setenv("DNS_ZONE_DIR", tempDir)
+	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
 
 	cfg, err := config.Load()
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, err)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		app, err := buildApplication(cfg)
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -138,9 +128,7 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 	// Setup test zone
 	tempDir := b.TempDir()
 	zoneFile := filepath.Join(tempDir, "example.yaml")
-	if err := os.WriteFile(zoneFile, []byte(zoneContent), 0644); err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	// Set environment - no need for actual port since we're testing resolver directly
 	originalEnv := map[string]string{
@@ -149,29 +137,25 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 		"DNS_DISABLE_CACHE": os.Getenv("DNS_DISABLE_CACHE"),
 	}
 
-	os.Setenv("DNS_ZONE_DIR", tempDir)
-	os.Setenv("DNS_CACHE_SIZE", "1000") // Larger cache for testing
-	os.Unsetenv("DNS_DISABLE_CACHE")    // CRITICAL: Ensure cache is enabled
+	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(b, os.Setenv("DNS_CACHE_SIZE", "1000")) // Larger cache for testing
+	require.NoError(b, os.Unsetenv("DNS_DISABLE_CACHE"))    // CRITICAL: Ensure cache is enabled
 
 	// Build application
 	cfg, err := config.Load()
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, err)
 
 	app, err := buildApplication(cfg)
-	if err != nil {
-		b.Fatal(err)
-	}
+	require.NoError(b, err)
 
 	// Return cleanup function
 	cleanup := func() {
 		// Restore environment
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				require.NoError(b, os.Unsetenv(key))
 			} else {
-				os.Setenv(key, value)
+				require.NoError(b, os.Setenv(key, value))
 			}
 		}
 

@@ -33,7 +33,11 @@ func BenchmarkUDPTransport_QueryProcessing(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to create client connection: %v", err)
 	}
-	defer clientConn.Close()
+	defer func() {
+		if err := clientConn.Close(); err != nil {
+			b.Logf("clientConn close error: %v", err)
+		}
+	}()
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

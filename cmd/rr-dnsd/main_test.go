@@ -40,9 +40,9 @@ www:
 	defer func() {
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				require.NoError(t, os.Unsetenv(key))
 			} else {
-				os.Setenv(key, value)
+				require.NoError(t, os.Setenv(key, value))
 			}
 		}
 	}()
@@ -51,12 +51,12 @@ www:
 	listener, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
+	require.NoError(t, listener.Close())
 
-	os.Setenv("DNS_PORT", fmt.Sprintf("%d", port))
-	os.Setenv("DNS_ZONE_DIR", tempDir)
-	os.Setenv("DNS_LOG_LEVEL", "debug")
-	os.Setenv("DNS_CACHE_SIZE", "100")
+	require.NoError(t, os.Setenv("DNS_PORT", fmt.Sprintf("%d", port)))
+	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(t, os.Setenv("DNS_LOG_LEVEL", "debug"))
+	require.NoError(t, os.Setenv("DNS_CACHE_SIZE", "100"))
 
 	// Build application
 	cfg, err := config.Load()
@@ -90,7 +90,7 @@ www:
 			// Check if server is listening
 			conn, err := net.Dial("udp", fmt.Sprintf("localhost:%d", port))
 			if err == nil {
-				conn.Close()
+				require.NoError(t, conn.Close())
 				goto serverStarted
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -120,14 +120,14 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "minimal valid config",
 			setupEnv: func() {
-				os.Setenv("DNS_ZONE_DIR", t.TempDir())
+				require.NoError(t, os.Setenv("DNS_ZONE_DIR", t.TempDir()))
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid zone directory",
 			setupEnv: func() {
-				os.Setenv("DNS_ZONE_DIR", "/nonexistent/path")
+				require.NoError(t, os.Setenv("DNS_ZONE_DIR", "/nonexistent/path"))
 			},
 			wantErr:       true,
 			errorContains: "failed to load zone directory",
@@ -135,8 +135,8 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "cache disabled",
 			setupEnv: func() {
-				os.Setenv("DNS_ZONE_DIR", t.TempDir())
-				os.Setenv("DNS_DISABLE_CACHE", "true")
+				require.NoError(t, os.Setenv("DNS_ZONE_DIR", t.TempDir()))
+				require.NoError(t, os.Setenv("DNS_DISABLE_CACHE", "true"))
 			},
 			wantErr: false,
 		},
@@ -146,7 +146,7 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
 			for _, key := range []string{"DNS_PORT", "DNS_ZONE_DIR", "DNS_DISABLE_CACHE"} {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 
 			tt.setupEnv()
@@ -191,11 +191,11 @@ web:
 	require.NoError(t, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	// Set test environment
-	os.Setenv("DNS_ZONE_DIR", tempDir)
-	os.Setenv("DNS_CACHE_SIZE", "50")
+	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(t, os.Setenv("DNS_CACHE_SIZE", "50"))
 	defer func() {
-		os.Unsetenv("DNS_ZONE_DIR")
-		os.Unsetenv("DNS_CACHE_SIZE")
+		_ = os.Unsetenv("DNS_ZONE_DIR")
+		_ = os.Unsetenv("DNS_CACHE_SIZE")
 	}()
 
 	cfg, err := config.Load()

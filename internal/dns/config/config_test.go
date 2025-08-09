@@ -11,12 +11,12 @@ import (
 )
 
 func TestLoad_Defaults(t *testing.T) {
-	os.Unsetenv("DNS_ENV")
-	os.Unsetenv("DNS_LOG_LEVEL")
-	os.Unsetenv("DNS_PORT")
-	os.Unsetenv("DNS_CACHE_SIZE")
-	os.Unsetenv("DNS_ZONE_DIR")
-	os.Unsetenv("DNS_SERVERS")
+	_ = os.Unsetenv("DNS_ENV")
+	_ = os.Unsetenv("DNS_LOG_LEVEL")
+	_ = os.Unsetenv("DNS_PORT")
+	_ = os.Unsetenv("DNS_CACHE_SIZE")
+	_ = os.Unsetenv("DNS_ZONE_DIR")
+	_ = os.Unsetenv("DNS_SERVERS")
 
 	cfg, err := Load()
 	if err != nil {

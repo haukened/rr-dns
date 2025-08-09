@@ -16,7 +16,6 @@ import (
 // MockDNSCodec implements wire.DNSCodec for testing
 type MockDNSCodec struct {
 	mock.Mock
-	logger MockLogger
 }
 
 func (m *MockDNSCodec) EncodeQuery(query domain.Question) ([]byte, error) {
@@ -228,7 +227,7 @@ func TestUDPTransport_QueryHandling(t *testing.T) {
 	// Create a client connection to send test data
 	clientConn, err := net.DialUDP("udp", nil, actualAddr)
 	require.NoError(t, err)
-	defer clientConn.Close()
+	defer func() { require.NoError(t, clientConn.Close()) }()
 
 	// Send test query
 	_, err = clientConn.Write(queryData)
@@ -280,7 +279,7 @@ func TestUDPTransport_CodecDecodeError(t *testing.T) {
 
 	clientConn, err := net.DialUDP("udp", nil, actualAddr)
 	require.NoError(t, err)
-	defer clientConn.Close()
+	defer func() { require.NoError(t, clientConn.Close()) }()
 
 	// Send invalid data
 	_, err = clientConn.Write(invalidData)
@@ -340,7 +339,7 @@ func TestUDPTransport_CodecEncodeError(t *testing.T) {
 
 	clientConn, err := net.DialUDP("udp", nil, actualAddr)
 	require.NoError(t, err)
-	defer clientConn.Close()
+	defer func() { require.NoError(t, clientConn.Close()) }()
 
 	// Send test query
 	_, err = clientConn.Write(queryData)
@@ -437,7 +436,11 @@ func TestUDPTransport_ConcurrentRequests(t *testing.T) {
 				t.Errorf("Failed to create client connection: %v", err)
 				return
 			}
-			defer clientConn.Close()
+			defer func() {
+				if err := clientConn.Close(); err != nil {
+					t.Logf("clientConn close error: %v", err)
+				}
+			}()
 
 			_, err = clientConn.Write(queryData)
 			if err != nil {
@@ -566,7 +569,7 @@ func TestUDPTransport_WriteToUDPError(t *testing.T) {
 	require.NoError(t, err)
 
 	// Close the connection to force WriteToUDP to fail
-	transport.conn.Close()
+	require.NoError(t, transport.conn.Close())
 
 	// Call handlePacket directly to test write error path
 	transport.handlePacket(ctx, queryData, clientAddr, handler)
@@ -626,7 +629,7 @@ func TestUDPTransport_ListenLoopReadError(t *testing.T) {
 	require.NoError(t, err)
 
 	// Force a read error by closing connection while transport is still marked as running
-	transport.conn.Close()
+	require.NoError(t, transport.conn.Close())
 
 	// Give the listen loop a moment to process the read error
 	time.Sleep(10 * time.Millisecond)

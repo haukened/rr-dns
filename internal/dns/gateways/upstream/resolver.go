@@ -175,7 +175,10 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 	if err != nil {
 		return nil, fmt.Errorf(errFailedToConnect, err)
 	}
-	defer conn.Close()
+	defer func() {
+		// ignore close error but satisfy linters
+		_ = conn.Close()
+	}()
 
 	// Set deadline from context
 	if deadline, ok := ctx.Deadline(); ok {

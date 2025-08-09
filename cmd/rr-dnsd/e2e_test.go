@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/config"
+	"github.com/stretchr/testify/require"
 )
 
 // TestE2E_DNSResolution tests actual DNS queries end-to-end
@@ -39,7 +40,7 @@ web:
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
+	require.NoError(t, listener.Close())
 
 	// Set environment
 	originalEnv := map[string]string{
@@ -50,16 +51,16 @@ web:
 	defer func() {
 		for key, value := range originalEnv {
 			if value == "" {
-				os.Unsetenv(key)
+				require.NoError(t, os.Unsetenv(key))
 			} else {
-				os.Setenv(key, value)
+				require.NoError(t, os.Setenv(key, value))
 			}
 		}
 	}()
 
-	os.Setenv("DNS_PORT", fmt.Sprintf("%d", port))
-	os.Setenv("DNS_ZONE_DIR", tempDir)
-	os.Setenv("DNS_LOG_LEVEL", "error") // Reduce noise
+	require.NoError(t, os.Setenv("DNS_PORT", fmt.Sprintf("%d", port)))
+	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(t, os.Setenv("DNS_LOG_LEVEL", "error")) // Reduce noise
 
 	// Start application
 	cfg, err := config.Load()
@@ -90,7 +91,7 @@ web:
 		default:
 			conn, err := net.Dial("udp", fmt.Sprintf("localhost:%d", port))
 			if err == nil {
-				conn.Close()
+				require.NoError(t, conn.Close())
 				goto serverStarted
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -106,7 +107,7 @@ serverStarted:
 	if err != nil {
 		t.Fatalf("Cannot connect to DNS server: %v", err)
 	}
-	conn.Close()
+	require.NoError(t, conn.Close())
 
 	// Shutdown
 	cancel()
