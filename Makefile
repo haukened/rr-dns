@@ -1,7 +1,7 @@
 # rr-dns Makefile - minimal build/test tooling
 
 BINARY_NAME=rr-dnsd
-CMD_DIR=./cmd/rrdnsd
+CMD_DIR=./cmd/rr-dnsd
 
 .PHONY: all build test bench fmt vet lint clean ci
 
