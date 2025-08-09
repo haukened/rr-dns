@@ -17,7 +17,7 @@ The `upstream.Resolver` implements DNS forwarding functionality with:
 ### CLEAN Architecture Compliance
 
 - **Infrastructure Layer**: Handles low-level networking and DNS wire protocol
-- **Domain Dependencies**: Only depends on `domain.DNSCodec` interface
+- **Codec Dependency**: Depends on `wire.DNSCodec` (gateways/wire) for DNS message encoding/decoding
 - **No Upward Dependencies**: Zero dependencies on service or application layers
 - **Testable Design**: All external interactions are injectable and mockable
 
@@ -27,7 +27,7 @@ The `upstream.Resolver` implements DNS forwarding functionality with:
 type Resolver struct {
     servers  []string        // Upstream DNS servers
     timeout  time.Duration   // Default query timeout
-    codec    domain.DNSCodec // DNS encoding/decoding
+    codec    wire.DNSCodec   // DNS encoding/decoding
     parallel bool            // Resolution strategy
     dial     DialFunc        // Network connection function
 }
@@ -42,10 +42,12 @@ package main
 
 import (
     "context"
+    "fmt"
     "time"
     
     "github.com/haukened/rr-dns/internal/dns/domain"
     "github.com/haukened/rr-dns/internal/dns/gateways/upstream"
+    "github.com/haukened/rr-dns/internal/dns/gateways/wire"
 )
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
         Servers:  []string{"1.1.1.1:53", "1.0.0.1:53"},
         Timeout:  5 * time.Second,
         Parallel: true, // Enable parallel resolution
-        Codec:    myDNSCodec, // Implement domain.DNSCodec
+        Codec:    myDNSCodec, // Implement wire.DNSCodec
     })
     if err != nil {
         // Handle configuration error
@@ -62,20 +64,20 @@ func main() {
     }
     
     // Create DNS query
-    query, _ := domain.NewDNSQuery(1234, "example.com.", 1, 1)
+    query, _ := domain.NewQuestion(1234, "example.com.", domain.A, domain.IN)
     
     // Resolve with context
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
-    
-    response, err := resolver.Resolve(ctx, query)
+    now := time.Now()
+    answers, err := resolver.Resolve(ctx, query, now)
     if err != nil {
         // Handle resolution error
         return
     }
     
     // Process response
-    fmt.Printf("Query resolved with %d answers\n", len(response.Answers))
+    fmt.Printf("Query resolved with %d answers\n", len(answers))
 }
 ```
 
@@ -92,7 +94,7 @@ resolver, err := upstream.NewResolver(upstream.Options{
     Servers:  []string{"192.168.1.1:53", "10.0.0.1:53"},
     Timeout:  3 * time.Second,
     Parallel: false, // Use serial resolution
-    Codec:    myCodec,
+    Codec:    myCodec, // wire.DNSCodec
     Dial:     customDial, // Custom network behavior
 })
 ```
@@ -146,6 +148,7 @@ All errors use consistent, predefined messages:
 const (
     errNoServersProvided = "no upstream DNS servers provided"
     errCodecRequired     = "DNS codec is required"
+    errConnDeadline      = "failed to set connection deadline: %w"
     errServerFailed      = "server %s: %w"
     errAllServersFailed  = "all %d upstream servers failed"
     errQueryTimeout      = "query timeout after %v"
@@ -173,16 +176,16 @@ The resolver is designed for comprehensive testing through dependency injection:
 ```go
 // Mock codec for testing
 type mockCodec struct {
-    encodeFunc func(domain.DNSQuery) ([]byte, error)
-    decodeFunc func([]byte, uint16) (domain.DNSResponse, error)
+    encodeFunc func(domain.Question) ([]byte, error)
+    decodeFunc func([]byte, uint16, time.Time) (domain.DNSResponse, error)
 }
 
-func (m *mockCodec) EncodeQuery(q domain.DNSQuery) ([]byte, error) {
+func (m *mockCodec) EncodeQuery(q domain.Question) ([]byte, error) {
     return m.encodeFunc(q)
 }
 
-func (m *mockCodec) DecodeResponse(data []byte, id uint16) (domain.DNSResponse, error) {
-    return m.decodeFunc(data, id)
+func (m *mockCodec) DecodeResponse(data []byte, id uint16, now time.Time) (domain.DNSResponse, error) {
+    return m.decodeFunc(data, id, now)
 }
 
 // Mock dial function for network testing
@@ -193,7 +196,7 @@ func mockDial(ctx context.Context, network, address string) (net.Conn, error) {
 // Test with complete control
 resolver, _ := upstream.NewResolver(upstream.Options{
     Servers:  []string{"test:53"},
-    Codec:    &mockCodec{...},
+    Codec:    &mockCodec{...}, // wire.DNSCodec
     Dial:     mockDial,
     Parallel: true,
 })
@@ -237,10 +240,10 @@ resolver, _ := upstream.NewResolver(upstream.Options{
 // Upstream resolver implements this interface:
 
 // UpstreamClient interface (defined in service layer)
-// - Resolve(ctx context.Context, query domain.DNSQuery) (domain.DNSResponse, error)
+// - Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error)
 
 // Resolver implements the interface (Dependency Inversion Principle)
-var _ resolver.UpstreamClient = (*upstream.Resolver)(nil)
+var _ resolver.UpstreamClient = (*Resolver)(nil)
 ```
 
 ### Repository Pattern

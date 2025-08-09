@@ -101,7 +101,7 @@ func (r *Resolver) setTimeout(d time.Duration) {
 // Resolve forwards a DNS query to upstream servers and returns the response.
 // It tries either parallel or serial resolution depending on the Resolver's parallel flag.
 // The method respects the deadline set in the context or applies the default timeout.
-func (r *Resolver) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	ctx, cancel := r.ensureContextDeadline(ctx)
 	if cancel != nil {
 		defer cancel()
@@ -114,22 +114,22 @@ func (r *Resolver) Resolve(ctx context.Context, query domain.Question, now time.
 }
 
 // resolveSerialWithContext attempts to query each server in order until one responds successfully.
-func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveSerialWithContext(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	var lastErr error
 	for _, server := range r.servers {
-		resp, err := r.queryServerWithContext(ctx, server, query, now)
+		answers, err := r.queryServerWithContext(ctx, server, query, now)
 		if err == nil {
-			return resp, nil
+			return answers, nil
 		}
 		lastErr = err
 	}
-	return domain.DNSResponse{}, fmt.Errorf(errAllServersFailed+": %w", len(r.servers), lastErr)
+	return nil, fmt.Errorf(errAllServersFailed+": %w", len(r.servers), lastErr)
 }
 
 // resolveWithContext forwards a DNS query using parallel server attempts for better performance.
-func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	// Channel to receive the first successful response
-	responseChan := make(chan domain.DNSResponse, 1)
+	responseChan := make(chan []domain.ResourceRecord, 1)
 	errorChan := make(chan error, len(r.servers))
 
 	// Launch goroutines for each server
@@ -160,20 +160,20 @@ func (r *Resolver) resolveWithContext(ctx context.Context, query domain.Question
 		case err := <-errorChan:
 			errors = append(errors, err)
 		case <-ctx.Done():
-			return domain.DNSResponse{}, fmt.Errorf(errQueryTimeout, r.timeout)
+			return nil, fmt.Errorf(errQueryTimeout, r.timeout)
 		}
 	}
 
 	// All servers failed
-	return domain.DNSResponse{}, fmt.Errorf(errAllServersFailed+": %v", len(r.servers), errors)
+	return nil, fmt.Errorf(errAllServersFailed+": %v", len(r.servers), errors)
 }
 
 // queryServerWithContext performs DNS query with context cancellation support.
-func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) queryServerWithContext(ctx context.Context, server string, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	// Create UDP connection
 	conn, err := r.dial(ctx, "udp", server)
 	if err != nil {
-		return domain.DNSResponse{}, fmt.Errorf(errFailedToConnect, err)
+		return nil, fmt.Errorf(errFailedToConnect, err)
 	}
 	defer conn.Close()
 
@@ -181,20 +181,20 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 	if deadline, ok := ctx.Deadline(); ok {
 		err = conn.SetDeadline(deadline)
 		if err != nil {
-			return domain.DNSResponse{}, fmt.Errorf(errConnDeadline, err)
+			return nil, fmt.Errorf(errConnDeadline, err)
 		}
 	}
 
 	// Encode and send query
 	queryBytes, err := r.codec.EncodeQuery(query)
 	if err != nil {
-		return domain.DNSResponse{}, fmt.Errorf(errEncodeFailed, err)
+		return nil, fmt.Errorf(errEncodeFailed, err)
 	}
 
 	// Use goroutine for write/read to enable context cancellation
 	type result struct {
-		response domain.DNSResponse
-		err      error
+		answers []domain.ResourceRecord
+		err     error
 	}
 
 	resultChan := make(chan result, 1)
@@ -217,15 +217,15 @@ func (r *Resolver) queryServerWithContext(ctx context.Context, server string, qu
 
 		// Decode response
 		response, err := r.codec.DecodeResponse(buffer[:n], query.ID, now)
-		resultChan <- result{response: response, err: err}
+		resultChan <- result{answers: response.Answers, err: err}
 	}()
 
 	// Wait for result or context cancellation
 	select {
 	case res := <-resultChan:
-		return res.response, res.err
+		return res.answers, res.err
 	case <-ctx.Done():
-		return domain.DNSResponse{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 

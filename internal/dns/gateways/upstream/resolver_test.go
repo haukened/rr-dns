@@ -216,7 +216,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 		servers    []string
 		setupMocks func(*MockCodec, *MockConn)
 		wantErr    string
-		wantResp   domain.DNSResponse
+		wantResp   []domain.ResourceRecord
 	}{
 		{
 			name:    "successful query first server",
@@ -229,7 +229,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 				conn.On("Close").Return(nil)
 				conn.readData = responseBytes
 			},
-			wantResp: response,
+			wantResp: response.Answers,
 		},
 		{
 			name:    "encode error",
@@ -282,7 +282,7 @@ func TestResolver_Resolve_Serial(t *testing.T) {
 				conn.On("Close").Return(nil)
 				conn.readData = responseBytes
 			},
-			wantResp: response,
+			wantResp: response.Answers,
 		},
 	}
 
@@ -344,7 +344,7 @@ func TestResolver_Resolve_Parallel(t *testing.T) {
 		setupMocks   func(*MockCodec, *MockConn)
 		dialBehavior func(address string) error // nil means success
 		wantErr      string
-		wantResp     domain.DNSResponse
+		wantResp     []domain.ResourceRecord
 	}{
 		{
 			name:    "parallel success from first responding server",
@@ -360,7 +360,7 @@ func TestResolver_Resolve_Parallel(t *testing.T) {
 			dialBehavior: func(address string) error {
 				return nil // All connections succeed
 			},
-			wantResp: response,
+			wantResp: response.Answers,
 		},
 		{
 			name:    "parallel all servers fail",
@@ -511,7 +511,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 		name       string
 		setupMocks func(*MockCodec, *MockConn)
 		wantErr    string
-		wantResp   domain.DNSResponse
+		wantResp   []domain.ResourceRecord
 	}{
 		{
 			name: "successful query",
@@ -523,7 +523,7 @@ func TestResolver_queryServerWithContext(t *testing.T) {
 				conn.On("Close").Return(nil)
 				conn.readData = responseBytes
 			},
-			wantResp: response,
+			wantResp: response.Answers,
 		},
 		{
 			name: "decode error",
