@@ -14,7 +14,7 @@ import (
 // The Resolve method takes a context for cancellation and timeout control,
 // as well as a Question object, and returns a DNSResponse or an error.
 type UpstreamClient interface {
-	Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error)
+	Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error)
 }
 
 // Blocklist defines an interface for checking whether a DNS query is blocked.
