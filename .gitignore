@@ -33,11 +33,11 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
 
 # the actual binary (not the source directory)
 /rr-dnsd
 cmd/rr-dnsd/rr-dnsd
 
-# vscode
-.vscode
+# debugging
+__debug*
