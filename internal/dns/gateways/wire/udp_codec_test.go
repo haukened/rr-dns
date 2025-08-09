@@ -229,11 +229,26 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		checkBytes func([]byte) bool
 	}{
 		{
+			name: "invalid question name label too long",
+			response: domain.DNSResponse{
+				ID:    1,
+				RCode: 0,
+				Question: domain.Question{
+					Name:  "this-is-a-very-long-label-that-exceeds-the-maximum-allowed-length-of-63-characters-for-dns-labels.com.",
+					Type:  domain.RRType(1),
+					Class: domain.RRClass(1),
+				},
+				Answers: nil,
+			},
+			wantErr: "label too long",
+		},
+		{
 			name: "valid response",
 			response: domain.DNSResponse{
-				ID:      12345,
-				RCode:   0, // NOERROR
-				Answers: []domain.ResourceRecord{rr},
+				ID:       12345,
+				RCode:    0, // NOERROR
+				Question: domain.Question{Name: "example.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
+				Answers:  []domain.ResourceRecord{rr},
 			},
 			checkBytes: func(data []byte) bool {
 				if len(data) < 12 {
@@ -256,11 +271,18 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid domain name in answer",
+			name: "invalid domain name in second answer",
 			response: domain.DNSResponse{
-				ID:    1,
-				RCode: 0,
+				ID:       1,
+				RCode:    0,
+				Question: domain.Question{Name: "valid.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
 				Answers: []domain.ResourceRecord{
+					{
+						Name:  "valid.com.",
+						Type:  1,
+						Class: 1,
+						Data:  []byte{1, 2, 3, 4},
+					},
 					{
 						Name:  "this-is-a-very-long-label-that-exceeds-the-maximum-allowed-length-of-63-characters-for-dns-labels.com.",
 						Type:  1,
@@ -274,8 +296,9 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		{
 			name: "invalid domain name in answer loop",
 			response: domain.DNSResponse{
-				ID:    1,
-				RCode: 0,
+				ID:       1,
+				RCode:    0,
+				Question: domain.Question{Name: "valid.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
 				Answers: []domain.ResourceRecord{
 					{
 						Name:  "valid.com.",
@@ -296,8 +319,9 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		{
 			name: "too many answer records",
 			response: domain.DNSResponse{
-				ID:    1,
-				RCode: 0,
+				ID:       1,
+				RCode:    0,
+				Question: domain.Question{Name: "example.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
 				Answers: func() []domain.ResourceRecord {
 					// Create more than 65535 answer records to trigger bounds check
 					answers := make([]domain.ResourceRecord, 65536)
@@ -317,8 +341,9 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		{
 			name: "resource record data too large",
 			response: domain.DNSResponse{
-				ID:    1,
-				RCode: 0,
+				ID:       1,
+				RCode:    0,
+				Question: domain.Question{Name: "example.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
 				Answers: []domain.ResourceRecord{
 					{
 						Name:  "example.com.",
@@ -340,8 +365,9 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		{
 			name: "multiple answers with different names",
 			response: domain.DNSResponse{
-				ID:    54321,
-				RCode: 0,
+				ID:       54321,
+				RCode:    0,
+				Question: domain.Question{Name: "first.example.com.", Type: domain.RRType(1), Class: domain.RRClass(1)},
 				Answers: []domain.ResourceRecord{
 					{
 						Name:  "first.example.com.",
