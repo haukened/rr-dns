@@ -45,3 +45,4 @@ Follow these general Go conventions when generating code:
 ## Linting
 - Run `golangci-lint` to check for linting issues.
 - Fix all linting errors before submitting code.
+- when std library functions are used, handle errors appropriately (e.g., using `require.NoError` in tests) to ensure there aren't linting errors due to not checking return values, etc...
