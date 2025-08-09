@@ -66,9 +66,9 @@ type MockUpstreamClient struct {
 	mock.Mock
 }
 
-func (m *MockUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (m *MockUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	args := m.Called(ctx, query, now)
-	return args.Get(0).(domain.DNSResponse), args.Error(1)
+	return args.Get(0).([]domain.ResourceRecord), args.Error(1)
 }
 
 type MockZoneCache struct {
@@ -229,7 +229,7 @@ func TestResolver_HandleQuery_Blocklist(t *testing.T) {
 			if !tt.isBlocked {
 				// If not blocked, will check upstream cache and then upstream
 				mockUpstreamCache.On("Get", tt.query.CacheKey()).Return([]domain.ResourceRecord{}, false)
-				mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return(domain.DNSResponse{}, errors.New("upstream error"))
+				mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return([]domain.ResourceRecord(nil), errors.New("upstream error"))
 			}
 
 			// Create resolver
@@ -309,7 +309,7 @@ func TestResolver_HandleQuery_UpstreamCache(t *testing.T) {
 
 			if !tt.cacheHit {
 				// Cache miss, will go to upstream
-				mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return(domain.DNSResponse{}, errors.New("upstream error"))
+				mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return([]domain.ResourceRecord(nil), errors.New("upstream error"))
 			}
 
 			// Create resolver
@@ -348,7 +348,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 	tests := []struct {
 		name            string
 		query           domain.Question
-		upstreamResp    domain.DNSResponse
+		upstreamRecords []domain.ResourceRecord
 		upstreamErr     error
 		cacheSetErr     error
 		expectedRCode   domain.RCode
@@ -356,13 +356,9 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		shouldCallCache bool
 	}{
 		{
-			name:  "successful upstream resolution with caching",
-			query: createTestQuery("upstream.com.", domain.RRType(1)), // A record
-			upstreamResp: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
+			name:            "successful upstream resolution with caching",
+			query:           createTestQuery("upstream.com.", domain.RRType(1)), // A record
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -372,7 +368,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "upstream resolution failure",
 			query:           createTestQuery("failed.com.", domain.RRType(1)), // A record
-			upstreamResp:    domain.DNSResponse{},
+			upstreamRecords: nil,
 			upstreamErr:     errors.New("network timeout"),
 			cacheSetErr:     nil,
 			expectedRCode:   domain.SERVFAIL,
@@ -380,13 +376,9 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 			shouldCallCache: false,
 		},
 		{
-			name:  "successful upstream resolution with cache error",
-			query: createTestQuery("cache-fail.com.", domain.RRType(1)), // A record
-			upstreamResp: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
+			name:            "successful upstream resolution with cache error",
+			query:           createTestQuery("cache-fail.com.", domain.RRType(1)), // A record
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
 			upstreamErr:     nil,
 			cacheSetErr:     errors.New("cache full"),
 			expectedRCode:   domain.NOERROR,
@@ -394,13 +386,9 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 			shouldCallCache: true,
 		},
 		{
-			name:  "successful upstream resolution with nil cache",
-			query: createTestQuery("nil-cache.com.", domain.RRType(1)), // A record
-			upstreamResp: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
+			name:            "successful upstream resolution with nil cache",
+			query:           createTestQuery("nil-cache.com.", domain.RRType(1)), // A record
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -434,10 +422,10 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 				mockUpstreamCache.(*MockCache).On("Get", tt.query.CacheKey()).Return([]domain.ResourceRecord{}, false)
 			}
 
-			mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return(tt.upstreamResp, tt.upstreamErr)
+			mockUpstream.On("Resolve", mock.Anything, tt.query, mock.Anything).Return(tt.upstreamRecords, tt.upstreamErr)
 
 			if tt.shouldCallCache && mockUpstreamCache != nil && tt.upstreamErr == nil {
-				mockUpstreamCache.(*MockCache).On("Set", tt.upstreamResp.Answers).Return(tt.cacheSetErr)
+				mockUpstreamCache.(*MockCache).On("Set", tt.upstreamRecords).Return(tt.cacheSetErr)
 			}
 
 			// Create resolver
@@ -489,7 +477,7 @@ func TestResolver_HandleQuery_ContextCancellation(t *testing.T) {
 	mockZoneCache.On("FindRecords", query).Return([]domain.ResourceRecord{}, false)
 	mockBlocklist.On("IsBlocked", query).Return(false)
 	mockUpstreamCache.On("Get", query.CacheKey()).Return([]domain.ResourceRecord{}, false)
-	mockUpstream.On("Resolve", mock.Anything, query, mock.Anything).Return(domain.DNSResponse{}, context.Canceled)
+	mockUpstream.On("Resolve", mock.Anything, query, mock.Anything).Return([]domain.ResourceRecord(nil), context.Canceled)
 
 	// Create resolver
 	resolver := NewResolver(ResolverOptions{
@@ -582,7 +570,7 @@ func TestResolver_HandleQuery_NilDependencies(t *testing.T) {
 				uc.On("Get", query.CacheKey()).Return([]domain.ResourceRecord{}, false)
 			}
 			if up, ok := tt.upstream.(*MockUpstreamClient); ok {
-				up.On("Resolve", mock.Anything, query, mock.Anything).Return(domain.DNSResponse{}, errors.New("upstream error"))
+				up.On("Resolve", mock.Anything, query, mock.Anything).Return([]domain.ResourceRecord(nil), errors.New("upstream error"))
 			}
 
 			// Create resolver
@@ -702,42 +690,30 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 	tests := []struct {
 		name          string
 		upstreamCache Cache
-		response      domain.DNSResponse
+		records       []domain.ResourceRecord
 		expectError   bool
 		expectCall    bool
 	}{
 		{
 			name:          "successful caching",
 			upstreamCache: &MockCache{},
-			response: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
-			expectError: false,
-			expectCall:  true,
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			expectError:   false,
+			expectCall:    true,
 		},
 		{
 			name:          "cache error",
 			upstreamCache: &MockCache{},
-			response: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
-			expectError: true,
-			expectCall:  true,
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			expectError:   true,
+			expectCall:    true,
 		},
 		{
 			name:          "nil cache - no error",
 			upstreamCache: nil,
-			response: domain.DNSResponse{
-				ID:      1,
-				RCode:   domain.NOERROR,
-				Answers: []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
-			},
-			expectError: false,
-			expectCall:  false,
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			expectError:   false,
+			expectCall:    false,
 		},
 	}
 
@@ -750,13 +726,13 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 			if tt.expectCall && tt.upstreamCache != nil {
 				mockCache := tt.upstreamCache.(*MockCache)
 				if tt.expectError {
-					mockCache.On("Set", tt.response.Answers).Return(errors.New("cache error"))
+					mockCache.On("Set", tt.records).Return(errors.New("cache error"))
 				} else {
-					mockCache.On("Set", tt.response.Answers).Return(nil)
+					mockCache.On("Set", tt.records).Return(nil)
 				}
 			}
 
-			err := resolver.cacheUpstreamResponse(tt.response)
+			err := resolver.cacheUpstreamResponse(tt.records)
 
 			if tt.expectError {
 				assert.Error(t, err)

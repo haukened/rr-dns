@@ -134,7 +134,7 @@ type ResolverOptions struct {
 Handles DNS query processing and response generation:
 ```go
 type DNSResponder interface {
-    HandleQuery(ctx context.Context, query domain.DNSQuery, clientAddr net.Addr) (domain.DNSResponse, error)
+    HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error)
 }
 ```
 
@@ -142,7 +142,8 @@ type DNSResponder interface {
 Provides upstream DNS resolution capabilities:
 ```go
 type UpstreamClient interface {
-    Resolve(ctx context.Context, query domain.DNSQuery, now time.Time) (domain.DNSResponse, error)
+    // Returns upstream answers (resource records). Service assembles DNSResponse.
+    Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error)
 }
 ```
 
@@ -152,7 +153,7 @@ type UpstreamClient interface {
 Manages authoritative DNS records with value-based storage:
 ```go
 type ZoneCache interface {
-    FindRecords(query domain.DNSQuery) ([]domain.ResourceRecord, bool)
+    FindRecords(query domain.Question) ([]domain.ResourceRecord, bool)
     PutZone(zoneRoot string, records []domain.ResourceRecord)
     RemoveZone(zoneRoot string)
     Zones() []string
@@ -188,7 +189,7 @@ type ServerTransport interface {
 Provides DNS filtering capabilities:
 ```go
 type Blocklist interface {
-    IsBlocked(q domain.DNSQuery) bool
+    IsBlocked(q domain.Question) bool
 }
 ```
 
@@ -271,14 +272,13 @@ The resolver processes DNS queries through the following decision tree:
 
 ### Upstream Servers
 ```go
-upstreamClient := &client.DNSClient{
-    Servers: []string{
-        "1.1.1.1:53",
-        "1.0.0.1:53",
-        "8.8.8.8:53",
-    },
-    Timeout: 5 * time.Second,
-}
+// Upstream resolver from gateways/upstream
+upstreamClient, _ := upstream.NewResolver(upstream.Options{
+    Servers:  []string{"1.1.1.1:53", "1.0.0.1:53", "8.8.8.8:53"},
+    Timeout:  5 * time.Second,
+    Parallel: true,
+    Codec:    wire.NewUDPCodec(log.GetLogger()),
+})
 ```
 
 ### Cache Configuration
@@ -339,7 +339,7 @@ func TestResolver(t *testing.T) {
     })
     
     // Test query resolution
-    query := domain.DNSQuery{Name: "test.example.com.", Type: domain.A}
+    query, _ := domain.NewQuestion(1, "test.example.com.", domain.RRTypeA, domain.RRClassIN)
     response, err := resolver.HandleQuery(context.Background(), query, nil)
     
     // Verify response

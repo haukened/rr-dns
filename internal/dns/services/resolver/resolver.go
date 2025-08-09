@@ -66,7 +66,7 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 	// if the ctx is cancelled, this will return an error
 	// This allows the resolver to respect cancellation requests from the transport layer.
 	// It also allows for timeouts to be applied at the transport level.
-	response, err := r.resolveUpstream(ctx, query, r.clock.Now())
+	records, err := r.resolveUpstream(ctx, query, r.clock.Now())
 	if err != nil {
 		r.logger.Error(map[string]any{
 			"error":     err,
@@ -77,8 +77,8 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 		return buildResponse(query, domain.SERVFAIL, nil), nil
 	}
 
-	// 5. Store response in upstream cache
-	if err := r.cacheUpstreamResponse(response); err != nil {
+	// 5. Store records in upstream cache
+	if err := r.cacheUpstreamResponse(records); err != nil {
 		r.logger.Error(map[string]any{
 			"error":     err,
 			"query":     query,
@@ -89,7 +89,7 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 	}
 
 	// 6. Return response to client
-	return response, nil
+	return buildResponse(query, domain.NOERROR, records), nil
 }
 
 func (r *Resolver) checkZoneCache(query domain.Question) ([]domain.ResourceRecord, bool) {
@@ -113,18 +113,18 @@ func (r *Resolver) checkUpstreamCache(query domain.Question) ([]domain.ResourceR
 	return r.upstreamCache.Get(query.CacheKey())
 }
 
-func (r *Resolver) resolveUpstream(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
+func (r *Resolver) resolveUpstream(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
 	if r.upstream == nil {
-		return domain.DNSResponse{}, fmt.Errorf("no upstream client configured")
+		return nil, fmt.Errorf("no upstream client configured")
 	}
 	return r.upstream.Resolve(ctx, query, now)
 }
 
-func (r *Resolver) cacheUpstreamResponse(response domain.DNSResponse) error {
+func (r *Resolver) cacheUpstreamResponse(records []domain.ResourceRecord) error {
 	if r.upstreamCache == nil {
 		return nil // No cache configured, not an error
 	}
-	return r.upstreamCache.Set(response.Answers)
+	return r.upstreamCache.Set(records)
 }
 
 // buildResponse creates a DNS response with the specified RCode and optional records

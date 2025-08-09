@@ -43,12 +43,12 @@ func (s *stubCache) Keys() []string {
 }
 
 type stubUpstreamClient struct {
-	response domain.DNSResponse
-	err      error
+	answers []domain.ResourceRecord
+	err     error
 }
 
-func (s *stubUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) (domain.DNSResponse, error) {
-	return s.response, s.err
+func (s *stubUpstreamClient) Resolve(ctx context.Context, query domain.Question, now time.Time) ([]domain.ResourceRecord, error) {
+	return s.answers, s.err
 }
 
 type stubZoneCache struct {
@@ -175,7 +175,7 @@ func BenchmarkResolver_HandleQuery_UpstreamResolution(b *testing.B) {
 		Blocklist:     &stubBlocklist{blocked: false},
 		Clock:         &clock.MockClock{CurrentTime: time.Now()},
 		Logger:        &stubLogger{},
-		Upstream:      &stubUpstreamClient{response: upstreamResp},
+		Upstream:      &stubUpstreamClient{answers: upstreamResp.Answers},
 		UpstreamCache: &stubCache{found: false}, // Cache miss
 		ZoneCache:     &stubZoneCache{found: false},
 	})
