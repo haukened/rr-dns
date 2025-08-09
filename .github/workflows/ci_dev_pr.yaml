@@ -4,10 +4,10 @@ on:
   pull_request:
     branches: [ develop ]
     paths-ignore:
-      - '.github/**'
       - '**/README.md'
       - 'docs/**'
-      - './Makefile'
+      - 'Makefile'
+      - '.github/instructions/**'
 
 env:
   GO_VERSION: '1.24'
