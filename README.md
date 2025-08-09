@@ -114,8 +114,8 @@ RR-DNS currently supports:
 | Version   | Features                                  | Status       |
 |-----------|-------------------------------------------|--------------|
 | **v0.1**  | Core DNS Resolution features              | ✅ Complete  |
-| **v0.2**  | Docker support                            | 🚧 In Progress |
-| **v0.3**  | Blocklist subscriptions                   | 📋 Planned   |
+| **v0.2**  | Docker support                            | ✅ Complete  |
+| **v0.3**  | Blocklist subscriptions                   | 🚧 In Progress |
 | **v0.4**  | Snap package support                      | 📋 Planned   |
 | **v0.5**  | Apt package support                       | 📋 Planned   |
 | **v1.0**  | Stable release (no UI)                    | 📋 Planned   |
