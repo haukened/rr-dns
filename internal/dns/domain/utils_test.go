@@ -93,7 +93,7 @@ func TestGenerateCacheKey(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := generateCacheKey(tc.fqdn, tc.t, tc.c)
+			got := GenerateCacheKey(tc.fqdn, tc.t, tc.c)
 			if got != tc.want {
 				t.Errorf("generateCacheKey(%q, %d, %d) = %q, want %q",
 					tc.fqdn, tc.t, tc.c, got, tc.want)
@@ -129,7 +129,7 @@ func TestGenerateCacheKey_PipeSeparatorSafety(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := generateCacheKey(tc.fqdn, tc.t, tc.c)
+			got := GenerateCacheKey(tc.fqdn, tc.t, tc.c)
 			if got != tc.want {
 				t.Errorf("generateCacheKey(%q, %d, %d) = %q, want %q",
 					tc.fqdn, tc.t, tc.c, got, tc.want)

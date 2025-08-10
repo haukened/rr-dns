@@ -8,7 +8,7 @@ import (
 // The zone-aware format enables O(1) lookups by automatically extracting the zone root from the FQDN.
 // Format: "zoneRoot|name|type|class" (e.g., "example.com.|www.example.com.|1|1")
 // Uses pipe (|) separator to avoid conflicts with colons in IPv6 addresses and URIs.
-func generateCacheKey(name string, t RRType, c RRClass) string {
+func GenerateCacheKey(name string, t RRType, c RRClass) string {
 	// ensure the name is canonicalized and ends with a dot
 	name = utils.CanonicalDNSName(name)
 	// get the apex domain

@@ -80,7 +80,7 @@ func (rr ResourceRecord) TTLRemaining() time.Duration {
 
 // CacheKey returns a cache key string derived from the record's name, type, and class.
 func (rr ResourceRecord) CacheKey() string {
-	return generateCacheKey(rr.Name, rr.Type, rr.Class)
+	return GenerateCacheKey(rr.Name, rr.Type, rr.Class)
 }
 
 // TTL returns the effective TTL value for wire encoding.
