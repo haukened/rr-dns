@@ -1,4 +1,4 @@
-package zone
+package rrdata
 
 import (
 	"fmt"
@@ -84,7 +84,7 @@ func TestEncodeRRData_SwitchCoverage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := encodeRRData(tt.rrType, tt.data)
+			got, err := EncodeRRData(tt.rrType, tt.data)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Nil(t, got)
