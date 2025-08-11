@@ -18,6 +18,7 @@ type Resolver struct {
 	upstream      UpstreamClient
 	upstreamCache Cache
 	zoneCache     ZoneCache
+	maxRecursion  int
 }
 
 type ResolverOptions struct {
@@ -27,6 +28,7 @@ type ResolverOptions struct {
 	Upstream      UpstreamClient
 	UpstreamCache Cache
 	ZoneCache     ZoneCache
+	MaxRecursion  int
 }
 
 func NewResolver(opts ResolverOptions) *Resolver {
@@ -37,12 +39,13 @@ func NewResolver(opts ResolverOptions) *Resolver {
 		upstream:      opts.Upstream,
 		upstreamCache: opts.UpstreamCache,
 		zoneCache:     opts.ZoneCache,
+		maxRecursion:  opts.MaxRecursion,
 	}
 }
 
 func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error) {
 	// 1. Check authoritative zone cache first
-	records, found := r.checkZoneCache(query)
+	records, found := r.resolveFromZone(query)
 	if found {
 		return buildResponse(query, domain.NOERROR, records), nil
 	}
@@ -92,11 +95,18 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 	return buildResponse(query, domain.NOERROR, records), nil
 }
 
-func (r *Resolver) checkZoneCache(query domain.Question) ([]domain.ResourceRecord, bool) {
+func (r *Resolver) resolveFromZone(query domain.Question) ([]domain.ResourceRecord, bool) {
 	if r.zoneCache == nil {
 		return nil, false
 	}
-	return r.zoneCache.FindRecords(query)
+	// Lookup exact match in the zone cache
+	records, found := r.zoneCache.FindRecords(query)
+	if !found || len(records) == 0 {
+		return nil, false
+	}
+	// TODO: If the first record is a CNAME and the query type isn't CNAME,
+	// implement in-zone CNAME chasing up to r.maxRecursion.
+	return records, true
 }
 
 func (r *Resolver) checkBlocklist(query domain.Question) bool {
