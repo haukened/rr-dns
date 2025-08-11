@@ -15,6 +15,7 @@ This guide defines how to structure and write tests for the rr-dns project. It s
 - Infrastructure tests should verify integration (e.g., UDP packet flow).
 - Prefer table-driven tests for coverage and clarity.
 - Keep test setup explicit and small.
+- One test file per go file.
 
 ---
 
