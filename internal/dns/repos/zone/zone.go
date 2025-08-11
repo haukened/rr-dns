@@ -15,6 +15,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 
+	"github.com/haukened/rr-dns/internal/dns/common/rrdata"
 	"github.com/haukened/rr-dns/internal/dns/common/utils"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
@@ -83,7 +84,7 @@ func buildResourceRecord(fqdn string, rrType string, val any, defaultTTL time.Du
 	rType := domain.RRTypeFromString(rrType)
 	var records []domain.ResourceRecord
 	for _, s := range strs {
-		data, err := encodeRRData(rType, s)
+		data, err := rrdata.Encode(rType, s)
 		if err != nil {
 			return nil, err
 		}
