@@ -10,54 +10,49 @@ import (
 func Encode(rrType domain.RRType, data string) ([]byte, error) {
 	switch rrType {
 	case domain.RRTypeA: // 1
-		return EncodeAData(data)
+		return encodeAData(data)
 	case domain.RRTypeNS: // 2
-		return EncodeNSData(data)
+		return encodeNSData(data)
 	case domain.RRTypeCNAME: // 5
-		return EncodeCNAMEData(data)
+		return encodeCNAMEData(data)
 	case domain.RRTypeSOA: // 6
-		return EncodeSOAData(data)
+		return encodeSOAData(data)
 	case domain.RRTypePTR: // 12
-		return EncodePTRData(data)
+		return encodePTRData(data)
 	case domain.RRTypeMX: // 15
-		return EncodeMXData(data)
+		return encodeMXData(data)
 	case domain.RRTypeTXT: // 16
-		return EncodeTXTData(data)
+		return encodeTXTData(data)
 	case domain.RRTypeAAAA: // 28
-		return EncodeAAAAData(data)
+		return encodeAAAAData(data)
 	case domain.RRTypeSRV: // 33
-		return EncodeSRVData(data)
+		return encodeSRVData(data)
 	case domain.RRTypeNAPTR: // 35
-		return notimp(domain.RRTypeNAPTR)
+		return encoderNotImplemented(domain.RRTypeNAPTR)
 	case domain.RRTypeOPT: // 41
-		return notAllowedInZone(domain.RRTypeOPT)
+		return encoderNotImplemented(domain.RRTypeOPT)
 	case domain.RRTypeDS: // 43
-		return notimp(domain.RRTypeDS)
+		return encoderNotImplemented(domain.RRTypeDS)
 	case domain.RRTypeRRSIG: // 46
-		return notimp(domain.RRTypeRRSIG)
+		return encoderNotImplemented(domain.RRTypeRRSIG)
 	case domain.RRTypeNSEC: // 47
-		return notimp(domain.RRTypeNSEC)
+		return encoderNotImplemented(domain.RRTypeNSEC)
 	case domain.RRTypeDNSKEY: // 48
-		return notimp(domain.RRTypeDNSKEY)
+		return encoderNotImplemented(domain.RRTypeDNSKEY)
 	case domain.RRTypeTLSA: // 52
-		return notimp(domain.RRTypeTLSA)
+		return encoderNotImplemented(domain.RRTypeTLSA)
 	case domain.RRTypeSVCB: // 64
-		return notimp(domain.RRTypeSVCB)
+		return encoderNotImplemented(domain.RRTypeSVCB)
 	case domain.RRTypeHTTPS: // 65
-		return notimp(domain.RRTypeHTTPS)
+		return encoderNotImplemented(domain.RRTypeHTTPS)
 	case domain.RRTypeCAA: // 257
-		return EncodeCAAData(data)
+		return encodeCAAData(data)
 	default:
 		return []byte(data), nil
 	}
 }
 
-// notimp returns an error indicating that the specified DNS record type encoding is not implemented yet.
-func notimp(t domain.RRType) ([]byte, error) {
+// encoderNotImplemented returns an error indicating that the specified DNS record type encoding is not implemented yet.
+func encoderNotImplemented(t domain.RRType) ([]byte, error) {
 	return nil, fmt.Errorf("%s record encoding not implemented yet", t)
-}
-
-// notAllowedInZone returns an error indicating that the specified DNS record type is not allowed in zone files.
-func notAllowedInZone(t domain.RRType) ([]byte, error) {
-	return nil, fmt.Errorf("%s record type not allowed in zone files", t)
 }

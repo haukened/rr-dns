@@ -10,9 +10,9 @@ import (
 
 // encodeDomainName encodes a domain name into wire format (length-prefixed labels ending in 0).
 // used in multiple record types
-func EncodeDomainName(name string) ([]byte, error) {
+func encodeDomainName(name string) ([]byte, error) {
 	// name = foo.example.com.
-	name = utils.CanonicalDNSName(name)
+	name = utils.PresentationDNSName(name)
 	labels := strings.Split(name, ".")
 	var encoded []byte
 	for _, label := range labels {
@@ -27,6 +27,23 @@ func EncodeDomainName(name string) ([]byte, error) {
 	}
 	encoded = append(encoded, 0) // null terminator
 	return encoded, nil
+}
+
+func decodeDomainName(b []byte) (string, error) {
+	var labels []string
+	for i := 0; i < len(b); {
+		labelLen := int(b[i])
+		if labelLen == 0 {
+			break
+		}
+		i++
+		if i+labelLen > len(b) {
+			return "", fmt.Errorf("invalid domain name encoding")
+		}
+		labels = append(labels, string(b[i:i+labelLen]))
+		i += labelLen
+	}
+	return strings.Join(labels, "."), nil
 }
 
 // isIPv4 checks whether the provided net.IP address is an IPv4 address.

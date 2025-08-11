@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// EncodeSOAData encodes an SOA record string into its binary representation.
-func EncodeSOAData(data string) ([]byte, error) {
+// encodeSOAData encodes an SOA record string into its binary representation.
+func encodeSOAData(data string) ([]byte, error) {
 	// data = "mname rname serial refresh retry expire minimum"
 	parts := strings.Fields(data)
 	if len(parts) != 7 {
@@ -16,14 +16,14 @@ func EncodeSOAData(data string) ([]byte, error) {
 	}
 
 	// mname is the primary name server for the zone
-	mname, err := EncodeDomainName(parts[0])
+	mname, err := encodeDomainName(parts[0])
 	if err != nil {
 		return nil, fmt.Errorf("invalid SOA mname: %v", err)
 	}
 
 	// rname is the email address of the zone administrator, with '.' replaced by '@'
 	// e.g. "hostmaster.example.com" becomes "hostmaster@example.com"
-	rname, err := EncodeDomainName(parts[1])
+	rname, err := encodeDomainName(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("invalid SOA rname: %v", err)
 	}
@@ -46,4 +46,38 @@ func EncodeSOAData(data string) ([]byte, error) {
 	encoded = append(encoded, u32...)
 
 	return encoded, nil
+}
+
+// decodeSOAData decodes an SOA record from its binary representation.
+func decodeSOAData(b []byte) (string, error) {
+	if len(b) < 25 {
+		return "", fmt.Errorf("invalid SOA data length: %d", len(b))
+	}
+
+	// Decode mname
+	mname, err := decodeDomainName(b)
+	if err != nil {
+		return "", fmt.Errorf("invalid SOA mname: %v", err)
+	}
+	offset := len(mname) + 2 // +2 for root dot and label length
+
+	// Decode rname
+	rname, err := decodeDomainName(b[offset:])
+	if err != nil {
+		return "", fmt.Errorf("invalid SOA rname: %v", err)
+	}
+	offset += len(rname) + 2
+
+	// Ensure we have at least 20 bytes for the unsigned integers
+	if len(b[offset:]) < 20 {
+		return "", fmt.Errorf("SOA record missing integer fields")
+	}
+
+	// Extract the five unsigned integers
+	var u32 [5]uint32
+	for i := 0; i < 5; i++ {
+		u32[i] = binary.BigEndian.Uint32(b[offset+i*4 : offset+(i+1)*4])
+	}
+
+	return fmt.Sprintf("%s %s %d %d %d %d %d", mname, rname, u32[0], u32[1], u32[2], u32[3], u32[4]), nil
 }

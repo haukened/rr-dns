@@ -8,25 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNotAllowedInZone_ReturnsErrorAndNil(t *testing.T) {
-	tests := []struct {
-		name   string
-		rrType domain.RRType
-	}{
-		{"OPT record", domain.RRTypeOPT},
-		{"Unknown record", domain.RRType(9999)},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			data, err := notAllowedInZone(tt.rrType)
-			require.Nil(t, data, "data should be nil")
-			require.Error(t, err, "error should not be nil")
-			require.Contains(t, err.Error(), fmt.Sprintf("%s record type not allowed in zone files", tt.rrType))
-		})
-	}
-}
-func TestNotimp_ReturnsErrorAndNil(t *testing.T) {
+func TestEncoderNotImplemented_ReturnsErrorAndNil(t *testing.T) {
 	tests := []struct {
 		name   string
 		rrType domain.RRType
@@ -43,7 +25,7 @@ func TestNotimp_ReturnsErrorAndNil(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data, err := notimp(tt.rrType)
+			data, err := encoderNotImplemented(tt.rrType)
 			require.Nil(t, data, "data should be nil")
 			require.Error(t, err, "error should not be nil")
 			require.Contains(t, err.Error(), fmt.Sprintf("%s record encoding not implemented yet", tt.rrType))
@@ -52,7 +34,7 @@ func TestNotimp_ReturnsErrorAndNil(t *testing.T) {
 }
 
 // TestEncodeRRData_SwitchCoverage ensures each case in encodeRRData's switch is executed at least once.
-func TestEncodeRRData_SwitchCoverage(t *testing.T) {
+func TestEncode_SwitchCoverage(t *testing.T) {
 	tests := []struct {
 		name         string
 		rrType       domain.RRType

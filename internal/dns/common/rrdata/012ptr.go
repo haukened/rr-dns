@@ -1,7 +1,13 @@
 package rrdata
 
-// EncodePTRData encodes a PTR record string into its binary representation.
-func EncodePTRData(data string) ([]byte, error) {
+// encodePTRData encodes a PTR record string into its binary representation.
+func encodePTRData(data string) ([]byte, error) {
 	// data = "ptr.example.com"
-	return EncodeDomainName(data)
+	return encodeDomainName(data)
+}
+
+// decodePTRData decodes a PTR (Pointer) record's RDATA from the given byte slice.
+// It returns the domain name as a string and an error if decoding fails.
+func decodePTRData(b []byte) (string, error) {
+	return decodeDomainName(b)
 }

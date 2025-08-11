@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// EncodeMXData encodes an MX record string into its binary representation.
-func EncodeMXData(data string) ([]byte, error) {
+// encodeMXData encodes an MX record string into its binary representation.
+func encodeMXData(data string) ([]byte, error) {
 	// data = 10 mail.example.com
 	parts := strings.Fields(data)
 	if len(parts) != 2 {
@@ -23,9 +23,23 @@ func EncodeMXData(data string) ([]byte, error) {
 	prefBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(prefBytes, uint16(pref))
 	// Encode the domain name of the mail server
-	encodedDomain, err := EncodeDomainName(parts[1])
+	encodedDomain, err := encodeDomainName(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("invalid MX exchange domain: %s", parts[1])
 	}
 	return append(prefBytes, encodedDomain...), nil
+}
+
+// decodeMXData decodes MX (Mail Exchange) record data from the given byte slice.
+func decodeMXData(b []byte) (string, error) {
+	if len(b) < 2 {
+		return "", fmt.Errorf("invalid MX data length")
+	}
+	pref := binary.BigEndian.Uint16(b[:2])
+	// Decode the domain name
+	domain, err := decodeDomainName(b[2:])
+	if err != nil {
+		return "", fmt.Errorf("invalid MX exchange domain: %v", err)
+	}
+	return fmt.Sprintf("%d %s", pref, domain), nil
 }
