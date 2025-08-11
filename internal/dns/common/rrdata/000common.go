@@ -12,7 +12,7 @@ import (
 // used in multiple record types
 func encodeDomainName(name string) ([]byte, error) {
 	// name = foo.example.com.
-	name = utils.PresentationDNSName(name)
+	name = utils.CanonicalDNSName(name)
 	labels := strings.Split(name, ".")
 	var encoded []byte
 	for _, label := range labels {

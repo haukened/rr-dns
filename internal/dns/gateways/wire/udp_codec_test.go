@@ -478,7 +478,7 @@ func TestUdpCodec_DecodeResponse(t *testing.T) {
 			expectedID: 12345,
 			checkResp: func(resp domain.DNSResponse) bool {
 				return resp.ID == 12345 && len(resp.Answers) == 1 &&
-					resp.Answers[0].Name == "example.com." &&
+					resp.Answers[0].Name == "example.com" &&
 					resp.Answers[0].Type == 1
 			},
 		},

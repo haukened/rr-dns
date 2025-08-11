@@ -104,7 +104,7 @@ func TestDecodeSRVData_Valid(t *testing.T) {
 				target, _ := encodeDomainName("example.com.")
 				return append(b, target...)
 			}(),
-			expected: "10 20 80 example.com.",
+			expected: "10 20 80 example.com",
 		},
 		{
 			input: func() []byte {
@@ -112,10 +112,10 @@ func TestDecodeSRVData_Valid(t *testing.T) {
 				binary.BigEndian.PutUint16(b[0:], 0)
 				binary.BigEndian.PutUint16(b[2:], 0)
 				binary.BigEndian.PutUint16(b[4:], 443)
-				target, _ := encodeDomainName("_sip._tcp.example.com.")
+				target, _ := encodeDomainName("_sip._tcp.example.com")
 				return append(b, target...)
 			}(),
-			expected: "0 0 443 _sip._tcp.example.com.",
+			expected: "0 0 443 _sip._tcp.example.com",
 		},
 	}
 

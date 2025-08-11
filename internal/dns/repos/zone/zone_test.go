@@ -65,7 +65,7 @@ func TestLoadZoneDirectory(t *testing.T) {
 	for _, expected := range expectedZones {
 		found := false
 		for zoneRoot := range zones {
-			if strings.TrimSuffix(zoneRoot, ".") == expected {
+			if zoneRoot == expected {
 				found = true
 				break
 			}
@@ -140,7 +140,7 @@ www:
     - "1.2.3.4"
     - "5.6.7.8"
 mail:
-  MX: ["10 mail.example.com."]
+  MX: ["10 mail.example.com"]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -159,7 +159,7 @@ mail:
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["www.example.com."] || !names["mail.example.com."] {
+	if !names["www.example.com"] || !names["mail.example.com"] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
@@ -167,7 +167,7 @@ mail:
 	}
 	aCount := 0
 	for _, r := range records {
-		if r.Name == "www.example.com." && r.Type.String() == "A" {
+		if r.Name == "www.example.com" && r.Type.String() == "A" {
 			aCount++
 		}
 	}
@@ -196,7 +196,7 @@ func TestLoadZoneFile_JSON(t *testing.T) {
 		t.Errorf("expected 1 record, got %d", len(records))
 	}
 	r := records[0]
-	if r.Name != "api.example.org." {
+	if r.Name != "api.example.org" {
 		t.Errorf("unexpected name: %s", r.Name)
 	}
 	if r.Type.String() != "A" {
@@ -219,7 +219,7 @@ func TestLoadZoneFile_TOML(t *testing.T) {
 [web]
 A = "9.8.7.6"
 [mail]
-MX = ["10 mail.example.com."]
+MX = ["10 mail.example.com"]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -238,7 +238,7 @@ MX = ["10 mail.example.com."]
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["web.example.net."] || !names["mail.example.net."] {
+	if !names["web.example.net"] || !names["mail.example.net"] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
@@ -333,7 +333,7 @@ www:
 }
 
 func TestBuildResourceRecord(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
@@ -363,7 +363,7 @@ func TestBuildResourceRecord(t *testing.T) {
 }
 
 func TestBuildResourceRecord_InvalidType(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "INVALID"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
@@ -374,7 +374,7 @@ func TestBuildResourceRecord_InvalidType(t *testing.T) {
 }
 
 func TestBuildResourceRecord_Multi(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
 	val := []any{"1.2.3.4", "5.6.7.8"}
 	defaultTTL := 60 * time.Second
@@ -396,9 +396,9 @@ func TestExpandName(t *testing.T) {
 		root  string
 		want  string
 	}{
-		{"@", "example.com.", "example.com."},
-		{"foo", "example.com.", "foo.example.com."},
-		{"bar.", "example.com.", "bar."},
+		{"@", "example.com", "example.com"},
+		{"foo", "example.com", "foo.example.com"},
+		{"bar.", "example.com", "bar."},
 	}
 	for _, tc := range cases {
 		got := expandName(tc.label, tc.root)
@@ -429,7 +429,7 @@ func TestNormalize(t *testing.T) {
 // Additional tests for missing coverage
 
 func TestBuildResourceRecord_EncodeError(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
 	val := "invalid.ip.address"
 	defaultTTL := 60 * time.Second
@@ -440,7 +440,7 @@ func TestBuildResourceRecord_EncodeError(t *testing.T) {
 }
 
 func TestBuildResourceRecord_InvalidRRType(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "UNKNOWN"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second

@@ -30,20 +30,20 @@ func TestZoneCache_PutZone(t *testing.T) {
 	}{
 		{
 			name:     "single zone with one record",
-			zoneRoot: "example.com.",
+			zoneRoot: "example.com",
 			records: []domain.ResourceRecord{
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
 			wantCount: 1,
 		},
 		{
 			name:     "single zone with multiple records",
-			zoneRoot: "example.com.",
+			zoneRoot: "example.com",
 			records: []domain.ResourceRecord{
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-				{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
-				{Name: "example.com.", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+				{Name: "mail.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
+				{Name: "example.com", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
 			},
 			wantZones: 1,
 			wantCount: 3,
@@ -52,33 +52,33 @@ func TestZoneCache_PutZone(t *testing.T) {
 			name:     "zone root without trailing dot",
 			zoneRoot: "example.com",
 			records: []domain.ResourceRecord{
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
 			wantCount: 1,
 		},
 		{
 			name:     "zone root with whitespace",
-			zoneRoot: "  example.com.  ",
+			zoneRoot: "  example.com  ",
 			records: []domain.ResourceRecord{
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 			},
 			wantZones: 1,
 			wantCount: 1,
 		},
 		{
 			name:      "empty records slice",
-			zoneRoot:  "example.com.",
+			zoneRoot:  "example.com",
 			records:   []domain.ResourceRecord{},
 			wantZones: 1,
 			wantCount: 0,
 		},
 		{
 			name:     "multiple records with same cache key",
-			zoneRoot: "example.com.",
+			zoneRoot: "example.com",
 			records: []domain.ResourceRecord{
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-				{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+				{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 			},
 			wantZones: 1,
 			wantCount: 1, // Same cache key, so only one entry in zone map
@@ -99,7 +99,7 @@ func TestZoneCache_PutZone(t *testing.T) {
 			}
 
 			// Verify canonical zone root is used
-			canonicalZone := "example.com."
+			canonicalZone := "example.com"
 			if _, exists := zc.zones[canonicalZone]; !exists && tt.wantZones > 0 {
 				t.Errorf("expected zone %q to exist", canonicalZone)
 			}
@@ -112,10 +112,10 @@ func TestZoneCache_PutZone_Replace(t *testing.T) {
 
 	// Put initial records
 	initialRecords := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "mail.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
 	}
-	zc.PutZone("example.com.", initialRecords)
+	zc.PutZone("example.com", initialRecords)
 
 	if zc.Count() != 2 {
 		t.Errorf("expected initial count 2, got %d", zc.Count())
@@ -123,22 +123,22 @@ func TestZoneCache_PutZone_Replace(t *testing.T) {
 
 	// Replace with new records
 	newRecords := []domain.ResourceRecord{
-		{Name: "api.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
+		{Name: "api.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
 	}
-	zc.PutZone("example.com.", newRecords)
+	zc.PutZone("example.com", newRecords)
 
 	if zc.Count() != 1 {
 		t.Errorf("expected count 1 after replacement, got %d", zc.Count())
 	}
 
 	// Verify old records are gone
-	query := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
+	query := domain.Question{Name: "www.example.com", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(query); found {
 		t.Error("expected old record to be removed")
 	}
 
 	// Verify new record exists
-	newQuery := domain.Question{Name: "api.example.com.", Type: 1, Class: 1}
+	newQuery := domain.Question{Name: "api.example.com", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(newQuery); !found {
 		t.Error("expected new record to be found")
 	}
@@ -149,13 +149,13 @@ func TestZoneCache_FindRecords(t *testing.T) {
 
 	// Setup test data
 	records := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}}, // Multiple A records
-		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
-		{Name: "example.com.", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
-		{Name: "example.com.", Type: 28, Class: 1, Data: []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}}, // AAAA
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}}, // Multiple A records
+		{Name: "mail.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
+		{Name: "example.com", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
+		{Name: "example.com", Type: 28, Class: 1, Data: []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}}, // AAAA
 	}
-	zc.PutZone("example.com.", records)
+	zc.PutZone("example.com", records)
 
 	tests := []struct {
 		name      string
@@ -165,19 +165,19 @@ func TestZoneCache_FindRecords(t *testing.T) {
 	}{
 		{
 			name:      "find existing A record with multiple values",
-			query:     domain.Question{Name: "www.example.com.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "www.example.com", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2, // Two A records for www.example.com
 		},
 		{
 			name:      "find existing MX record",
-			query:     domain.Question{Name: "example.com.", Type: 15, Class: 1},
+			query:     domain.Question{Name: "example.com", Type: 15, Class: 1},
 			wantFound: true,
 			wantCount: 1,
 		},
 		{
 			name:      "find existing AAAA record",
-			query:     domain.Question{Name: "example.com.", Type: 28, Class: 1},
+			query:     domain.Question{Name: "example.com", Type: 28, Class: 1},
 			wantFound: true,
 			wantCount: 1,
 		},
@@ -189,31 +189,31 @@ func TestZoneCache_FindRecords(t *testing.T) {
 		},
 		{
 			name:      "query with mixed case",
-			query:     domain.Question{Name: "WwW.ExAmPlE.CoM.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "WwW.example.com", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2,
 		},
 		{
 			name:      "query with whitespace",
-			query:     domain.Question{Name: "  www.example.com.  ", Type: 1, Class: 1},
+			query:     domain.Question{Name: "  www.example.com  ", Type: 1, Class: 1},
 			wantFound: true,
 			wantCount: 2,
 		},
 		{
 			name:      "nonexistent record",
-			query:     domain.Question{Name: "nonexistent.example.com.", Type: 1, Class: 1},
+			query:     domain.Question{Name: "nonexistent.example.com", Type: 1, Class: 1},
 			wantFound: false,
 			wantCount: 0,
 		},
 		{
 			name:      "wrong record type",
-			query:     domain.Question{Name: "www.example.com.", Type: 28, Class: 1}, // AAAA for A record
+			query:     domain.Question{Name: "www.example.com", Type: 28, Class: 1}, // AAAA for A record
 			wantFound: false,
 			wantCount: 0,
 		},
 		{
 			name:      "wrong record class",
-			query:     domain.Question{Name: "www.example.com.", Type: 1, Class: 3}, // CH instead of IN
+			query:     domain.Question{Name: "www.example.com", Type: 1, Class: 3}, // CH instead of IN
 			wantFound: false,
 			wantCount: 0,
 		},
@@ -252,13 +252,13 @@ func TestZoneCache_RemoveZone(t *testing.T) {
 
 	// Setup multiple zones
 	zone1Records := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
 	zone2Records := []domain.ResourceRecord{
 		{Name: "www.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 1}},
 	}
 
-	zc.PutZone("example.com.", zone1Records)
+	zc.PutZone("example.com", zone1Records)
 	zc.PutZone("test.com.", zone2Records)
 
 	if zc.Count() != 2 {
@@ -266,14 +266,14 @@ func TestZoneCache_RemoveZone(t *testing.T) {
 	}
 
 	// Remove one zone
-	zc.RemoveZone("example.com.")
+	zc.RemoveZone("example.com")
 
 	if zc.Count() != 1 {
 		t.Errorf("expected count 1 after removal, got %d", zc.Count())
 	}
 
 	// Verify removed zone is gone
-	query1 := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
+	query1 := domain.Question{Name: "www.example.com", Type: 1, Class: 1}
 	if _, found := zc.FindRecords(query1); found {
 		t.Error("expected removed zone records to be gone")
 	}
@@ -290,21 +290,21 @@ func TestZoneCache_RemoveZone_Canonical(t *testing.T) {
 
 	// Put zone with canonical name
 	records := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
-	zc.PutZone("example.com.", records)
+	zc.PutZone("example.com", records)
 
 	// Remove with different formats
 	testCases := []string{
-		"example.com",      // No trailing dot
-		"  example.com.  ", // With whitespace
-		"EXAMPLE.COM.",     // Different case
+		"example.com",     // No trailing dot
+		"  example.com  ", // With whitespace
+		"example.com",     // Different case
 	}
 
 	for _, zoneRoot := range testCases {
 		t.Run("remove_zone_"+zoneRoot, func(t *testing.T) {
 			// Re-add the zone
-			zc.PutZone("example.com.", records)
+			zc.PutZone("example.com", records)
 			if zc.Count() == 0 {
 				t.Fatal("failed to add zone for test")
 			}
@@ -340,7 +340,7 @@ func TestZoneCache_Zones(t *testing.T) {
 	}
 
 	// Add some zones
-	expectedZones := []string{"example.com.", "test.com.", "another.org."}
+	expectedZones := []string{"example.com", "test.com", "another.org"}
 	for _, zone := range expectedZones {
 		records := []domain.ResourceRecord{
 			{Name: "www." + zone, Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
@@ -376,11 +376,11 @@ func TestZoneCache_Count(t *testing.T) {
 
 	// Add records with different cache keys
 	records1 := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-		{Name: "mail.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
-		{Name: "example.com.", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "mail.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
+		{Name: "example.com", Type: 15, Class: 1, Data: []byte{10, 0, 'm', 'a', 'i', 'l'}},
 	}
-	zc.PutZone("example.com.", records1)
+	zc.PutZone("example.com", records1)
 
 	if zc.Count() != 3 {
 		t.Errorf("expected count 3, got %d", zc.Count())
@@ -388,17 +388,17 @@ func TestZoneCache_Count(t *testing.T) {
 
 	// Add another zone
 	records2 := []domain.ResourceRecord{
-		{Name: "www.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 1}},
-		{Name: "api.test.com.", Type: 1, Class: 1, Data: []byte{192, 168, 2, 2}},
+		{Name: "www.test.com", Type: 1, Class: 1, Data: []byte{192, 168, 2, 1}},
+		{Name: "api.test.com", Type: 1, Class: 1, Data: []byte{192, 168, 2, 2}},
 	}
-	zc.PutZone("test.com.", records2)
+	zc.PutZone("test.com", records2)
 
 	if zc.Count() != 5 {
 		t.Errorf("expected count 5, got %d", zc.Count())
 	}
 
 	// Remove a zone
-	zc.RemoveZone("example.com.")
+	zc.RemoveZone("example.com")
 
 	if zc.Count() != 2 {
 		t.Errorf("expected count 2 after removal, got %d", zc.Count())
@@ -410,11 +410,11 @@ func TestZoneCache_Count_SameCacheKey(t *testing.T) {
 
 	// Add multiple records with the same cache key
 	records := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 2}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 3}},
 	}
-	zc.PutZone("example.com.", records)
+	zc.PutZone("example.com", records)
 
 	// Should count as 1 since they have the same cache key
 	if zc.Count() != 1 {
@@ -427,13 +427,13 @@ func TestZoneCache_ConcurrentAccess(t *testing.T) {
 
 	// Setup initial data
 	records := []domain.ResourceRecord{
-		{Name: "www.example.com.", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
+		{Name: "www.example.com", Type: 1, Class: 1, Data: []byte{192, 168, 1, 1}},
 	}
-	zc.PutZone("example.com.", records)
+	zc.PutZone("example.com", records)
 
 	// Test concurrent reads
 	done := make(chan bool, 10)
-	query := domain.Question{Name: "www.example.com.", Type: 1, Class: 1}
+	query := domain.Question{Name: "www.example.com", Type: 1, Class: 1}
 
 	for i := 0; i < 10; i++ {
 		go func() {
@@ -462,7 +462,7 @@ func TestZoneCache_EdgeCases(t *testing.T) {
 	t.Run("nil records slice", func(t *testing.T) {
 		zc := New()
 		// Should not panic
-		zc.PutZone("example.com.", nil)
+		zc.PutZone("example.com", nil)
 		if zc.Count() != 0 {
 			t.Errorf("expected count 0 for nil records, got %d", zc.Count())
 		}

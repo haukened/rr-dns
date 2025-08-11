@@ -220,7 +220,7 @@ func BenchmarkBuildResourceRecord_Multiple(b *testing.B) {
 
 func BenchmarkExpandName(b *testing.B) {
 	label := "www"
-	root := "example.com."
+	root := "example.com"
 
 	b.ResetTimer()
 	b.ReportAllocs()

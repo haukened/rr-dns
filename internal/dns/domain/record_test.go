@@ -24,7 +24,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name gets canonicalized",
@@ -34,7 +34,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name with whitespace gets canonicalized",
@@ -44,7 +44,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:        "empty name",
@@ -81,7 +81,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			ttl:          0,
 			data:         []byte{192, 0, 2, 1},
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "empty data is valid",
@@ -91,7 +91,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			ttl:          300,
 			data:         []byte{},
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 	}
 
@@ -156,7 +156,7 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			data:         []byte{192, 0, 2, 1},
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name gets canonicalized",
@@ -167,7 +167,7 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			data:         []byte{192, 0, 2, 1},
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:        "empty name",
@@ -188,7 +188,7 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			data:         []byte{192, 0, 2, 1},
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 	}
 

@@ -17,7 +17,7 @@ func BenchmarkDnsCache_Set(b *testing.B) {
 	records := make([]domain.ResourceRecord, b.N)
 	for i := 0; i < b.N; i++ {
 		rr, err := domain.NewCachedResourceRecord(
-			"bench.com.",
+			"bench.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,
@@ -49,7 +49,7 @@ func BenchmarkDnsCache_Get(b *testing.B) {
 
 	// Pre-populate cache
 	rr, err := domain.NewCachedResourceRecord(
-		"bench.com.",
+		"bench.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		300,
@@ -84,7 +84,7 @@ func BenchmarkDnsCache_SetMultiple(b *testing.B) {
 	records := make([]domain.ResourceRecord, 5)
 	for i := 0; i < 5; i++ {
 		rr, err := domain.NewCachedResourceRecord(
-			"multi.com.",
+			"multi.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,
@@ -118,7 +118,7 @@ func BenchmarkDnsCache_GetMultiple(b *testing.B) {
 	records := make([]domain.ResourceRecord, 5)
 	for i := 0; i < 5; i++ {
 		rr, err := domain.NewCachedResourceRecord(
-			"multi.com.",
+			"multi.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,

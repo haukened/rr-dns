@@ -21,7 +21,7 @@ func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 	}
 
 	rr, err := domain.NewCachedResourceRecord(
-		"example.com.",
+		"example.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		10, // 10 second TTL
@@ -57,7 +57,7 @@ func TestDnsCache_Get_ReturnsFalseIfExpired(t *testing.T) {
 
 	// Create expired record by setting timestamp in the past
 	rr, err := domain.NewCachedResourceRecord(
-		"expired.com.",
+		"expired.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		1, // 1 second TTL
@@ -88,7 +88,7 @@ func TestDnsCache_Get_ReturnsFalseIfNotPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache: %v", err)
 	}
-	got, ok := cache.Get("missing.com.|missing.com.|A|IN")
+	got, ok := cache.Get("missing.com|missing.com|A|IN")
 	if ok {
 		t.Errorf("expected not found for missing key, got %v", got)
 	}
@@ -101,7 +101,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	}
 
 	rr1, err := domain.NewCachedResourceRecord(
-		"a.com.",
+		"a.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -113,7 +113,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"b.com.",
+		"b.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -125,7 +125,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 	}
 
 	rr3, err := domain.NewCachedResourceRecord(
-		"c.com.",
+		"c.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -151,9 +151,9 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 
 	keys := cache.Keys()
 	want := map[string]bool{
-		"a.com.|a.com.|A|IN": true,
-		"b.com.|b.com.|A|IN": true,
-		"c.com.|c.com.|A|IN": true,
+		"a.com|a.com|A|IN": true,
+		"b.com|b.com|A|IN": true,
+		"c.com|c.com|A|IN": true,
 	}
 	if len(keys) != 3 {
 		t.Errorf("expected 3 keys, got %d", len(keys))
@@ -173,7 +173,7 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 
 	// Create expired record
 	rr1, err := domain.NewCachedResourceRecord(
-		"expired.com.",
+		"expired.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		1, // 1 second TTL
@@ -186,7 +186,7 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 
 	// Create valid record
 	rr2, err := domain.NewCachedResourceRecord(
-		"valid.com.",
+		"valid.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -210,8 +210,8 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 	cache.Get(rr1.CacheKey())
 
 	keys := cache.Keys()
-	if len(keys) != 1 || keys[0] != "valid.com.|valid.com.|A|IN" {
-		t.Errorf("expected only 'valid.com.|valid.com.|A|IN' in keys, got %v", keys)
+	if len(keys) != 1 || keys[0] != "valid.com|valid.com|A|IN" {
+		t.Errorf("expected only 'valid.com|valid.com|A|IN' in keys, got %v", keys)
 	}
 }
 
@@ -233,7 +233,7 @@ func TestDnsCache_Delete_RemovesEntry(t *testing.T) {
 	}
 
 	rr, err := domain.NewCachedResourceRecord(
-		"delete.com.",
+		"delete.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -266,7 +266,7 @@ func TestDnsCache_Delete_NonExistentKey_NoPanic(t *testing.T) {
 		t.Fatalf("failed to create cache: %v", err)
 	}
 	// Should not panic or error
-	cache.Delete("nonexistent.com.|nonexistent.com.|A|IN")
+	cache.Delete("nonexistent.com|nonexistent.com|A|IN")
 	// Cache should still be empty
 	if cache.Len() != 0 {
 		t.Errorf("expected cache to be empty, got %d", cache.Len())
@@ -280,7 +280,7 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	}
 
 	rr1, err := domain.NewCachedResourceRecord(
-		"a.com.",
+		"a.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -292,7 +292,7 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"b.com.",
+		"b.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -346,7 +346,7 @@ func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
 	}
 
 	rr1, err := domain.NewCachedResourceRecord(
-		"a.com.",
+		"a.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -358,7 +358,7 @@ func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"b.com.",
+		"b.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -388,7 +388,7 @@ func TestDnsCache_SetMultipleRecordsSameKey(t *testing.T) {
 
 	// Create multiple A records for the same domain
 	rr1, err := domain.NewCachedResourceRecord(
-		"multi.com.",
+		"multi.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -400,7 +400,7 @@ func TestDnsCache_SetMultipleRecordsSameKey(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"multi.com.",
+		"multi.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
@@ -438,7 +438,7 @@ func TestDnsCache_Len(t *testing.T) {
 	}
 
 	rr1, err := domain.NewCachedResourceRecord(
-		"test1.com.",
+		"test1.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60,
@@ -460,7 +460,7 @@ func TestDnsCache_Len(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"test2.com.",
+		"test2.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60,
@@ -490,7 +490,7 @@ func TestDnsCache_FilterExpiredRecords(t *testing.T) {
 
 	// Create mix of expired and valid records with same cache key
 	rr1, err := domain.NewCachedResourceRecord(
-		"mixed.com.",
+		"mixed.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		1, // 1 second TTL
@@ -502,7 +502,7 @@ func TestDnsCache_FilterExpiredRecords(t *testing.T) {
 	}
 
 	rr2, err := domain.NewCachedResourceRecord(
-		"mixed.com.",
+		"mixed.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		60, // 1 minute TTL
