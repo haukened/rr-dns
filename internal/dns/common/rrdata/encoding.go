@@ -6,8 +6,8 @@ import (
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
-// EncodeRRData encodes a record value based on its type, to its binary representation.
-func EncodeRRData(rrType domain.RRType, data string) ([]byte, error) {
+// Encode encodes a record value based on its type, to its binary representation.
+func Encode(rrType domain.RRType, data string) ([]byte, error) {
 	switch rrType {
 	case domain.RRTypeA: // 1
 		return EncodeAData(data)
