@@ -122,6 +122,7 @@ func buildApplication(cfg *config.AppConfig) (*Application, error) {
 		Upstream:      gateways.upstream,
 		UpstreamCache: repos.upstreamCache,
 		ZoneCache:     repos.zoneCache,
+		MaxRecursion:  8, // TODO: Magic numbers are bad, put this in config.
 	})
 
 	// Build transport layer
