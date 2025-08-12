@@ -26,6 +26,7 @@ func TestDnsCache_Get_ReturnsRecordIfNotExpired(t *testing.T) {
 		domain.RRClass(1),
 		10, // 10 second TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -62,6 +63,7 @@ func TestDnsCache_Get_ReturnsFalseIfExpired(t *testing.T) {
 		domain.RRClass(1),
 		1, // 1 second TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now().Add(-2*time.Second), // created 2 seconds ago, so already expired
 	)
 	if err != nil {
@@ -106,6 +108,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -118,6 +121,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -130,6 +134,7 @@ func TestDnsCache_Keys_ReturnsAllKeys(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 3},
+		"192.0.2.3",
 		time.Now(),
 	)
 	if err != nil {
@@ -178,6 +183,7 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 		domain.RRClass(1),
 		1, // 1 second TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now().Add(-2*time.Second), // created 2 seconds ago, so already expired
 	)
 	if err != nil {
@@ -191,6 +197,7 @@ func TestDnsCache_Keys_ExcludesExpiredEntries(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -238,6 +245,7 @@ func TestDnsCache_Delete_RemovesEntry(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -285,6 +293,7 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -297,6 +306,7 @@ func TestDnsCache_Delete_OnlyDeletesSpecifiedKey(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -351,6 +361,7 @@ func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -363,6 +374,7 @@ func TestDnsCache_SetWithDifferentKeys(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -393,6 +405,7 @@ func TestDnsCache_SetMultipleRecordsSameKey(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -405,6 +418,7 @@ func TestDnsCache_SetMultipleRecordsSameKey(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -443,6 +457,7 @@ func TestDnsCache_Len(t *testing.T) {
 		domain.RRClass(1),
 		60,
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -465,6 +480,7 @@ func TestDnsCache_Len(t *testing.T) {
 		domain.RRClass(1),
 		60,
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		time.Now(),
 	)
 	if err != nil {
@@ -495,6 +511,7 @@ func TestDnsCache_FilterExpiredRecords(t *testing.T) {
 		domain.RRClass(1),
 		1, // 1 second TTL
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		now.Add(-2*time.Second), // expired
 	)
 	if err != nil {
@@ -507,6 +524,7 @@ func TestDnsCache_FilterExpiredRecords(t *testing.T) {
 		domain.RRClass(1),
 		60, // 1 minute TTL
 		[]byte{192, 0, 2, 2},
+		"192.0.2.2",
 		now, // valid
 	)
 	if err != nil {
