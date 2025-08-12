@@ -70,3 +70,24 @@ type ZoneCache interface {
 	// Count returns the total number of records across all zones
 	Count() int
 }
+
+// AliasResolver defines an interface for resolving CNAME (alias) chains within
+// the authoritative zone (and eventually across upstream/cache layers). It is
+// responsible for expanding an initial record set that begins with a CNAME
+// into a full answer set that includes the CNAME chain plus records that
+// satisfy the original query type. Implementations must enforce a maximum
+// recursion depth and detect alias loops.
+//
+// The returned slice should contain the full ordered chain (each CNAME hop
+// followed by the terminal RRset, if found). The bool indicates whether any
+// alias chasing was performed. An error indicates an internal failure or a
+// policy breach (e.g. depth exceeded) – the caller may translate certain
+// errors into DNS RCODEs (e.g. SERVFAIL).
+type AliasResolver interface {
+	// Chase expands an initial answer set that begins with a CNAME into the
+	// full ordered chain (CNAME hops + terminal RRset). It returns the expanded
+	// slice (or the original slice if no chasing was required) and an error for
+	// policy breaches (loop/depth) or internal failures. Implementations handle
+	// their own fast path internally so callers can always invoke Chase.
+	Chase(query domain.Question, initial []domain.ResourceRecord) ([]domain.ResourceRecord, error)
+}

@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -19,6 +20,7 @@ type Resolver struct {
 	upstreamCache Cache
 	zoneCache     ZoneCache
 	maxRecursion  int
+	aliasResolver AliasResolver
 }
 
 type ResolverOptions struct {
@@ -29,6 +31,7 @@ type ResolverOptions struct {
 	UpstreamCache Cache
 	ZoneCache     ZoneCache
 	MaxRecursion  int
+	AliasResolver AliasResolver
 }
 
 func NewResolver(opts ResolverOptions) *Resolver {
@@ -40,13 +43,23 @@ func NewResolver(opts ResolverOptions) *Resolver {
 		upstreamCache: opts.UpstreamCache,
 		zoneCache:     opts.ZoneCache,
 		maxRecursion:  opts.MaxRecursion,
+		aliasResolver: opts.AliasResolver,
 	}
 }
 
 func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clientAddr net.Addr) (domain.DNSResponse, error) {
 	// 1. Check authoritative zone cache first
-	records, found := r.resolveFromZone(query)
+	records, found, err := r.resolveFromZone(query)
 	if found {
+		if err != nil {
+			// Classify alias errors; fatal ones become SERVFAIL, non-fatal still return partial chain.
+			if r.isFatalAliasError(err) {
+				r.logger.Error(map[string]any{"error": err, "query": query}, "Fatal alias resolution error")
+				return buildResponse(query, domain.SERVFAIL, nil), nil
+			}
+			// Non-fatal alias errors (e.g. target invalid, question build) return gathered chain with NOERROR.
+			r.logger.Warn(map[string]any{"error": err, "query": query}, "Non-fatal alias resolution error; returning partial chain")
+		}
 		return buildResponse(query, domain.NOERROR, records), nil
 	}
 
@@ -69,7 +82,7 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 	// if the ctx is cancelled, this will return an error
 	// This allows the resolver to respect cancellation requests from the transport layer.
 	// It also allows for timeouts to be applied at the transport level.
-	records, err := r.resolveUpstream(ctx, query, r.clock.Now())
+	records, err = r.resolveUpstream(ctx, query, r.clock.Now())
 	if err != nil {
 		r.logger.Error(map[string]any{
 			"error":     err,
@@ -95,18 +108,36 @@ func (r *Resolver) HandleQuery(ctx context.Context, query domain.Question, clien
 	return buildResponse(query, domain.NOERROR, records), nil
 }
 
-func (r *Resolver) resolveFromZone(query domain.Question) ([]domain.ResourceRecord, bool) {
+func (r *Resolver) resolveFromZone(query domain.Question) ([]domain.ResourceRecord, bool, error) {
 	if r.zoneCache == nil {
-		return nil, false
+		return nil, false, nil
 	}
 	// Lookup exact match in the zone cache
 	records, found := r.zoneCache.FindRecords(query)
 	if !found || len(records) == 0 {
-		return nil, false
+		return nil, false, nil
 	}
-	// TODO: If the first record is a CNAME and the query type isn't CNAME,
-	// implement in-zone CNAME chasing up to r.maxRecursion.
-	return records, true
+	// Always delegate to aliasResolver (if configured); it contains its own fast path
+	// via shouldChase to immediately return the input when chasing is not required.
+	var err error
+	if r.aliasResolver != nil {
+		records, err = r.aliasResolver.Chase(query, records)
+	}
+	return records, true, err
+}
+
+// isFatalAliasError determines if an alias expansion error should trigger SERVFAIL.
+// Policy: depth exceeded & loop detected considered fatal (operational / config issues).
+// Target / question build errors treated non-fatal (return partial chain for transparency).
+func (r *Resolver) isFatalAliasError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Use errors.Is to unwrap wrapped sentinel errors.
+	if errors.Is(err, ErrAliasDepthExceeded) || errors.Is(err, ErrAliasLoopDetected) {
+		return true
+	}
+	return false
 }
 
 func (r *Resolver) checkBlocklist(query domain.Question) bool {

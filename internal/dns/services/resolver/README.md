@@ -380,3 +380,53 @@ func TestResolver(t *testing.T) {
 - Query prioritization
 
 This resolver service forms the core of the RR-DNS system, providing a foundation for high-performance, secure, and extensible DNS resolution.
+
+## Alias (CNAME) Resolution & Error Policy
+
+The resolver performs CNAME (alias) chain expansion through the injected `AliasResolver`. The policy differentiates between fatal conditions (mapped to `SERVFAIL`) and non-fatal conditions (return partial chain with `NOERROR`).
+
+### Expansion Algorithm (Summary)
+1. Start with authoritative answer set. If the first RR is a CNAME and the original query type is not `CNAME`, begin chasing.
+2. Append each CNAME hop to the answer chain.
+3. For each target:
+    - Attempt authoritative lookup for the original RRType.
+    - If miss, attempt authoritative lookup for another CNAME (multi-hop support).
+    - If still miss, attempt upstream lookup (if configured).
+4. Stop when a terminal RRset for the original type is found, no further data exists, or a policy/error condition triggers.
+5. Return accumulated chain (CNAME hops plus terminal RRset if found).
+
+### Error Classification
+| Condition | Sentinel Error | Fatal? | RCODE | Returned Answers |
+|-----------|----------------|--------|-------|------------------|
+| Max depth exceeded | `ErrAliasDepthExceeded` | Yes | `SERVFAIL` | None (empty answer section) |
+| Loop detected | `ErrAliasLoopDetected` | Yes | `SERVFAIL` | None |
+| Target invalid/missing | `ErrAliasTargetInvalid` | No | `NOERROR` | Partial chain (up to failing CNAME) |
+| Question build failed (invalid RRType) | `ErrAliasQuestionBuild` | No | `NOERROR` | Partial chain |
+| Upstream miss / empty authoritative data | (no error) | No | `NOERROR` | Chain so far (CNAME hops only) |
+| Successful terminal resolution | (nil) | No | `NOERROR` | Full chain + terminal RRset |
+
+Fatal errors indicate systemic issues (loop or runaway depth) where continuing could imply misconfiguration or potential resource abuse. They are mapped to `SERVFAIL` to signal resolution failure to the client without leaking partial/internal state.
+
+Non-fatal errors represent localized data defects (bad target, invalid RRType for synthetic question) or mere absence of further data. Returning the partial chain under `NOERROR` allows the client to inspect the CNAME(s) already discovered and potentially re-query directly using another resolver or adjusted parameters.
+
+### Policy Rationale
+* Depth / loop issues are resolver-scope failures → `SERVFAIL`.
+* Malformed target or follow-up question are zone data issues, not core resolver failure → still return what we have.
+* Providing partial chains aids debugging and client fallback logic.
+* Policy can be tuned by adjusting `isFatalAliasError` in `resolver.go` (add or remove sentinel errors from fatal list).
+
+### Modifying Policy
+To treat additional errors as fatal, update:
+```go
+func (r *Resolver) isFatalAliasError(err error) bool {
+     return errors.Is(err, ErrAliasDepthExceeded) ||
+              errors.Is(err, ErrAliasLoopDetected) // extend here
+}
+```
+You can also make this configurable (e.g., via injected config struct) if operational requirements differ across deployments.
+
+### Observability
+* Fatal alias errors are logged at `Error` level with structured context (query, error).
+* Non-fatal alias errors are logged at `Warn` level when they occur, preserving visibility without causing resolution failure.
+
+This design balances correctness, safety (guarding against pathological chains), and transparency (returning useful partial data where possible).

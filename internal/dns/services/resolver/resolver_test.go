@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -13,6 +14,64 @@ import (
 	"github.com/haukened/rr-dns/internal/dns/common/clock"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
+
+// aliasTestLogger is a minimal logger for alias classification tests.
+type aliasTestLogger struct{}
+
+func (l *aliasTestLogger) Info(map[string]any, string)  {}
+func (l *aliasTestLogger) Error(map[string]any, string) {}
+func (l *aliasTestLogger) Debug(map[string]any, string) {}
+func (l *aliasTestLogger) Warn(map[string]any, string)  {}
+func (l *aliasTestLogger) Panic(map[string]any, string) {}
+func (l *aliasTestLogger) Fatal(map[string]any, string) {}
+
+// stubAliasResolver allows injecting predetermined records + error.
+type stubAliasResolver struct {
+	recs []domain.ResourceRecord
+	err  error
+}
+
+func (s *stubAliasResolver) Chase(domain.Question, []domain.ResourceRecord) ([]domain.ResourceRecord, error) {
+	return s.recs, s.err
+}
+
+// ensure interfaces compile (alias resolver stub only; zone uses existing stubZoneCache from benchmarks)
+var _ AliasResolver = (*stubAliasResolver)(nil)
+
+func newTestCNAME(t *testing.T, name, target string) domain.ResourceRecord {
+	rr, err := domain.NewAuthoritativeResourceRecord(name, domain.RRTypeCNAME, domain.RRClassIN, 300, nil, target)
+	assert.NoError(t, err)
+	return rr
+}
+
+func TestResolver_HandleQuery_AliasFatalErrorServfail(t *testing.T) {
+	cname := newTestCNAME(t, "example.com.", "target.example.")
+	zone := &stubZoneCache{records: []domain.ResourceRecord{cname}, found: true}
+	ar := &stubAliasResolver{recs: []domain.ResourceRecord{cname}, err: ErrAliasDepthExceeded}
+	clk := &clock.MockClock{CurrentTime: time.Now()}
+	r := NewResolver(ResolverOptions{ZoneCache: zone, AliasResolver: ar, Clock: clk, Logger: &aliasTestLogger{}})
+	q, err := domain.NewQuestion(1, "example.com.", domain.RRTypeA, domain.RRClassIN)
+	assert.NoError(t, err)
+	resp, hErr := r.HandleQuery(context.Background(), q, nil)
+	assert.NoError(t, hErr)
+	assert.Equal(t, domain.SERVFAIL, resp.RCode)
+	assert.Len(t, resp.Answers, 0, "fatal alias error should suppress answers")
+}
+
+func TestResolver_HandleQuery_AliasNonFatalErrorPartialChain(t *testing.T) {
+	cname := newTestCNAME(t, "example.com.", "target.example.")
+	zone := &stubZoneCache{records: []domain.ResourceRecord{cname}, found: true}
+	nfErr := fmt.Errorf("%w: empty target", ErrAliasTargetInvalid)
+	ar := &stubAliasResolver{recs: []domain.ResourceRecord{cname}, err: nfErr}
+	clk := &clock.MockClock{CurrentTime: time.Now()}
+	r := NewResolver(ResolverOptions{ZoneCache: zone, AliasResolver: ar, Clock: clk, Logger: &aliasTestLogger{}})
+	q, err := domain.NewQuestion(2, "example.com.", domain.RRTypeA, domain.RRClassIN)
+	assert.NoError(t, err)
+	resp, hErr := r.HandleQuery(context.Background(), q, nil)
+	assert.NoError(t, hErr)
+	assert.Equal(t, domain.NOERROR, resp.RCode)
+	assert.Equal(t, []domain.ResourceRecord{cname}, resp.Answers)
+}
 
 // Mock implementations for testing
 type MockBlocklist struct {
@@ -619,6 +678,7 @@ func TestNewResolver(t *testing.T) {
 		CurrentTime: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	mockLogger := &noopLogger{}
+	alias := NewNoOpAliasResolver()
 
 	opts := ResolverOptions{
 		Blocklist:     mockBlocklist,
@@ -627,6 +687,7 @@ func TestNewResolver(t *testing.T) {
 		Upstream:      mockUpstream,
 		UpstreamCache: mockCache,
 		ZoneCache:     mockZoneCache,
+		AliasResolver: alias,
 	}
 
 	resolver := NewResolver(opts)
@@ -638,6 +699,7 @@ func TestNewResolver(t *testing.T) {
 	assert.Equal(t, mockUpstream, resolver.upstream)
 	assert.Equal(t, mockCache, resolver.upstreamCache)
 	assert.Equal(t, mockZoneCache, resolver.zoneCache)
+	assert.Equal(t, alias, resolver.aliasResolver)
 }
 
 func TestBuildResponse(t *testing.T) {
@@ -743,6 +805,53 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 			if tt.expectCall && tt.upstreamCache != nil {
 				tt.upstreamCache.(*MockCache).AssertExpectations(t)
 			}
+		})
+	}
+}
+func TestResolver_isFatalAliasError(t *testing.T) {
+	resolver := &Resolver{}
+
+	tests := []struct {
+		name      string
+		err       error
+		wantFatal bool
+	}{
+		{
+			name:      "nil error is not fatal",
+			err:       nil,
+			wantFatal: false,
+		},
+		{
+			name:      "ErrAliasDepthExceeded is fatal",
+			err:       ErrAliasDepthExceeded,
+			wantFatal: true,
+		},
+		{
+			name:      "ErrAliasLoopDetected is fatal",
+			err:       ErrAliasLoopDetected,
+			wantFatal: true,
+		},
+		{
+			name:      "wrapped ErrAliasDepthExceeded is fatal",
+			err:       fmt.Errorf("wrapped: %w", ErrAliasDepthExceeded),
+			wantFatal: true,
+		},
+		{
+			name:      "wrapped ErrAliasLoopDetected is fatal",
+			err:       fmt.Errorf("wrapped: %w", ErrAliasLoopDetected),
+			wantFatal: true,
+		},
+		{
+			name:      "other error is not fatal",
+			err:       errors.New("some other error"),
+			wantFatal: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolver.isFatalAliasError(tt.err)
+			assert.Equal(t, tt.wantFatal, got)
 		})
 	}
 }
