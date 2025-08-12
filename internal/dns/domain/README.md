@@ -180,74 +180,95 @@ if err != nil {
 
 ## ResourceRecord
 
-Represents a unified DNS resource record that supports both cached and authoritative use cases. The record behavior is determined by the constructor used and whether it has an expiration time.
+Represents a unified DNS resource record that supports both cached and authoritative use cases. The behavior (authoritative vs cached) is determined by which constructor is used (presence of an expiration time). A record now carries two complementary representations of its RDATA:
 
-**Fields:**
-- `Name`: Domain name this record applies to (automatically canonicalized)
+1. `Data` – canonical wire-format bytes used for encoding/decoding DNS messages
+2. `Text` – the original human-readable form (as sourced from a zone file or upstream parsing) used for higher‑level logic (e.g. CNAME chase, logging, future policy validation) without re‑decoding bytes
+
+At least one of `Data` or `Text` must be present; both may be set. For authoritative zone loading we typically populate both (wire bytes + textual literal). For upstream cached records we may decode bytes back into a canonical textual form and store both.
+
+Keeping both forms avoids lossy round‑trips and eliminates repeated decode work while preserving fidelity of the original zone content.
+
+**Fields (exported + notable unexported):**
+- `Name`: FQDN this record applies to (canonicalized: lower‑cased, ensured trailing dot)
 - `Type`: RRType
-- `Class`: RRClass  
-- `Data`: RDATA (binary content, format depends on type)
-- `ttl`: TTL value in seconds (private field)
-- `expiresAt`: Expiration timestamp for cached records (private field, nil for authoritative)
+- `Class`: RRClass
+- `Data`: Raw RDATA bytes (wire format). May be empty if textual-only (e.g. during construction before encoding) but normally present.
+- `Text`: Human-readable representation (e.g. "192.0.2.1", "mail.example.com.", full SOA fields serialized, etc.)
+- `ttl` (private): Original TTL in seconds
+- `expiresAt` (private): Expiration timestamp for cached records (`nil` for authoritative)
 
-**Constructors:**
+**Constructors (updated – added `text string` parameter):**
 
-**For Authoritative Records (Zone Files):**
+Authoritative (non‑expiring):
 ```go
-func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error)
+func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, text string) (ResourceRecord, error)
 ```
 
-**For Cached Records (With Expiration):**
+Cached (expiring):
 ```go
-func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, now time.Time) (ResourceRecord, error)
+func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, text string, now time.Time) (ResourceRecord, error)
 ```
 
-**Methods:**
-- `Validate()`: Validates the record structure and data
-- `TTL()`: Returns the TTL value
-- `IsExpired()`: Returns true if the record has expired (cached records only)
-- `CacheKey()`: Generates a cache key for storage/lookup
-- `IsAuthoritative()`: Returns true if this is an authoritative (non-expiring) record
+**Validation Rules:**
+- `Name` must be non‑empty and valid
+- `Type` and `Class` must be valid enumerations
+- At least one of `Text` or `Data` must be non‑empty (prevents constructing meaningless empty records)
 
-**Key Differences:**
-- **Authoritative records**: Created with `NewAuthoritativeResourceRecord`, no expiration (`expiresAt` is nil)
-- **Cached records**: Created with `NewCachedResourceRecord`, expire based on TTL and creation time
+**Key Methods:**
+- `Validate()` – applies rules above
+- `TTL()` – effective TTL for wire output (remaining time for cached, original for authoritative)
+- `TTLRemaining()` – duration form of remaining TTL (authoritative returns original duration)
+- `IsExpired()` – true only for cached records whose `expiresAt` is in the past
+- `IsAuthoritative()` – true if `expiresAt == nil`
+- `CacheKey()` – normalized lookup key (name|type|class)
 
-**Constraints:**
-- Names are automatically canonicalized (trailing dot added if missing)
-- TTL must be positive for cached records
-- Data must conform to RRType-specific format (validation depends on implementation)
-- Records are immutable once constructed
+**Authoritative vs Cached Behavior:**
+- Authoritative: Constructed via `NewAuthoritativeResourceRecord`; immutable; `expiresAt == nil`; `TTL()` always returns original TTL.
+- Cached: Constructed via `NewCachedResourceRecord`; `expiresAt` calculated as `now + ttl`; `TTL()` decreases over time until 0; `IsExpired()` guards eviction.
 
-**Example - Authoritative Record:**
+**Design Notes (Dual Representation Rationale):**
+- Avoids re‑decoding binary RDATA for operations that need the semantic value (e.g. following a CNAME target)
+- Preserves the original textual form from zone files for faithful round‑trips and potential re‑generation
+- Enables validation/policy checks (e.g. detecting illegal co‑existence, enforcing formatting) without byte parsing overhead
+- Supports future features like structured logging and metrics tagged by exact textual RDATA
+
+**Examples**
+
+Authoritative A record (zone load):
 ```go
-// Zone file record - never expires
 rr, err := NewAuthoritativeResourceRecord(
-    "example.com.",
-    RRTypeFromString("A"), 
-    RRClass(1),
-    300,
-    []byte{192, 0, 2, 1},
+  "example.com.",
+  RRTypeA,
+  RRClassIN,
+  300,
+  []byte{192, 0, 2, 1}, // wire form 192.0.2.1
+  "192.0.2.1",          // textual form
 )
 ```
 
-**Example - Cached Record:**
+Cached MX record (obtained from upstream):
 ```go
-// Cached record - expires after TTL
+mxWire := []byte{0x00, 0x0a /* preference 10 */, /* encoded exchange labels ... */ }
 rr, err := NewCachedResourceRecord(
-    "example.com.",
-    RRTypeFromString("A"),
-    RRClass(1), 
-    300,
-    []byte{192, 0, 2, 1},
-    time.Now(), // creation time
+  "example.com.",
+  RRTypeMX,
+  RRClassIN,
+  600,
+  mxWire,
+  "10 mail.example.com.",
+  time.Now(),
 )
-
-// Check if expired
-if rr.IsExpired() {
-    // Record has expired, remove from cache
-}
 ```
+
+Text‑only provisional construction (later filled with Data after encoding):
+```go
+txt := "v=spf1 -all"
+wire := encodeTXT(txt) // hypothetical helper producing []byte
+rr, err := NewAuthoritativeResourceRecord("example.com.", RRTypeTXT, RRClassIN, 300, wire, txt)
+```
+
+When either `Data` or `Text` is intentionally omitted (rare), callers must ensure the missing representation can be derived before use in layers that require it.
 
 ---
 
