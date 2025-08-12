@@ -72,6 +72,8 @@ Format: "zoneRoot|name|type|class" (e.g., "example.com.|www.example.com.|A|IN")
 
 ## Usage Examples
 
+Note: Each `domain.ResourceRecord` includes both `Data` (wire bytes) and `Text` (human-readable). Zone-derived authoritative records generally populate both to avoid re-decoding when answering queries or performing higher-level logic (e.g. CNAME chase).
+
 ### Basic Operations
 
 ```go
@@ -93,15 +95,19 @@ func main() {
         domain.RRTypeFromString("A"),
         domain.RRClass(1),
         300,
-        []byte{192, 0, 2, 1},
+        []byte{192, 0, 2, 1}, // wire bytes
+        "192.0.2.1",          // text form
     )
     
+    // MX example: proper wire bytes would include preference + encoded domain; simplified here
+    mxWire := []byte{0x00, 0x0a /* preference 10 */, /* encoded labels for mail.example.com. */ }
     record2, _ := domain.NewAuthoritativeResourceRecord(
         "mail.example.com.",
         domain.RRTypeFromString("MX"),
         domain.RRClass(1),
         300,
-        []byte("10 mail.example.com."),
+        mxWire,
+        "10 mail.example.com.",
     )
     
     // Put zone with new records

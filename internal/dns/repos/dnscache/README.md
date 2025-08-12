@@ -41,6 +41,8 @@ The value-based storage approach provides:
 
 ## Usage
 
+Records stored in the cache carry both wire-format bytes (`Data`) and a human-readable form (`Text`). At least one must be present; constructors now require a `text string` argument alongside `data []byte`.
+
 ### Basic Cache Operations
 
 ```go
@@ -66,8 +68,9 @@ func main() {
         domain.RRTypeFromString("A"), // A record
         domain.RRClass(1),            // IN class
         300,                          // TTL: 5 minutes
-        []byte{192, 0, 2, 1},        // IP address data
-        time.Now(),                  // creation time
+        []byte{192, 0, 2, 1},         // IP address bytes
+        "192.0.2.1",                 // text form
+        time.Now(),                   // creation time
     )
     if err != nil {
         log.Fatalf("Failed to create record: %v", err)
@@ -167,6 +170,7 @@ record, err := domain.NewCachedResourceRecord(
     domain.RRClass(1),
     300, // TTL in seconds
     []byte{192, 0, 2, 1},
+    "192.0.2.1",
     time.Now(),
 )
 

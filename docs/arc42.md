@@ -245,7 +245,8 @@ The domain layer contains pure business entities free from infrastructure concer
 
 - **Unified ResourceRecord**: Single type replaces separate cached/authoritative records
 - **Value-Based Storage**: Records stored as values (not pointers) for better performance
-- **Dual Constructors**: `NewCachedResourceRecord()` and `NewAuthoritativeResourceRecord()` provide appropriate creation patterns
+- **Dual Constructors**: `NewCachedResourceRecord()` and `NewAuthoritativeResourceRecord()` (now with `text string` argument) provide creation patterns for expiring vs. authoritative records
+- **Dual RDATA Representation**: Each record may carry both `Data` (wire bytes) and `Text` (human-readable). At least one must be set; both are typically populated to avoid repeated decode work and to preserve original zone content.
 
 ### 5.2.2 White Box: Infrastructure Layer
 
@@ -289,14 +290,16 @@ graph TD
             BlockList[Blocklist Repository] --> BlockDB[Block Sources]
         end
     end
-```
+```go
+// Helper wrappers demonstrating current constructor signatures including text parameter
+func NewCachedRecord(name string, rrType RRType, ttl uint32, data []byte, text string, now time.Time) ResourceRecord {
+    // text: human-readable RDATA (e.g. "192.0.2.1", "10 mail.example.com.")
+    return NewCachedResourceRecord(name, rrType, RRClass(1), ttl, data, text, now)
+}
 
-***Motivation***
-
-Infrastructure components handle external concerns like networking, file I/O, caching, and logging. They are organized into focused directories that group related functionality while maintaining clean architectural boundaries. The value-based storage approach provides better CPU cache locality and reduced GC pressure.
-
-***Contained Building Blocks***
-
+func NewAuthoritativeRecord(name string, rrType RRType, ttl uint32, data []byte, text string) ResourceRecord {
+    return NewAuthoritativeResourceRecord(name, rrType, RRClass(1), ttl, data, text)
+}
 | **Directory** | **Components** | **Responsibility** |
 |---------------|----------------|-------------------|
 | **Common** | Logger, Clock, Utils | Structured logging, time abstraction for testing, DNS name utilities |
@@ -823,11 +826,12 @@ This section describes overall principles and solution patterns that are relevan
 ```go
 // Example: Creating records with appropriate constructors
 func NewCachedRecord(name string, rrType RRType, ttl uint32, data []byte, now time.Time) ResourceRecord {
-    return NewCachedResourceRecord(name, rrType, RRClass(1), ttl, data, now)
+    // Example supplies both wire Data and human-readable Text representation
+    return NewCachedResourceRecord(name, rrType, RRClass(1), ttl, data, deriveText(rrType, data), now)
 }
 
 func NewAuthoritativeRecord(name string, rrType RRType, ttl uint32, data []byte) ResourceRecord {
-    return NewAuthoritativeResourceRecord(name, rrType, RRClass(1), ttl, data)
+    return NewAuthoritativeResourceRecord(name, rrType, RRClass(1), ttl, data, deriveText(rrType, data))
 }
 
 // Value-based storage for optimal performance

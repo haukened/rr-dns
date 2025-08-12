@@ -157,7 +157,7 @@ Per [RFC 1035 §4.1.1](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1
 
 ```go
 // Create resource record for answer
-rr, _ := NewAuthoritativeResourceRecord("example.com.", RRTypeA, RRClassIN, 300, []byte{192, 0, 2, 1})
+rr, _ := NewAuthoritativeResourceRecord("example.com.", RRTypeA, RRClassIN, 300, []byte{192, 0, 2, 1}, "192.0.2.1")
 
 // Create DNS response
 resp, err := NewDNSResponse(12345, 0, []ResourceRecord{rr}, nil, nil)
