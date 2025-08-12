@@ -105,61 +105,75 @@ func (a *aliasChaser) Chase(query domain.Question, initial []domain.ResourceReco
 		return initial, nil
 	}
 	st := newChaseState(query, initial)
-	// Main expansion loop: iterate until terminal RRset, missing data, loop, or depth exceed.
+	// Iterate until a step indicates completion (terminal success / missing data) or error.
 	for {
-		head, _ := st.currentHead()
-		// PROCESS: CNAME hop encountered (loop only entered when initial head is a CNAME)
-		st.chased = true
-		if err := a.guardDepth(&st, head); err != nil {
-			// TERMINATION (error): depth exceeded policy
-			st.chain = append(st.chain, head)
+		done, err := a.step(&st)
+		if err != nil || done {
 			return st.chain, err
 		}
-		if err := a.guardLoop(&st, head); err != nil {
-			// TERMINATION (error): loop detected
-			st.chain = append(st.chain, head)
-			return st.chain, err
-		}
+	}
+}
+
+// step processes a single CNAME hop iteration.
+// Returns (done=true) when the chase should terminate (success, partial, or error already appended).
+func (a *aliasChaser) step(st *chaseState) (done bool, err error) {
+	head, _ := st.currentHead()
+	st.chased = true
+	// Depth guard
+	if err = a.guardDepth(st, head); err != nil {
 		st.chain = append(st.chain, head)
-		target, err := a.extractTarget(head)
-		if err != nil {
-			// TERMINATION (error): invalid / missing target
-			return st.chain, err
-		}
-		nextQ, err := a.buildNextQuestion(&st, target)
-		if err != nil {
-			// TERMINATION (error): question synthesis failure
-			return st.chain, err
-		}
-		nextRecords, found := a.authoritativeLookup(nextQ)
-		if !found || len(nextRecords) == 0 {
-			// Attempt authoritative CNAME lookup for target when original type not found; enables multi-hop chains
-			if st.originalType != domain.RRTypeCNAME { // avoid redundant CNAME query if original was CNAME (we don't chase in that case anyway)
-				cnameQ, qErr := domain.NewQuestion(st.query.ID, target, domain.RRTypeCNAME, st.query.Class)
-				if qErr == nil { // safe guard; should not fail
-					cnameRecords, cnameFound := a.authoritativeLookup(cnameQ)
-					if cnameFound && len(cnameRecords) > 0 {
-						nextRecords, found = cnameRecords, true
-					}
+		return true, err
+	}
+	// Loop guard
+	if err = a.guardLoop(st, head); err != nil {
+		st.chain = append(st.chain, head)
+		return true, err
+	}
+	// Append current CNAME hop
+	st.chain = append(st.chain, head)
+	// Extract target
+	target, err := a.extractTarget(head)
+	if err != nil {
+		return true, err
+	}
+	// Build synthetic question
+	nextQ, err := a.buildNextQuestion(st, target)
+	if err != nil {
+		return true, err
+	}
+	// Resolve next records (authoritative-first then upstream)
+	nextRecords, found := a.resolveNext(st, nextQ, target)
+	if !found || len(nextRecords) == 0 { // terminal: missing further data
+		return true, nil
+	}
+	st.current = nextRecords
+	if !a.isHeadCNAME(st.current) { // terminal RRset
+		st.chain = append(st.chain, st.current...)
+		return true, nil
+	}
+	// Another CNAME encountered; continue loop
+	return false, nil
+}
+
+// resolveNext performs the authoritative lookups (original type then CNAME) followed by upstream fallback.
+func (a *aliasChaser) resolveNext(st *chaseState, nextQ domain.Question, target string) ([]domain.ResourceRecord, bool) {
+	nextRecords, found := a.authoritativeLookup(nextQ)
+	if !found || len(nextRecords) == 0 {
+		// Attempt authoritative CNAME lookup (multi-hop support) unless original query was CNAME itself.
+		if st.originalType != domain.RRTypeCNAME {
+			cnameQ, qErr := domain.NewQuestion(st.query.ID, target, domain.RRTypeCNAME, st.query.Class)
+			if qErr == nil { // defensive
+				cnameRecords, cnameFound := a.authoritativeLookup(cnameQ)
+				if cnameFound && len(cnameRecords) > 0 {
+					nextRecords, found = cnameRecords, true
 				}
 			}
-			if !found || len(nextRecords) == 0 { // still nothing authoritative; upstream fallback
-				nextRecords, found = a.upstreamLookup(nextQ, target)
-			}
 		}
-		if !found || len(nextRecords) == 0 {
-			// TERMINATION: no further data (RFC: return gathered CNAME chain only)
-			break // return accumulated chain; terminal missing data case
+		if !found || len(nextRecords) == 0 { // upstream fallback
+			nextRecords, found = a.upstreamLookup(nextQ, target)
 		}
-		st.current = nextRecords
-		if !a.isHeadCNAME(st.current) { // terminal RRset
-			// TERMINATION: resolved final RRset (non-CNAME)
-			st.chain = append(st.chain, st.current...)
-			break
-		}
-		// LOOP CONTINUE: nextRecords begins with another CNAME; iterate again
 	}
-	return st.chain, nil
+	return nextRecords, found
 }
 
 // chaseState encapsulates mutable state during alias chasing.
