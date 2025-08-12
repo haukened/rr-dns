@@ -117,6 +117,7 @@ func zoneKey(name string, t domain.RRType, c domain.RRClass) string {
 // answer set does not directly produce the original qtype or another CNAME for
 // that qtype. Tests asserting those advanced behaviors are deferred until the
 // algorithm is extended.
+// RFC 1034 §3.6.2: Detect multi-hop loop (a -> b -> a); loop termination returns chain including failing head.
 func TestAliasChase_LoopDetected(t *testing.T) {
 	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
 	c1 := mustAuthRR("a.example.", domain.RRTypeCNAME, "b.example.")
@@ -147,6 +148,7 @@ func TestAliasChase_SelfLoop(t *testing.T) {
 	assert.Equal(t, []domain.ResourceRecord{self, self}, recs)
 }
 
+// RFC 1034 §3.6.2: Abort CNAME processing on invalid target; return partial chain collected so far.
 func TestAliasChase_ExtractTargetErrors(t *testing.T) {
 	ch := NewAliasChaser(nil, nil, nil, &clock.MockClock{CurrentTime: time.Now()}, &aliasNoopLogger{}, 5)
 	q := mustQ("bad.example.", domain.RRTypeA)
@@ -162,6 +164,7 @@ func TestAliasChase_ExtractTargetErrors(t *testing.T) {
 	assert.Equal(t, []domain.ResourceRecord{r2}, recs)
 }
 
+// RFC 1034 §3.6.2: Fallback to upstream when authoritative data absent; ordering keeps CNAME first.
 func TestAliasChase_UpstreamFallbackVariants(t *testing.T) {
 	// zone miss forces upstream
 	q := mustQ("alias.example.", domain.RRTypeA)
@@ -187,6 +190,7 @@ func TestAliasChase_UpstreamFallbackVariants(t *testing.T) {
 	assert.Equal(t, []domain.ResourceRecord{cname}, recs)
 }
 
+// RFC 1034 §3.6.2: Partial chain allowed; no terminal RRset yields only encountered CNAME(s).
 func TestAliasChase_TerminalMissingData(t *testing.T) {
 	// zone miss then upstream nil -> only chain returned
 	cname := mustAuthRR("x.example.", domain.RRTypeCNAME, "z.example.")
@@ -197,6 +201,7 @@ func TestAliasChase_TerminalMissingData(t *testing.T) {
 	assert.Equal(t, []domain.ResourceRecord{cname}, recs)
 }
 
+// RFC 1034 §3.6.2: Unlimited depth (maxDepth=0) should pursue until non-CNAME terminal is found.
 func TestAliasChase_UnlimitedDepthBranch(t *testing.T) {
 	// maxDepth=0 means unlimited; ensure guardDepth does not trigger error
 	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
@@ -304,6 +309,7 @@ func TestAliasChaser_AuthoritativeLookup(t *testing.T) {
 }
 
 // Question synthesis failure: use an invalid original RRType so NewQuestion inside buildNextQuestion fails
+// RFC 1034 §3.6.2: Failure creating next question stops chase; return hops gathered.
 func TestAliasChase_QuestionSynthesisFailure(t *testing.T) {
 	// Craft a query with an invalid RRType (bypassing constructor validation)
 	invalidType := domain.RRType(9999) // not in IsValid set
@@ -319,6 +325,7 @@ func TestAliasChase_QuestionSynthesisFailure(t *testing.T) {
 }
 
 // Multi-hop authoritative success: CNAME -> CNAME -> A (all via authoritative fallback)
+// RFC 1034 §3.6.2: Multi-hop authoritative chase; ensure ordering CNAME -> CNAME -> terminal RRset.
 func TestAliasChase_MultiHop_AuthoritativeSuccess(t *testing.T) {
 	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
 	// c1: a.mh. -> b.mh.
@@ -342,6 +349,7 @@ func TestAliasChase_MultiHop_AuthoritativeSuccess(t *testing.T) {
 }
 
 // Multi-hop termination with missing final data: CNAME -> CNAME then no records (authoritative miss and no upstream)
+// RFC 1034 §3.6.2: Multi-hop partial chain when terminal RRset absent.
 func TestAliasChase_MultiHop_NoDataTermination(t *testing.T) {
 	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
 	c1 := mustAuthRR("a.nodata.", domain.RRTypeCNAME, "b.nodata.")
@@ -358,6 +366,7 @@ func TestAliasChase_MultiHop_NoDataTermination(t *testing.T) {
 }
 
 // Depth exceeded inside full Chase loop (integration); maxDepth=1 with two CNAME hops.
+// RFC 1034 §3.6.2: Depth guard triggers policy; include offending hop.
 func TestAliasChase_DepthExceededInChase(t *testing.T) {
 	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
 	c1 := mustAuthRR("a.depth.", domain.RRTypeCNAME, "b.depth.")
