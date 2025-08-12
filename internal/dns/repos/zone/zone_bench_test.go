@@ -194,7 +194,7 @@ func BenchmarkBuildResourceRecord_Single(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+		_, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}
@@ -204,14 +204,15 @@ func BenchmarkBuildResourceRecord_Single(b *testing.B) {
 func BenchmarkBuildResourceRecord_Multiple(b *testing.B) {
 	fqdn := "www.example.com."
 	rrType := "A"
-	val := []any{"192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4", "192.0.2.5"}
+	raw := []any{"192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4", "192.0.2.5"}
+	values := toStringValues(raw)
 	defaultTTL := 300 * time.Second
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+		_, err := buildResourceRecord(fqdn, rrType, values, defaultTTL)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}
@@ -220,34 +221,12 @@ func BenchmarkBuildResourceRecord_Multiple(b *testing.B) {
 
 func BenchmarkExpandName(b *testing.B) {
 	label := "www"
-	root := "example.com."
+	root := "example.com"
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
 		_ = expandName(label, root)
-	}
-}
-
-func BenchmarkNormalize_String(b *testing.B) {
-	val := "192.0.2.1"
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = normalize(val)
-	}
-}
-
-func BenchmarkNormalize_Slice(b *testing.B) {
-	val := []any{"192.0.2.1", "192.0.2.2", "192.0.2.3"}
-
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = normalize(val)
 	}
 }

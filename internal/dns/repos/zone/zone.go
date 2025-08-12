@@ -15,6 +15,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 
+	"github.com/haukened/rr-dns/internal/dns/common/rrdata"
 	"github.com/haukened/rr-dns/internal/dns/common/utils"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
@@ -57,18 +58,33 @@ func expandName(label, root string) string {
 	return label + "." + root
 }
 
-// normalize converts a value to a slice of strings. Accepts either a string or a slice of any.
-// Used to handle zone file record values that may be single or multiple strings.
-func normalize(val any) []string {
+// toStringValues converts a raw koanf-parsed value (string or []any of strings) into a slice of
+// non-empty strings, skipping empty or non-string elements. This lets us validate and sanitize
+// record values before building ResourceRecords. Invalid types yield an empty slice which the
+// caller can treat as no-op (defensive len check) instead of crashing the loader.
+func toStringValues(val any) []string {
 	switch v := val.(type) {
 	case string:
-		return []string{v}
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return nil
+		}
+		return []string{s}
 	case []any:
-		var out []string
-		for _, x := range v {
-			if s, ok := x.(string); ok {
-				out = append(out, s)
+		out := make([]string, 0, len(v))
+		for _, elem := range v {
+			s, ok := elem.(string)
+			if !ok {
+				continue // skip non-strings silently
 			}
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue // skip empty strings
+			}
+			out = append(out, s)
+		}
+		if len(out) == 0 {
+			return nil
 		}
 		return out
 	default:
@@ -78,12 +94,14 @@ func normalize(val any) []string {
 
 // buildResourceRecord creates one or more ResourceRecord objects for a given FQDN, RR type,
 // and value. The value may be a string or a slice of strings. Returns an error if record creation fails.
-func buildResourceRecord(fqdn string, rrType string, val any, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
-	strs := normalize(val)
+func buildResourceRecord(fqdn string, rrType string, values []string, defaultTTL time.Duration) ([]domain.ResourceRecord, error) {
 	rType := domain.RRTypeFromString(rrType)
 	var records []domain.ResourceRecord
-	for _, s := range strs {
-		data, err := encodeRRData(rType, s)
+	for _, s := range values {
+		if s == "" { // defensive; helper should have stripped empties
+			continue
+		}
+		data, err := rrdata.Encode(rType, s)
 		if err != nil {
 			return nil, err
 		}
@@ -93,6 +111,7 @@ func buildResourceRecord(fqdn string, rrType string, val any, defaultTTL time.Du
 			domain.RRClass(1),
 			uint32(defaultTTL.Seconds()),
 			data,
+			s, // preserve original text form
 		)
 		if err != nil {
 			return nil, err
@@ -140,9 +159,13 @@ func loadZoneFileWithRoot(path string, defaultTTL time.Duration) (string, []doma
 		if !ok {
 			continue
 		}
-		fqdn := expandName(name, root)
+		fqdn := utils.CanonicalDNSName(expandName(name, root)) // early canonicalization (owner name)
 		for rrType, val := range rawMap {
-			recs, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+			values := toStringValues(val)
+			if len(values) == 0 { // skip silently (empty or invalid elements)
+				continue
+			}
+			recs, err := buildResourceRecord(fqdn, rrType, values, defaultTTL)
 			if err != nil {
 				return "", nil, fmt.Errorf("invalid record in %s: %w", path, err)
 			}

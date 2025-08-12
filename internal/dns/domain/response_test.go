@@ -9,7 +9,7 @@ import (
 func TestNewDNSResponse(t *testing.T) {
 	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
 	// Create a valid resource record for testing
-	rr, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	rr, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 	if err != nil {
 		t.Fatalf("Failed to create test resource record: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestNewDNSResponse(t *testing.T) {
 func TestNewDNSResponse_ValidationFailures(t *testing.T) {
 	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
 	// Create a valid resource record for comparison
-	validRR, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	validRR, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 	if err != nil {
 		t.Fatalf("Failed to create valid test resource record: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestNewDNSResponse_ValidationFailures(t *testing.T) {
 	// Create invalid resource record for testing validation failures
 	// Note: Since fields are now private/controlled, we can't easily create invalid records
 	// We'll test validation through the constructor instead
-	_, invalidRRErr := NewCachedResourceRecord("", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	_, invalidRRErr := NewCachedResourceRecord("", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 	if invalidRRErr == nil {
 		t.Fatal("Expected error when creating record with empty name")
 	}
@@ -157,7 +157,7 @@ func TestDNSResponse_IsError(t *testing.T) {
 
 func TestDNSResponse_HasAnswers(t *testing.T) {
 	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	rr, _ := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	rr, _ := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 
 	tests := []struct {
 		name     string
@@ -180,7 +180,7 @@ func TestDNSResponse_HasAnswers(t *testing.T) {
 
 func TestDNSResponse_Counts(t *testing.T) {
 	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
-	rr, _ := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	rr, _ := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 
 	resp := DNSResponse{
 		Answers:    []ResourceRecord{rr, rr},
@@ -321,7 +321,7 @@ func TestDNSResponse_Validate(t *testing.T) {
 	timeFixture := time.Date(2025, 8, 1, 12, 0, 0, 0, time.UTC)
 
 	// Create a valid resource record for testing
-	validRR, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, timeFixture)
+	validRR, err := NewCachedResourceRecord("example.com.", 1, 1, 300, []byte{192, 0, 2, 1}, "192.0.2.1", timeFixture)
 	if err != nil {
 		t.Fatalf("Failed to create valid test resource record: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/haukened/rr-dns/internal/dns/common/log"
+	"github.com/haukened/rr-dns/internal/dns/common/rrdata"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
@@ -339,7 +340,11 @@ func (c *udpCodec) parseResourceRecord(data []byte, offset int, now time.Time) (
 
 	rrtype := domain.RRType(typ)
 	rrclass := domain.RRClass(class)
-	rr, err := domain.NewCachedResourceRecord(name, rrtype, rrclass, ttl, rdata, now)
+	text, err := rrdata.Decode(rrtype, rdata)
+	if err != nil {
+		return domain.ResourceRecord{}, 0, fmt.Errorf("failed to decode rdata: %w", err)
+	}
+	rr, err := domain.NewCachedResourceRecord(name, rrtype, rrclass, ttl, rdata, text, now)
 	if err != nil {
 		return domain.ResourceRecord{}, 0, fmt.Errorf("invalid resource record: %w", err)
 	}

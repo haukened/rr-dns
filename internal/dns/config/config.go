@@ -34,6 +34,10 @@ type AppConfig struct {
 
 	// Servers is a list of upstream DNS servers in ip:port format.
 	Servers []string `koanf:"servers" validate:"required,dive,ip_port"`
+
+	// MaxRecursion limits in-zone CNAME (or future alias) chase depth.
+	// Prevents infinite loops; 0 or negative will be rejected by validation (must be >=1).
+	MaxRecursion int `koanf:"max_recursion" validate:"required,gte=1"`
 }
 
 // DEFAULT_APP_CONFIG defines the default application configuration settings for the DNS service.
@@ -47,6 +51,7 @@ var DEFAULT_APP_CONFIG = AppConfig{
 	Port:         53,
 	ZoneDir:      "/etc/rr-dns/zones/",
 	Servers:      []string{"1.1.1.1:53", "1.0.0.1:53"},
+	MaxRecursion: 8,
 }
 
 // validIPPort validates whether the provided field value is a valid IP address and port combination.

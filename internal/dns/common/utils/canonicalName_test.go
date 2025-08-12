@@ -14,67 +14,67 @@ func TestCanonicalDNSName(t *testing.T) {
 		{
 			name:     "simple domain without trailing dot",
 			input:    "example.com",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "simple domain with trailing dot",
 			input:    "example.com.",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "uppercase domain",
 			input:    "EXAMPLE.COM",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "mixed case domain",
 			input:    "ExAmPlE.CoM",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "domain with leading whitespace",
 			input:    "  example.com",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "domain with trailing whitespace",
 			input:    "example.com  ",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "domain with leading and trailing whitespace",
 			input:    "  example.com  ",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "domain with tabs and spaces",
 			input:    "\t example.com \t",
-			expected: "example.com.",
+			expected: "example.com",
 		},
 		{
 			name:     "subdomain without trailing dot",
 			input:    "www.example.com",
-			expected: "www.example.com.",
+			expected: "www.example.com",
 		},
 		{
 			name:     "subdomain with trailing dot",
 			input:    "www.example.com.",
-			expected: "www.example.com.",
+			expected: "www.example.com",
 		},
 		{
 			name:     "deep subdomain with mixed case",
 			input:    "API.Service.EXAMPLE.com",
-			expected: "api.service.example.com.",
+			expected: "api.service.example.com",
 		},
 		{
 			name:     "root domain",
 			input:    ".",
-			expected: ".",
+			expected: "",
 		},
 		{
 			name:     "root domain with whitespace",
 			input:    " . ",
-			expected: ".",
+			expected: "",
 		},
 		{
 			name:     "empty string",
@@ -99,42 +99,47 @@ func TestCanonicalDNSName(t *testing.T) {
 		{
 			name:     "single label domain",
 			input:    "localhost",
-			expected: "localhost.",
+			expected: "localhost",
 		},
 		{
 			name:     "single label with case and whitespace",
 			input:    " LOCALHOST ",
-			expected: "localhost.",
+			expected: "localhost",
 		},
 		{
 			name:     "IDN domain (ASCII form)",
 			input:    "xn--nxasmq6b.xn--j6w193g",
-			expected: "xn--nxasmq6b.xn--j6w193g.",
+			expected: "xn--nxasmq6b.xn--j6w193g",
 		},
 		{
 			name:     "domain with numbers",
 			input:    "test123.example.com",
-			expected: "test123.example.com.",
+			expected: "test123.example.com",
 		},
 		{
 			name:     "domain with hyphens",
 			input:    "sub-domain.example-site.com",
-			expected: "sub-domain.example-site.com.",
+			expected: "sub-domain.example-site.com",
 		},
 		{
 			name:     "very long domain name",
 			input:    "very.long.subdomain.chain.with.many.labels.example.com",
-			expected: "very.long.subdomain.chain.with.many.labels.example.com.",
+			expected: "very.long.subdomain.chain.with.many.labels.example.com",
 		},
 		{
 			name:     "domain with mixed case and whitespace and dot",
 			input:    "  WwW.ExAmPlE.CoM.  ",
-			expected: "www.example.com.",
+			expected: "www.example.com",
 		},
 		{
 			name:     "special characters in domain (valid DNS)",
 			input:    "test-123.example_site.com",
-			expected: "test-123.example_site.com.",
+			expected: "test-123.example_site.com",
+		},
+		{
+			name:     "multiple trailing dots",
+			input:    "example.com...",
+			expected: "example.com",
 		},
 	}
 
@@ -209,7 +214,7 @@ func TestCanonicalDNSName_Properties(t *testing.T) {
 		}
 	})
 
-	t.Run("non-empty input produces output ending with dot", func(t *testing.T) {
+	t.Run("non-empty input produces output ending without dot", func(t *testing.T) {
 		inputs := []string{
 			"example.com",
 			"www.example.com",
@@ -220,8 +225,8 @@ func TestCanonicalDNSName_Properties(t *testing.T) {
 
 		for _, input := range inputs {
 			got := CanonicalDNSName(input)
-			if got != "" && !strings.HasSuffix(got, ".") {
-				t.Errorf("CanonicalDNSName(%q) = %q, expected non-empty output to end with dot", input, got)
+			if got != "" && strings.HasSuffix(got, ".") {
+				t.Errorf("CanonicalDNSName(%q) = %q, expected non-empty output to end without dot", input, got)
 			}
 		}
 	})

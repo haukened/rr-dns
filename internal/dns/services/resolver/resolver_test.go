@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -13,6 +14,64 @@ import (
 	"github.com/haukened/rr-dns/internal/dns/common/clock"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
+
+// aliasTestLogger is a minimal logger for alias classification tests.
+type aliasTestLogger struct{}
+
+func (l *aliasTestLogger) Info(map[string]any, string)  {}
+func (l *aliasTestLogger) Error(map[string]any, string) {}
+func (l *aliasTestLogger) Debug(map[string]any, string) {}
+func (l *aliasTestLogger) Warn(map[string]any, string)  {}
+func (l *aliasTestLogger) Panic(map[string]any, string) {}
+func (l *aliasTestLogger) Fatal(map[string]any, string) {}
+
+// stubAliasResolver allows injecting predetermined records + error.
+type stubAliasResolver struct {
+	recs []domain.ResourceRecord
+	err  error
+}
+
+func (s *stubAliasResolver) Chase(domain.Question, []domain.ResourceRecord) ([]domain.ResourceRecord, error) {
+	return s.recs, s.err
+}
+
+// ensure interfaces compile (alias resolver stub only; zone uses existing stubZoneCache from benchmarks)
+var _ AliasResolver = (*stubAliasResolver)(nil)
+
+func newTestCNAME(t *testing.T, name, target string) domain.ResourceRecord {
+	rr, err := domain.NewAuthoritativeResourceRecord(name, domain.RRTypeCNAME, domain.RRClassIN, 300, nil, target)
+	assert.NoError(t, err)
+	return rr
+}
+
+func TestResolver_HandleQuery_AliasFatalErrorServfail(t *testing.T) {
+	cname := newTestCNAME(t, "example.com.", "target.example.")
+	zone := &stubZoneCache{records: []domain.ResourceRecord{cname}, found: true}
+	ar := &stubAliasResolver{recs: []domain.ResourceRecord{cname}, err: ErrAliasDepthExceeded}
+	clk := &clock.MockClock{CurrentTime: time.Now()}
+	r := NewResolver(ResolverOptions{ZoneCache: zone, AliasResolver: ar, Clock: clk, Logger: &aliasTestLogger{}})
+	q, err := domain.NewQuestion(1, "example.com.", domain.RRTypeA, domain.RRClassIN)
+	assert.NoError(t, err)
+	resp, hErr := r.HandleQuery(context.Background(), q, nil)
+	assert.NoError(t, hErr)
+	assert.Equal(t, domain.SERVFAIL, resp.RCode)
+	assert.Len(t, resp.Answers, 0, "fatal alias error should suppress answers")
+}
+
+func TestResolver_HandleQuery_AliasNonFatalErrorPartialChain(t *testing.T) {
+	cname := newTestCNAME(t, "example.com.", "target.example.")
+	zone := &stubZoneCache{records: []domain.ResourceRecord{cname}, found: true}
+	nfErr := fmt.Errorf("%w: empty target", ErrAliasTargetInvalid)
+	ar := &stubAliasResolver{recs: []domain.ResourceRecord{cname}, err: nfErr}
+	clk := &clock.MockClock{CurrentTime: time.Now()}
+	r := NewResolver(ResolverOptions{ZoneCache: zone, AliasResolver: ar, Clock: clk, Logger: &aliasTestLogger{}})
+	q, err := domain.NewQuestion(2, "example.com.", domain.RRTypeA, domain.RRClassIN)
+	assert.NoError(t, err)
+	resp, hErr := r.HandleQuery(context.Background(), q, nil)
+	assert.NoError(t, hErr)
+	assert.Equal(t, domain.NOERROR, resp.RCode)
+	assert.Equal(t, []domain.ResourceRecord{cname}, resp.Answers)
+}
 
 // Mock implementations for testing
 type MockBlocklist struct {
@@ -104,8 +163,8 @@ func createTestQuery(name string, qtype domain.RRType) domain.Question {
 	return query
 }
 
-func createTestRecord(name string, rtype domain.RRType, data []byte) domain.ResourceRecord {
-	record, _ := domain.NewCachedResourceRecord(name, rtype, domain.RRClass(1), 300, data, time.Now())
+func createTestRecord(name string, rtype domain.RRType, data []byte, text string) domain.ResourceRecord {
+	record, _ := domain.NewCachedResourceRecord(name, rtype, domain.RRClass(1), 300, data, text, time.Now())
 	return record
 }
 
@@ -121,7 +180,7 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 		{
 			name:          "authoritative A record found",
 			query:         createTestQuery("example.com.", domain.RRType(1)), // A record
-			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -129,7 +188,7 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 		{
 			name:          "authoritative AAAA record found",
 			query:         createTestQuery("example.com.", domain.RRType(28)), // AAAA record
-			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(28), make([]byte, 16))},
+			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(28), make([]byte, 16), "2001:db8::1")},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -138,8 +197,8 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 			name:  "multiple authoritative records",
 			query: createTestQuery("example.com.", domain.RRType(1)), // A record
 			zoneRecords: []domain.ResourceRecord{
-				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}),
-				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 2}),
+				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1"),
+				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 2}, "192.0.2.2"),
 			},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
@@ -275,7 +334,7 @@ func TestResolver_HandleQuery_UpstreamCache(t *testing.T) {
 		{
 			name:          "upstream cache hit",
 			query:         createTestQuery("cached.com.", domain.RRType(1)), // A record
-			cachedRecords: []domain.ResourceRecord{createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			cachedRecords: []domain.ResourceRecord{createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			cacheHit:      true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -358,7 +417,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with caching",
 			query:           createTestQuery("upstream.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -378,7 +437,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with cache error",
 			query:           createTestQuery("cache-fail.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     errors.New("cache full"),
 			expectedRCode:   domain.NOERROR,
@@ -388,7 +447,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with nil cache",
 			query:           createTestQuery("nil-cache.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -619,6 +678,7 @@ func TestNewResolver(t *testing.T) {
 		CurrentTime: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	mockLogger := &noopLogger{}
+	alias := NewNoOpAliasResolver()
 
 	opts := ResolverOptions{
 		Blocklist:     mockBlocklist,
@@ -627,6 +687,7 @@ func TestNewResolver(t *testing.T) {
 		Upstream:      mockUpstream,
 		UpstreamCache: mockCache,
 		ZoneCache:     mockZoneCache,
+		AliasResolver: alias,
 	}
 
 	resolver := NewResolver(opts)
@@ -638,12 +699,13 @@ func TestNewResolver(t *testing.T) {
 	assert.Equal(t, mockUpstream, resolver.upstream)
 	assert.Equal(t, mockCache, resolver.upstreamCache)
 	assert.Equal(t, mockZoneCache, resolver.zoneCache)
+	assert.Equal(t, alias, resolver.aliasResolver)
 }
 
 func TestBuildResponse(t *testing.T) {
 	query := createTestQuery("test.com.", domain.RRType(1)) // A record
 	records := []domain.ResourceRecord{
-		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}),
+		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1"),
 	}
 
 	tests := []struct {
@@ -697,21 +759,21 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 		{
 			name:          "successful caching",
 			upstreamCache: &MockCache{},
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   false,
 			expectCall:    true,
 		},
 		{
 			name:          "cache error",
 			upstreamCache: &MockCache{},
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   true,
 			expectCall:    true,
 		},
 		{
 			name:          "nil cache - no error",
 			upstreamCache: nil,
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   false,
 			expectCall:    false,
 		},
@@ -743,6 +805,53 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 			if tt.expectCall && tt.upstreamCache != nil {
 				tt.upstreamCache.(*MockCache).AssertExpectations(t)
 			}
+		})
+	}
+}
+func TestResolver_isFatalAliasError(t *testing.T) {
+	resolver := &Resolver{}
+
+	tests := []struct {
+		name      string
+		err       error
+		wantFatal bool
+	}{
+		{
+			name:      "nil error is not fatal",
+			err:       nil,
+			wantFatal: false,
+		},
+		{
+			name:      "ErrAliasDepthExceeded is fatal",
+			err:       ErrAliasDepthExceeded,
+			wantFatal: true,
+		},
+		{
+			name:      "ErrAliasLoopDetected is fatal",
+			err:       ErrAliasLoopDetected,
+			wantFatal: true,
+		},
+		{
+			name:      "wrapped ErrAliasDepthExceeded is fatal",
+			err:       fmt.Errorf("wrapped: %w", ErrAliasDepthExceeded),
+			wantFatal: true,
+		},
+		{
+			name:      "wrapped ErrAliasLoopDetected is fatal",
+			err:       fmt.Errorf("wrapped: %w", ErrAliasLoopDetected),
+			wantFatal: true,
+		},
+		{
+			name:      "other error is not fatal",
+			err:       errors.New("some other error"),
+			wantFatal: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolver.isFatalAliasError(tt.err)
+			assert.Equal(t, tt.wantFatal, got)
 		})
 	}
 }

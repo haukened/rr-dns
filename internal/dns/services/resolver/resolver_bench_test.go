@@ -83,7 +83,7 @@ func (s *stubLogger) Fatal(map[string]any, string) {}
 
 func BenchmarkResolver_HandleQuery_AuthoritativeHit(b *testing.B) {
 	// Setup authoritative record
-	record := createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1})
+	record := createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")
 
 	resolver := NewResolver(ResolverOptions{
 		Blocklist:     &stubBlocklist{blocked: false},
@@ -111,7 +111,7 @@ func BenchmarkResolver_HandleQuery_AuthoritativeHit(b *testing.B) {
 
 func BenchmarkResolver_HandleQuery_UpstreamCacheHit(b *testing.B) {
 	// Setup cached record
-	record := createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1})
+	record := createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")
 
 	resolver := NewResolver(ResolverOptions{
 		Blocklist:     &stubBlocklist{blocked: false},
@@ -164,7 +164,7 @@ func BenchmarkResolver_HandleQuery_BlocklistHit(b *testing.B) {
 
 func BenchmarkResolver_HandleQuery_UpstreamResolution(b *testing.B) {
 	// Setup successful upstream response
-	record := createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1})
+	record := createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")
 	upstreamResp := domain.DNSResponse{
 		ID:      1,
 		RCode:   domain.NOERROR,
@@ -197,7 +197,7 @@ func BenchmarkResolver_HandleQuery_UpstreamResolution(b *testing.B) {
 
 func BenchmarkResolver_HandleQuery_ConcurrentQueries(b *testing.B) {
 	// Setup authoritative record for fast resolution
-	record := createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1})
+	record := createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")
 
 	resolver := NewResolver(ResolverOptions{
 		Blocklist:     &stubBlocklist{blocked: false},
@@ -228,8 +228,8 @@ func BenchmarkResolver_HandleQuery_ConcurrentQueries(b *testing.B) {
 func BenchmarkBuildResponse(b *testing.B) {
 	query := createTestQuery("test.com.", domain.RRType(1))
 	records := []domain.ResourceRecord{
-		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}),
-		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 2}),
+		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1"),
+		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 2}, "192.0.2.2"),
 	}
 
 	b.ResetTimer()

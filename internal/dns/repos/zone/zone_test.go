@@ -65,7 +65,7 @@ func TestLoadZoneDirectory(t *testing.T) {
 	for _, expected := range expectedZones {
 		found := false
 		for zoneRoot := range zones {
-			if strings.TrimSuffix(zoneRoot, ".") == expected {
+			if zoneRoot == expected {
 				found = true
 				break
 			}
@@ -140,7 +140,7 @@ www:
     - "1.2.3.4"
     - "5.6.7.8"
 mail:
-  MX: ["10 mail.example.com."]
+  MX: ["10 mail.example.com"]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -159,7 +159,7 @@ mail:
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["www.example.com."] || !names["mail.example.com."] {
+	if !names["www.example.com"] || !names["mail.example.com"] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
@@ -167,7 +167,7 @@ mail:
 	}
 	aCount := 0
 	for _, r := range records {
-		if r.Name == "www.example.com." && r.Type.String() == "A" {
+		if r.Name == "www.example.com" && r.Type.String() == "A" {
 			aCount++
 		}
 	}
@@ -196,7 +196,7 @@ func TestLoadZoneFile_JSON(t *testing.T) {
 		t.Errorf("expected 1 record, got %d", len(records))
 	}
 	r := records[0]
-	if r.Name != "api.example.org." {
+	if r.Name != "api.example.org" {
 		t.Errorf("unexpected name: %s", r.Name)
 	}
 	if r.Type.String() != "A" {
@@ -219,7 +219,7 @@ func TestLoadZoneFile_TOML(t *testing.T) {
 [web]
 A = "9.8.7.6"
 [mail]
-MX = ["10 mail.example.com."]
+MX = ["10 mail.example.com"]
 `
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
@@ -238,7 +238,7 @@ MX = ["10 mail.example.com."]
 		names[r.Name] = true
 		types[r.Type.String()] = true
 	}
-	if !names["web.example.net."] || !names["mail.example.net."] {
+	if !names["web.example.net"] || !names["mail.example.net"] {
 		t.Errorf("unexpected record names: %v", names)
 	}
 	if !types["A"] || !types["MX"] {
@@ -333,11 +333,11 @@ www:
 }
 
 func TestBuildResourceRecord(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	records, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	records, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -363,22 +363,23 @@ func TestBuildResourceRecord(t *testing.T) {
 }
 
 func TestBuildResourceRecord_InvalidType(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "INVALID"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	_, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 	if err == nil {
 		t.Errorf("expected error for invalid RRType, got nil")
 	}
 }
 
 func TestBuildResourceRecord_Multi(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
-	val := []any{"1.2.3.4", "5.6.7.8"}
+	raw := []any{"1.2.3.4", "5.6.7.8"}
+	values := toStringValues(raw)
 	defaultTTL := 60 * time.Second
-	records, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	records, err := buildResourceRecord(fqdn, rrType, values, defaultTTL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -396,9 +397,9 @@ func TestExpandName(t *testing.T) {
 		root  string
 		want  string
 	}{
-		{"@", "example.com.", "example.com."},
-		{"foo", "example.com.", "foo.example.com."},
-		{"bar.", "example.com.", "bar."},
+		{"@", "example.com", "example.com"},
+		{"foo", "example.com", "foo.example.com"},
+		{"bar.", "example.com", "bar."},
 	}
 	for _, tc := range cases {
 		got := expandName(tc.label, tc.root)
@@ -408,43 +409,25 @@ func TestExpandName(t *testing.T) {
 	}
 }
 
-func TestNormalize(t *testing.T) {
-	cases := []struct {
-		input any
-		want  []string
-	}{
-		{"foo", []string{"foo"}},
-		{[]any{"bar", "baz"}, []string{"bar", "baz"}},
-		{123, nil},
-		{[]any{123, "x"}, []string{"x"}},
-	}
-	for _, tc := range cases {
-		got := normalize(tc.input)
-		if !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("normalize(%v) = %v, want %v", tc.input, got, tc.want)
-		}
-	}
-}
-
 // Additional tests for missing coverage
 
 func TestBuildResourceRecord_EncodeError(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "A"
 	val := "invalid.ip.address"
 	defaultTTL := 60 * time.Second
-	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	_, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 	if err == nil {
 		t.Errorf("expected error for invalid A record data, got nil")
 	}
 }
 
 func TestBuildResourceRecord_InvalidRRType(t *testing.T) {
-	fqdn := "foo.example.com."
+	fqdn := "foo.example.com"
 	rrType := "UNKNOWN"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	_, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 	if err == nil {
 		t.Errorf("expected error for unknown RRType, got nil")
 	}
@@ -456,9 +439,88 @@ func TestBuildResourceRecord_ValidationError(t *testing.T) {
 	rrType := "A"
 	val := "1.2.3.4"
 	defaultTTL := 60 * time.Second
-	_, err := buildResourceRecord(fqdn, rrType, val, defaultTTL)
+	_, err := buildResourceRecord(fqdn, rrType, []string{val}, defaultTTL)
 	if err == nil {
 		t.Errorf("expected validation error for empty FQDN, got nil")
+	}
+}
+
+func TestToStringValues(t *testing.T) {
+	cases := []struct {
+		name  string
+		input any
+		want  []string
+	}{
+		{"single string", "value", []string{"value"}},
+		{"single string trimmed", "  spaced  ", []string{"spaced"}},
+		{"single empty string", "   ", nil},
+		{"slice all strings", []any{"a", "b", "c"}, []string{"a", "b", "c"}},
+		{"slice trims & skips empties", []any{" a ", "", "  ", "b"}, []string{"a", "b"}},
+		{"slice skips non-strings", []any{"a", 123, true, "b"}, []string{"a", "b"}},
+		{"slice all non-strings", []any{123, false}, nil},
+		{"unsupported type int", 42, nil},
+	}
+	for _, tc := range cases {
+		got := toStringValues(tc.input)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("toStringValues %q: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestBuildResourceRecord_EmptyValueSkipped(t *testing.T) {
+	fqdn := "foo.example.com"
+	rrType := "A"
+	// Intentionally include an empty string to exercise the internal skip branch.
+	records, err := buildResourceRecord(fqdn, rrType, []string{"1.2.3.4", ""}, 60*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record (empty skipped), got %d", len(records))
+	}
+	if records[0].Name != fqdn || records[0].Type.String() != "A" {
+		t.Errorf("unexpected record produced: %+v", records[0])
+	}
+}
+
+func TestLoadZoneFile_SkipEmptyStringValue(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "empties.yaml")
+	content := `zone_root: example.com
+empty:
+  A: ""` // empty value should be skipped silently
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	records, err := loadZoneFile(tmpFile, 120*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, r := range records {
+		if r.Name == "empty.example.com" {
+			t.Fatalf("expected no records for empty.example.com, found: %+v", r)
+		}
+	}
+}
+
+func TestLoadZoneFile_SkipEmptySliceValues(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "emptyslice.yaml")
+	content := `zone_root: example.com
+svc:
+  A:
+    - "   "
+    - ""` // slice with only empty/whitespace should be skipped
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	records, err := loadZoneFile(tmpFile, 90*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, r := range records {
+		if r.Name == "svc.example.com" {
+			t.Fatalf("expected no records for svc.example.com, found: %+v", r)
+		}
 	}
 }
 
@@ -504,21 +566,5 @@ func TestLoadZoneFile_NonExistentFile(t *testing.T) {
 	_, err := loadZoneFile("/non/existent/file.yaml", 60*time.Second)
 	if err == nil {
 		t.Errorf("expected error for non-existent file, got nil")
-	}
-}
-
-func TestNormalize_EmptySlice(t *testing.T) {
-	// Test normalize with empty slice - should return nil
-	got := normalize([]any{})
-	if got != nil {
-		t.Errorf("normalize([]any{}) = %v, want nil", got)
-	}
-}
-
-func TestNormalize_NonStringSlice(t *testing.T) {
-	// Test normalize with slice containing only non-strings
-	got := normalize([]any{123, 456, true})
-	if got != nil {
-		t.Errorf("normalize([]any{123, 456, true}) = %v, want nil", got)
 	}
 }

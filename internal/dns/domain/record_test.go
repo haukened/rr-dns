@@ -13,6 +13,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 		class        RRClass
 		ttl          uint32
 		data         []byte
+		text         string
 		expectError  bool
 		expectedName string
 	}{
@@ -23,8 +24,9 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name gets canonicalized",
@@ -33,8 +35,9 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name with whitespace gets canonicalized",
@@ -43,8 +46,9 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:        "empty name",
@@ -53,6 +57,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:       1, // IN
 			ttl:         300,
 			data:        []byte{192, 0, 2, 1},
+			text:        "192.0.2.1",
 			expectError: true,
 		},
 		{
@@ -62,6 +67,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:       1, // IN
 			ttl:         300,
 			data:        []byte{192, 0, 2, 1},
+			text:        "192.0.2.1",
 			expectError: true,
 		},
 		{
@@ -71,6 +77,7 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:       0, // Invalid
 			ttl:         300,
 			data:        []byte{192, 0, 2, 1},
+			text:        "192.0.2.1",
 			expectError: true,
 		},
 		{
@@ -80,8 +87,9 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          0,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "empty data is valid",
@@ -90,14 +98,15 @@ func TestNewAuthoritativeResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{},
-			expectError:  false,
-			expectedName: "example.com.",
+			text:         "",
+			expectError:  true, // Should fail because both text and data are empty
+			expectedName: "example.com",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rr, err := NewAuthoritativeResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data)
+			rr, err := NewAuthoritativeResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data, tt.text)
 
 			if tt.expectError {
 				if err == nil {
@@ -143,6 +152,7 @@ func TestNewCachedResourceRecord(t *testing.T) {
 		class        RRClass
 		ttl          uint32
 		data         []byte
+		text         string
 		now          time.Time
 		expectError  bool
 		expectedName string
@@ -154,9 +164,10 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:         "name gets canonicalized",
@@ -165,9 +176,10 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          300,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 		{
 			name:        "empty name",
@@ -176,6 +188,7 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			class:       1, // IN
 			ttl:         300,
 			data:        []byte{192, 0, 2, 1},
+			text:        "192.0.2.1",
 			now:         timeFixture,
 			expectError: true,
 		},
@@ -186,15 +199,16 @@ func TestNewCachedResourceRecord(t *testing.T) {
 			class:        1, // IN
 			ttl:          0,
 			data:         []byte{192, 0, 2, 1},
+			text:         "192.0.2.1",
 			now:          timeFixture,
 			expectError:  false,
-			expectedName: "example.com.",
+			expectedName: "example.com",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rr, err := NewCachedResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data, tt.now)
+			rr, err := NewCachedResourceRecord(tt.recordName, tt.rrtype, tt.class, tt.ttl, tt.data, tt.text, tt.now)
 
 			if tt.expectError {
 				if err == nil {
@@ -664,10 +678,11 @@ func BenchmarkNewAuthoritativeResourceRecord(b *testing.B) {
 	class := RRClass(1)
 	ttl := uint32(300)
 	data := []byte{192, 0, 2, 1}
+	text := "192.0.2.1"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = NewAuthoritativeResourceRecord(name, rrtype, class, ttl, data)
+		_, _ = NewAuthoritativeResourceRecord(name, rrtype, class, ttl, data, text)
 	}
 }
 
@@ -678,11 +693,12 @@ func BenchmarkNewCachedResourceRecord(b *testing.B) {
 	class := RRClass(1)
 	ttl := uint32(300)
 	data := []byte{192, 0, 2, 1}
+	text := "192.0.2.1"
 	now := timeFixture
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = NewCachedResourceRecord(name, rrtype, class, ttl, data, now)
+		_, _ = NewCachedResourceRecord(name, rrtype, class, ttl, data, text, now)
 	}
 }
 

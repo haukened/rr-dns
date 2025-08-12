@@ -40,5 +40,5 @@ func (q Question) Validate() error {
 
 // CacheKey returns a cache key string derived from the query's name, type, and class.
 func (q Question) CacheKey() string {
-	return generateCacheKey(q.Name, q.Type, q.Class)
+	return GenerateCacheKey(q.Name, q.Type, q.Class)
 }

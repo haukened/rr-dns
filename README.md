@@ -98,7 +98,8 @@ RR-DNS currently supports:
 - [x] **Error Handling**: Robust error handling for malformed packets and edge cases
 - [x] **UDP Server**: DNS query server implementation
 - [x] **Query Resolution Service**: Orchestration of upstream, cache, and zone lookups
-- [ ] **Docker Deployment**: Support deploying in docker containers.
+- [x] **CNAME Alias Resolution**: RFC 1034 §3.6.2 compliant chain expansion (loop & depth safeguards, partial-chain NOERROR policy, SERVFAIL on loop/depth)
+- [X] **Docker Deployment**: Support deploying in docker containers.
 - [ ] **Ad/Tracker Blocking**: Blocklist subscription and filtering
 - [ ] **Snap Packaging**: Published on snapcraft.io
 - [ ] **Apt Packaging**: Apt packages for Debian/Ubuntu/Derivates

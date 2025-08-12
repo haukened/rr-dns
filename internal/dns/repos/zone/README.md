@@ -106,6 +106,8 @@ TXT = "This is a test record"
 
 ## Usage
 
+The zone loader populates both the wire-format `Data` bytes and a human-readable `Text` representation for each `domain.ResourceRecord`. This dual representation avoids repeated decoding when constructing responses and preserves exact original zone content.
+
 ### Loading Zone Directory
 
 ```go
@@ -126,11 +128,11 @@ func main() {
     
     // Process loaded records - using value semantics
     for _, record := range records {
-        fmt.Printf("Loaded: %s %s %s (TTL: %d)\n", 
-            record.Name, 
-            record.Type.String(), 
-            string(record.Data),
-            record.TTL())
+    fmt.Printf("Loaded: %s %s %s (TTL: %d)\n", 
+      record.Name, 
+      record.Type.String(), 
+      record.Text,  // prefer textual form
+      record.TTL())
     }
     
     fmt.Printf("Loaded %d records from zone directory\n", len(records))

@@ -95,6 +95,7 @@ func createTestResponse() domain.DNSResponse {
 		1,   // IN class
 		300, // 5 minutes TTL
 		[]byte("1.2.3.4"),
+		"1.2.3.4",
 	)
 	return domain.DNSResponse{
 		ID:      12345,

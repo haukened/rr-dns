@@ -70,3 +70,33 @@ type ZoneCache interface {
 	// Count returns the total number of records across all zones
 	Count() int
 }
+
+// AliasResolver defines an interface for resolving CNAME (alias) chains within
+// the authoritative zone (and eventually across upstream/cache layers). It is
+// responsible for expanding an initial record set that begins with a CNAME
+// AliasResolver expands CNAME (alias) chains per RFC 1034 §3.6.2.
+//
+// Responsibility:
+//   - Start from an initial record set whose first RR may be a CNAME for the original query type
+//   - Follow successive CNAME targets (authoritative-first, optional upstream fallback)
+//   - Enforce a configured maximum depth and detect loops (A→B→A, self-loop)
+//   - Return the ordered chain: all CNAME hops followed by the terminal RRset (non-CNAME answers) when found
+//   - Surface sentinel errors for depth or loop violations (policy → SERVFAIL) and non-fatal data issues (invalid target/question build)
+//
+// Separation of Concerns:
+//   - AliasResolver only reads the textual target from ResourceRecord.Text; decoding/encoding of RDATA bytes resides in zone loading and wire codec layers.
+//   - Callers can invoke Chase unconditionally; implementations include their own fast path when no CNAME processing applies.
+//
+// Error Policy (see resolver README for full table):
+//   - Depth / loop errors are considered fatal by the Resolver (mapped to SERVFAIL)
+//   - Invalid target / question synthesis failures return partial chain under NOERROR
+//
+// Implementations must be deterministic and side-effect free aside from logging.
+type AliasResolver interface {
+	// Chase expands an initial answer set that begins with a CNAME into the
+	// full ordered chain (CNAME hops + terminal RRset). It returns the expanded
+	// slice (or the original slice if no chasing was required) and an error for
+	// policy breaches (loop/depth) or internal failures. Implementations handle
+	// their own fast path internally so callers can always invoke Chase.
+	Chase(query domain.Question, initial []domain.ResourceRecord) ([]domain.ResourceRecord, error)
+}

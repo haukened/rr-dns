@@ -1,6 +1,7 @@
 package dnscache
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,12 +17,15 @@ func BenchmarkDnsCache_Set(b *testing.B) {
 	// Pre-create records for benchmarking
 	records := make([]domain.ResourceRecord, b.N)
 	for i := 0; i < b.N; i++ {
+		data := []byte{192, 0, 2, byte(i % 256)}
+		text := fmt.Sprintf("%d.%d.%d.%d", data[0], data[1], data[2], data[3])
 		rr, err := domain.NewCachedResourceRecord(
-			"bench.com.",
+			"bench.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,
-			[]byte{192, 0, 2, byte(i % 256)},
+			data,
+			text,
 			time.Now(),
 		)
 		if err != nil {
@@ -49,11 +53,12 @@ func BenchmarkDnsCache_Get(b *testing.B) {
 
 	// Pre-populate cache
 	rr, err := domain.NewCachedResourceRecord(
-		"bench.com.",
+		"bench.com",
 		domain.RRTypeFromString("A"),
 		domain.RRClass(1),
 		300,
 		[]byte{192, 0, 2, 1},
+		"192.0.2.1",
 		time.Now(),
 	)
 	if err != nil {
@@ -83,12 +88,15 @@ func BenchmarkDnsCache_SetMultiple(b *testing.B) {
 	// Create multiple records with same key
 	records := make([]domain.ResourceRecord, 5)
 	for i := 0; i < 5; i++ {
+		data := []byte{192, 0, 2, byte(i + 1)}
+		text := fmt.Sprintf("192.0.2.%d", i+1)
 		rr, err := domain.NewCachedResourceRecord(
-			"multi.com.",
+			"multi.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,
-			[]byte{192, 0, 2, byte(i + 1)},
+			data,
+			text,
 			time.Now(),
 		)
 		if err != nil {
@@ -117,12 +125,15 @@ func BenchmarkDnsCache_GetMultiple(b *testing.B) {
 	// Pre-populate with multiple records
 	records := make([]domain.ResourceRecord, 5)
 	for i := 0; i < 5; i++ {
+		data := []byte{192, 0, 2, byte(i + 1)}
+		text := fmt.Sprintf("192.0.2.%d", i+1)
 		rr, err := domain.NewCachedResourceRecord(
-			"multi.com.",
+			"multi.com",
 			domain.RRTypeFromString("A"),
 			domain.RRClass(1),
 			300,
-			[]byte{192, 0, 2, byte(i + 1)},
+			data,
+			text,
 			time.Now(),
 		)
 		if err != nil {
