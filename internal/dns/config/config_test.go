@@ -17,6 +17,7 @@ func TestLoad_Defaults(t *testing.T) {
 	_ = os.Unsetenv("DNS_CACHE_SIZE")
 	_ = os.Unsetenv("DNS_ZONE_DIR")
 	_ = os.Unsetenv("DNS_SERVERS")
+	_ = os.Unsetenv("DNS_MAX_RECURSION")
 
 	cfg, err := Load()
 	if err != nil {
@@ -44,6 +45,9 @@ func TestLoad_Defaults(t *testing.T) {
 			}
 		}
 	}
+	if cfg.MaxRecursion != 8 {
+		t.Errorf("expected MaxRecursion=8, got %d", cfg.MaxRecursion)
+	}
 }
 
 func TestLoad_ValidOverrides(t *testing.T) {
@@ -53,6 +57,7 @@ func TestLoad_ValidOverrides(t *testing.T) {
 	t.Setenv("DNS_CACHE_SIZE", "2000")
 	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
 	t.Setenv("DNS_SERVERS", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_MAX_RECURSION", "12")
 
 	cfg, err := Load()
 	if err != nil {
@@ -79,6 +84,9 @@ func TestLoad_ValidOverrides(t *testing.T) {
 				t.Errorf("expected Upstream[%d]=%q, got %q", i, v, cfg.Servers[i])
 			}
 		}
+	}
+	if cfg.MaxRecursion != 12 {
+		t.Errorf("expected MaxRecursion=12, got %d", cfg.MaxRecursion)
 	}
 }
 
@@ -128,6 +136,7 @@ func TestLoad_InvalidEnv(t *testing.T) {
 	t.Setenv("DNS_CACHE_SIZE", "1000")
 	t.Setenv("DNS_ZONE_DIR", "/tmp/zones/")
 	t.Setenv("DNS_UPSTREAM", "8.8.8.8:53,8.8.4.4:53")
+	t.Setenv("DNS_MAX_RECURSION", "0")
 
 	_, err := Load()
 	if err == nil {
