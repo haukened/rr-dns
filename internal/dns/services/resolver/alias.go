@@ -223,7 +223,12 @@ func (a *aliasChaser) isHeadCNAME(rrs []domain.ResourceRecord) bool {
 func (a *aliasChaser) guardDepth(st *chaseState, head domain.ResourceRecord) error {
 	st.depth++
 	if a.maxDepth > 0 && st.depth > a.maxDepth {
-		a.logger.Warn(map[string]any{"query": st.query, "depth": st.depth}, "Alias depth exceeded")
+		a.logger.Warn(map[string]any{
+			"query":           st.query,
+			"alias_name":      head.Name,
+			"alias_depth":     st.depth,
+			"alias_chain_len": len(st.chain) + 1, // +1 for current head about to be appended by caller
+		}, "Alias depth exceeded")
 		return ErrAliasDepthExceeded
 	}
 	return nil
@@ -233,7 +238,12 @@ func (a *aliasChaser) guardDepth(st *chaseState, head domain.ResourceRecord) err
 func (a *aliasChaser) guardLoop(st *chaseState, head domain.ResourceRecord) error {
 	name := strings.ToLower(head.Name)
 	if _, ok := st.visited[name]; ok {
-		a.logger.Warn(map[string]any{"query": st.query, "name": head.Name}, "Alias loop detected")
+		a.logger.Warn(map[string]any{
+			"query":           st.query,
+			"alias_name":      head.Name,
+			"alias_depth":     st.depth,
+			"alias_chain_len": len(st.chain) + 1,
+		}, "Alias loop detected")
 		return ErrAliasLoopDetected
 	}
 	st.visited[name] = struct{}{}
