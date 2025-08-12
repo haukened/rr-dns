@@ -104,8 +104,8 @@ func createTestQuery(name string, qtype domain.RRType) domain.Question {
 	return query
 }
 
-func createTestRecord(name string, rtype domain.RRType, data []byte) domain.ResourceRecord {
-	record, _ := domain.NewCachedResourceRecord(name, rtype, domain.RRClass(1), 300, data, time.Now())
+func createTestRecord(name string, rtype domain.RRType, data []byte, text string) domain.ResourceRecord {
+	record, _ := domain.NewCachedResourceRecord(name, rtype, domain.RRClass(1), 300, data, text, time.Now())
 	return record
 }
 
@@ -121,7 +121,7 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 		{
 			name:          "authoritative A record found",
 			query:         createTestQuery("example.com.", domain.RRType(1)), // A record
-			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -129,7 +129,7 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 		{
 			name:          "authoritative AAAA record found",
 			query:         createTestQuery("example.com.", domain.RRType(28)), // AAAA record
-			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(28), make([]byte, 16))},
+			zoneRecords:   []domain.ResourceRecord{createTestRecord("example.com.", domain.RRType(28), make([]byte, 16), "2001:db8::1")},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -138,8 +138,8 @@ func TestResolver_HandleQuery_AuthoritativeZone(t *testing.T) {
 			name:  "multiple authoritative records",
 			query: createTestQuery("example.com.", domain.RRType(1)), // A record
 			zoneRecords: []domain.ResourceRecord{
-				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}),
-				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 2}),
+				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1"),
+				createTestRecord("example.com.", domain.RRType(1), []byte{192, 0, 2, 2}, "192.0.2.2"),
 			},
 			zoneFound:     true,
 			expectedRCode: domain.NOERROR,
@@ -275,7 +275,7 @@ func TestResolver_HandleQuery_UpstreamCache(t *testing.T) {
 		{
 			name:          "upstream cache hit",
 			query:         createTestQuery("cached.com.", domain.RRType(1)), // A record
-			cachedRecords: []domain.ResourceRecord{createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			cachedRecords: []domain.ResourceRecord{createTestRecord("cached.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			cacheHit:      true,
 			expectedRCode: domain.NOERROR,
 			expectedCount: 1,
@@ -358,7 +358,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with caching",
 			query:           createTestQuery("upstream.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -378,7 +378,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with cache error",
 			query:           createTestQuery("cache-fail.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("cache-fail.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     errors.New("cache full"),
 			expectedRCode:   domain.NOERROR,
@@ -388,7 +388,7 @@ func TestResolver_HandleQuery_UpstreamResolution(t *testing.T) {
 		{
 			name:            "successful upstream resolution with nil cache",
 			query:           createTestQuery("nil-cache.com.", domain.RRType(1)), // A record
-			upstreamRecords: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			upstreamRecords: []domain.ResourceRecord{createTestRecord("nil-cache.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			upstreamErr:     nil,
 			cacheSetErr:     nil,
 			expectedRCode:   domain.NOERROR,
@@ -643,7 +643,7 @@ func TestNewResolver(t *testing.T) {
 func TestBuildResponse(t *testing.T) {
 	query := createTestQuery("test.com.", domain.RRType(1)) // A record
 	records := []domain.ResourceRecord{
-		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}),
+		createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1"),
 	}
 
 	tests := []struct {
@@ -697,21 +697,21 @@ func TestResolver_CacheUpstreamResponse(t *testing.T) {
 		{
 			name:          "successful caching",
 			upstreamCache: &MockCache{},
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   false,
 			expectCall:    true,
 		},
 		{
 			name:          "cache error",
 			upstreamCache: &MockCache{},
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   true,
 			expectCall:    true,
 		},
 		{
 			name:          "nil cache - no error",
 			upstreamCache: nil,
-			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1})},
+			records:       []domain.ResourceRecord{createTestRecord("test.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")},
 			expectError:   false,
 			expectCall:    false,
 		},
