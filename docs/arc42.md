@@ -200,6 +200,25 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 
 ## 5.2 Level 2
 
+### 5.2.x Key Design Change: Alias (CNAME) Resolution
+
+The resolver gained a dedicated alias (CNAME chain) expansion component (`AliasResolver`).
+
+Motivation:
+- Provide standards-compliant CNAME processing (RFC 1034 §3.6.2) without coupling core resolver logic to wire/zone parsing details.
+- Support deterministic loop and depth guards (resource abuse protection and correctness) with clear error classification.
+
+Design Highlights:
+- Authoritative-first lookup for each hop; upstream fallback only when authoritative data absent.
+- Maintains ordered chain: every CNAME hop appended in sequence; terminal RRset appended last (no duplication).
+- Loop detection via lowercase visited set; depth guard configurable (maxDepth <= 0 disables).
+- Uses only `ResourceRecord.Text` for CNAME target extraction (RDATA decoding delegated to zone loader / wire codec).
+- Returns partial chains for non-fatal issues (invalid target / synthesis failure) aiding observability.
+- Sentinel errors: depth exceeded, loop detected, invalid target, question build failure.
+
+Result:
+Simplifies resolver orchestration, isolates alias-specific policy, and enables focused unit tests for all termination branches.
+
 ### 5.2.1 White Box: Domain Layer
 
 > 📖 **Detailed Documentation**: [Domain README](../internal/dns/domain/README.md)

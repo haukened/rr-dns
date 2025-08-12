@@ -189,6 +189,9 @@ At least one of `Data` or `Text` must be present; both may be set. For authorita
 
 Keeping both forms avoids lossy round‑trips and eliminates repeated decode work while preserving fidelity of the original zone content.
 
+Alias Resolution Note:
+The CNAME chase logic (AliasResolver) relies exclusively on the `Text` field for the canonical target name. Zone loading and wire decoding layers are responsible for populating `Text`; alias expansion never parses `Data` for targets. Ensure zone records and upstream decoding always set CNAME `Text`.
+
 **Fields (exported + notable unexported):**
 - `Name`: FQDN this record applies to (canonicalized: lower‑cased, ensured trailing dot)
 - `Type`: RRType

@@ -74,15 +74,24 @@ type ZoneCache interface {
 // AliasResolver defines an interface for resolving CNAME (alias) chains within
 // the authoritative zone (and eventually across upstream/cache layers). It is
 // responsible for expanding an initial record set that begins with a CNAME
-// into a full answer set that includes the CNAME chain plus records that
-// satisfy the original query type. Implementations must enforce a maximum
-// recursion depth and detect alias loops.
+// AliasResolver expands CNAME (alias) chains per RFC 1034 §3.6.2.
 //
-// The returned slice should contain the full ordered chain (each CNAME hop
-// followed by the terminal RRset, if found). The bool indicates whether any
-// alias chasing was performed. An error indicates an internal failure or a
-// policy breach (e.g. depth exceeded) – the caller may translate certain
-// errors into DNS RCODEs (e.g. SERVFAIL).
+// Responsibility:
+//   - Start from an initial record set whose first RR may be a CNAME for the original query type
+//   - Follow successive CNAME targets (authoritative-first, optional upstream fallback)
+//   - Enforce a configured maximum depth and detect loops (A→B→A, self-loop)
+//   - Return the ordered chain: all CNAME hops followed by the terminal RRset (non-CNAME answers) when found
+//   - Surface sentinel errors for depth or loop violations (policy → SERVFAIL) and non-fatal data issues (invalid target/question build)
+//
+// Separation of Concerns:
+//   - AliasResolver only reads the textual target from ResourceRecord.Text; decoding/encoding of RDATA bytes resides in zone loading and wire codec layers.
+//   - Callers can invoke Chase unconditionally; implementations include their own fast path when no CNAME processing applies.
+//
+// Error Policy (see resolver README for full table):
+//   - Depth / loop errors are considered fatal by the Resolver (mapped to SERVFAIL)
+//   - Invalid target / question synthesis failures return partial chain under NOERROR
+//
+// Implementations must be deterministic and side-effect free aside from logging.
 type AliasResolver interface {
 	// Chase expands an initial answer set that begins with a CNAME into the
 	// full ordered chain (CNAME hops + terminal RRset). It returns the expanded
