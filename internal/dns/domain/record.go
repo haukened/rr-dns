@@ -14,12 +14,13 @@ type ResourceRecord struct {
 	Type      RRType
 	Class     RRClass
 	ttl       uint32
-	expiresAt *time.Time
-	Data      []byte
+	expiresAt *time.Time // nil if record is authoritative
+	Data      []byte     // Wire-Encoded representation of the record
+	Text      string     // Human-readable representation of the record
 }
 
 // NewAuthoritativeResourceRecord constructs an authoritative ResourceRecord (non-expiring).
-func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte) (ResourceRecord, error) {
+func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, text string) (ResourceRecord, error) {
 	rr := ResourceRecord{
 		Name:      utils.CanonicalDNSName(name),
 		Type:      rrtype,
@@ -27,6 +28,7 @@ func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, t
 		ttl:       ttl,
 		expiresAt: nil,
 		Data:      data,
+		Text:      text,
 	}
 	if err := rr.Validate(); err != nil {
 		return ResourceRecord{}, err
@@ -36,7 +38,7 @@ func NewAuthoritativeResourceRecord(name string, rrtype RRType, class RRClass, t
 
 // NewCachedResourceRecord constructs a cached ResourceRecord with an expiration time.
 // accepts the current time to calculate the expiration, keeping domain logic encapsulated.
-func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, now time.Time) (ResourceRecord, error) {
+func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint32, data []byte, text string, now time.Time) (ResourceRecord, error) {
 	exp := now.Add(time.Duration(ttl) * time.Second)
 	rr := ResourceRecord{
 		Name:      utils.CanonicalDNSName(name),
@@ -45,6 +47,7 @@ func NewCachedResourceRecord(name string, rrtype RRType, class RRClass, ttl uint
 		ttl:       ttl,
 		expiresAt: &exp,
 		Data:      data,
+		Text:      text,
 	}
 	if err := rr.Validate(); err != nil {
 		return ResourceRecord{}, err
@@ -62,6 +65,9 @@ func (rr ResourceRecord) Validate() error {
 	}
 	if !rr.Class.IsValid() {
 		return fmt.Errorf("invalid RRClass: %d", rr.Class)
+	}
+	if rr.Text == "" && len(rr.Data) == 0 {
+		return fmt.Errorf("either Text or Data must be set")
 	}
 	return nil
 }
