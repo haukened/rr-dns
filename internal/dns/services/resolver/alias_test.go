@@ -131,6 +131,22 @@ func TestAliasChase_LoopDetected(t *testing.T) {
 	assert.Equal(t, []domain.ResourceRecord{c1, c2, c1}, recs)
 }
 
+// Self-loop: single CNAME whose target is itself (A.example -> A.example). RFC 1034 §3.6.2 loop detection.
+func TestAliasChase_SelfLoop(t *testing.T) {
+	zone := &fakeZone{records: map[string][]domain.ResourceRecord{}}
+	self := mustAuthRR("self.example.", domain.RRTypeCNAME, "self.example.")
+	// Store under original query type (A) key so initial FindRecords returns CNAME for A query.
+	zone.records[zoneKey("self.example.", domain.RRTypeA, domain.RRClassIN)] = []domain.ResourceRecord{self}
+	// Also store under CNAME key for fallback lookup that produces second hop triggering loop detect.
+	zone.records[zoneKey("self.example.", domain.RRTypeCNAME, domain.RRClassIN)] = []domain.ResourceRecord{self}
+	ch := NewAliasChaser(zone, nil, nil, &clock.MockClock{CurrentTime: time.Now()}, &aliasNoopLogger{}, 5)
+	q := mustQ("self.example.", domain.RRTypeA)
+	recs, err := ch.Chase(q, []domain.ResourceRecord{self})
+	assert.ErrorIs(t, err, ErrAliasLoopDetected)
+	// Chain: first hop appended, second iteration detects loop; failing head appended again.
+	assert.Equal(t, []domain.ResourceRecord{self, self}, recs)
+}
+
 func TestAliasChase_ExtractTargetErrors(t *testing.T) {
 	ch := NewAliasChaser(nil, nil, nil, &clock.MockClock{CurrentTime: time.Now()}, &aliasNoopLogger{}, 5)
 	q := mustQ("bad.example.", domain.RRTypeA)
