@@ -219,6 +219,7 @@ func TestUdpCodec_EncodeResponse(t *testing.T) {
 		1,                    // IN class
 		300,                  // TTL
 		[]byte{192, 0, 2, 1}, // IP address 192.0.2.1
+		"192.0.2.1",
 	)
 	assert.NoError(t, err)
 
@@ -658,7 +659,7 @@ func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
 		{
 			name: "valid response with authority records",
 			data: func() []byte {
-				data := make([]byte, 0, 200)
+				data := make([]byte, 0, 300)
 				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=1, ARCOUNT=0
 				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
 				data = binary.BigEndian.AppendUint16(data, 0x8400) // flags: response, authoritative, no error
@@ -676,18 +677,29 @@ func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
 				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
 				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
 
-				// Authority record: example.com SOA
-				data = append(data, 7) // length of "example"
+				// Authority SOA record for example.com
+				// Build proper SOA RDATA: mname example.com, rname hostmaster.example.com,
+				// serial 2025010101, refresh 3600, retry 900, expire 604800, minimum 86400
+				mname, _ := encodeDomainName("example.com")
+				rname, _ := encodeDomainName("hostmaster.example.com")
+				soaInts := make([]byte, 20)
+				binary.BigEndian.PutUint32(soaInts[0:4], 2025010101)
+				binary.BigEndian.PutUint32(soaInts[4:8], 3600)
+				binary.BigEndian.PutUint32(soaInts[8:12], 900)
+				binary.BigEndian.PutUint32(soaInts[12:16], 604800)
+				binary.BigEndian.PutUint32(soaInts[16:20], 86400)
+				soaRdata := append(append(mname, rname...), soaInts...)
+				// Owner name: example.com
+				data = append(data, 7)
 				data = append(data, []byte("example")...)
-				data = append(data, 3) // length of "com"
+				data = append(data, 3)
 				data = append(data, []byte("com")...)
-				data = append(data, 0)                           // end of name
+				data = append(data, 0)
 				data = binary.BigEndian.AppendUint16(data, 6)    // TYPE SOA
 				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
 				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
-				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
-				data = append(data, 192, 0, 2, 1)                // dummy SOA data
-
+				data = binary.BigEndian.AppendUint16(data, uint16(len(soaRdata)))
+				data = append(data, soaRdata...)
 				return data
 			}(),
 			expectedID: 12345,
@@ -700,7 +712,7 @@ func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
 		{
 			name: "response with multiple authority records",
 			data: func() []byte {
-				data := make([]byte, 0, 300)
+				data := make([]byte, 0, 400)
 				// Header: ID, flags, QDCOUNT=1, ANCOUNT=0, NSCOUNT=2, ARCOUNT=0
 				data = binary.BigEndian.AppendUint16(data, 12345)  // ID
 				data = binary.BigEndian.AppendUint16(data, 0x8403) // flags: response, authoritative, NXDOMAIN
@@ -720,26 +732,38 @@ func TestUdpCodec_DecodeResponse_AuthorityRecords(t *testing.T) {
 				data = binary.BigEndian.AppendUint16(data, 1) // QTYPE A
 				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
 
-				// First authority record: example.com SOA
-				data = append(data, 7) // length of "example"
+				// Build SOA RDATA same as previous test
+				mname, _ := encodeDomainName("example.com")
+				rname, _ := encodeDomainName("hostmaster.example.com")
+				soaInts := make([]byte, 20)
+				binary.BigEndian.PutUint32(soaInts[0:4], 2025010101)
+				binary.BigEndian.PutUint32(soaInts[4:8], 3600)
+				binary.BigEndian.PutUint32(soaInts[8:12], 900)
+				binary.BigEndian.PutUint32(soaInts[12:16], 604800)
+				binary.BigEndian.PutUint32(soaInts[16:20], 86400)
+				soaRdata := append(append(mname, rname...), soaInts...)
+
+				// First authority record owner: example.com
+				data = append(data, 7)
 				data = append(data, []byte("example")...)
-				data = append(data, 3) // length of "com"
+				data = append(data, 3)
 				data = append(data, []byte("com")...)
-				data = append(data, 0)                           // end of name
+				data = append(data, 0)
 				data = binary.BigEndian.AppendUint16(data, 6)    // TYPE SOA
 				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
 				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
-				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
-				data = append(data, 192, 0, 2, 1)                // dummy SOA data
+				data = binary.BigEndian.AppendUint16(data, uint16(len(soaRdata)))
+				data = append(data, soaRdata...)
 
-				// Second authority record: example.com NS
-				// Use compression pointer to "example.com" from question section (offset 12+8=20)
-				data = append(data, 192, 20)                     // compression pointer to "example.com"
+				// Second authority record: owner name compression pointer to example.com (offset 20)
+				data = append(data, 192, 20)
 				data = binary.BigEndian.AppendUint16(data, 2)    // TYPE NS
 				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
 				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
-				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
-				data = append(data, 192, 0, 2, 2)                // dummy NS data
+				// NS RDATA: ns1.example.com
+				nsTarget, _ := encodeDomainName("ns1.example.com")
+				data = binary.BigEndian.AppendUint16(data, uint16(len(nsTarget)))
+				data = append(data, nsTarget...)
 
 				return data
 			}(),
@@ -837,17 +861,23 @@ func TestUdpCodec_DecodeResponse_AdditionalRecords(t *testing.T) {
 				data = binary.BigEndian.AppendUint16(data, 15) // QTYPE MX
 				data = binary.BigEndian.AppendUint16(data, 1)  // QCLASS IN
 
-				// Answer record: example.com MX
-				data = append(data, 7) // length of "example"
+				// Answer record: example.com MX 10 mail.example.com
+				// Owner name: example.com
+				data = append(data, 7)
 				data = append(data, []byte("example")...)
-				data = append(data, 3) // length of "com"
+				data = append(data, 3)
 				data = append(data, []byte("com")...)
-				data = append(data, 0)                           // end of name
+				data = append(data, 0)
 				data = binary.BigEndian.AppendUint16(data, 15)   // TYPE MX
 				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
 				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
-				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
-				data = append(data, 192, 0, 2, 10)               // dummy MX data
+				// Build MX RDATA: preference (10) + exchange domain
+				mxPref := make([]byte, 2)
+				binary.BigEndian.PutUint16(mxPref, 10)
+				exchange, _ := encodeDomainName("mail.example.com")
+				mxRdata := append(mxPref, exchange...)
+				data = binary.BigEndian.AppendUint16(data, uint16(len(mxRdata)))
+				data = append(data, mxRdata...)
 
 				// Additional record: mail.example.com A
 				data = append(data, 4) // length of "mail"
@@ -894,12 +924,13 @@ func TestUdpCodec_DecodeResponse_AdditionalRecords(t *testing.T) {
 				data = binary.BigEndian.AppendUint16(data, 1) // QCLASS IN
 
 				// Authority record: example.com NS ns1.example.com
-				data = append(data, 192, 12)                     // compression pointer to "example.com"
+				data = append(data, 192, 12)                     // compression pointer to owner name (example.com)
 				data = binary.BigEndian.AppendUint16(data, 2)    // TYPE NS
 				data = binary.BigEndian.AppendUint16(data, 1)    // CLASS IN
 				data = binary.BigEndian.AppendUint32(data, 3600) // TTL
-				data = binary.BigEndian.AppendUint16(data, 4)    // RDLENGTH 4
-				data = append(data, 192, 0, 2, 1)                // dummy NS data
+				nsTarget, _ := encodeDomainName("ns1.example.com")
+				data = binary.BigEndian.AppendUint16(data, uint16(len(nsTarget)))
+				data = append(data, nsTarget...)
 
 				// First additional record: ns1.example.com A
 				data = append(data, 3) // length of "ns1"
