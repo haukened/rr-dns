@@ -53,7 +53,7 @@ Production implementation using actual system time:
 ```go
 type RealClock struct{}
 
-func (c RealClock) Now() time.Time {
+func (c *RealClock) Now() time.Time {
     return time.Now()
 }
 ```

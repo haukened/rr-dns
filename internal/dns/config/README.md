@@ -23,6 +23,7 @@ type AppConfig struct {
     Port         int      `koanf:"port"`          // DNS server port (default: 53)
     ZoneDir      string   `koanf:"zone_dir"`      // Zone files directory
     Servers      []string `koanf:"servers"`       // Upstream DNS servers (ip:port format)
+    MaxRecursion int      `koanf:"max_recursion"` // Maximum in-zone CNAME recursion depth
 }
 ```
 
@@ -54,38 +55,41 @@ func main() {
 
 ## Environment Variables
 
-All configuration is controlled via environment variables with the `UDNS_` prefix:
+All configuration is controlled via environment variables with the `DNS_` prefix:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `UDNS_CACHE_SIZE` | uint | 1000 | Maximum number of DNS records to cache |
-| `UDNS_DISABLE_CACHE` | bool | false | Disable DNS response caching for testing |
-| `UDNS_ENV` | string | "prod" | Runtime environment (`dev` or `prod`) |
-| `UDNS_LOG_LEVEL` | string | "info" | Log verbosity level |
-| `UDNS_PORT` | int | 53 | UDP port for DNS server to bind to |
-| `UDNS_ZONE_DIR` | string | "/etc/rr-dns/zones/" | Directory containing zone files |
-| `UDNS_SERVERS` | string | "1.1.1.1:53,1.0.0.1:53" | Comma-separated upstream DNS servers |
+| `DNS_CACHE_SIZE` | uint | 1000 | Maximum number of DNS records to cache |
+| `DNS_DISABLE_CACHE` | bool | false | Disable DNS response caching for testing |
+| `DNS_ENV` | string | "prod" | Runtime environment (`dev` or `prod`) |
+| `DNS_LOG_LEVEL` | string | "info" | Log verbosity level |
+| `DNS_PORT` | int | 53 | UDP port for DNS server to bind to |
+| `DNS_ZONE_DIR` | string | "/etc/rr-dns/zones/" | Directory containing zone files |
+| `DNS_SERVERS` | string | "1.1.1.1:53,1.0.0.1:53" | Comma-separated upstream DNS servers |
+| `DNS_MAX_RECURSION` | int | 8 | Maximum in-zone CNAME recursion depth |
 
 ## Example Configuration
 
 ### Development Environment
 ```bash
-export UDNS_ENV=dev
-export UDNS_LOG_LEVEL=debug
-export UDNS_PORT=5053
-export UDNS_CACHE_SIZE=500
-export UDNS_ZONE_DIR=./zones/
-export UDNS_SERVERS=8.8.8.8:53,8.8.4.4:53
+export DNS_ENV=dev
+export DNS_LOG_LEVEL=debug
+export DNS_PORT=5053
+export DNS_CACHE_SIZE=500
+export DNS_ZONE_DIR=./zones/
+export DNS_SERVERS=8.8.8.8:53,8.8.4.4:53
+export DNS_MAX_RECURSION=8
 ```
 
 ### Production Environment
 ```bash
-export UDNS_ENV=prod
-export UDNS_LOG_LEVEL=info
-export UDNS_PORT=53
-export UDNS_CACHE_SIZE=10000
-export UDNS_ZONE_DIR=/etc/rr-dns/zones/
-export UDNS_SERVERS=1.1.1.1:53,1.0.0.1:53,8.8.8.8:53
+export DNS_ENV=prod
+export DNS_LOG_LEVEL=info
+export DNS_PORT=53
+export DNS_CACHE_SIZE=10000
+export DNS_ZONE_DIR=/etc/rr-dns/zones/
+export DNS_SERVERS=1.1.1.1:53,1.0.0.1:53,8.8.8.8:53
+export DNS_MAX_RECURSION=8
 ```
 
 ## Validation

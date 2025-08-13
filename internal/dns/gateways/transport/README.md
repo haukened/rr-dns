@@ -118,20 +118,12 @@ resolver := resolver.NewResolver(resolver.ResolverOptions{
     Logger:        logger,
 })
 
-// Create multiple transports sharing the same resolver
+// Create UDP transport and start it
 udpTransport := transport.NewUDPTransport(":53", codec, logger)
-dotTransport := transport.NewDoTTransport(":853", tlsConfig, codec, logger)
-dohTransport := transport.NewDoHTransport(":443", httpConfig, codec, logger)
-
-// Each transport drives the same resolver logic
-go udpTransport.Start(ctx, resolver)  // UDP on port 53
-go dotTransport.Start(ctx, resolver)  // DNS-over-TLS on port 853
-go dohTransport.Start(ctx, resolver)  // DNS-over-HTTPS on port 443
-
-// Graceful shutdown - transports handle their own cleanup
+go udpTransport.Start(ctx, resolver)
 defer udpTransport.Stop()
-defer dotTransport.Stop()
-defer dohTransport.Stop()
+
+// Additional transports (DoT, DoH, DoQ) can be added in the future
 ```
 
 ### Why This Architecture Works
