@@ -1,16 +1,20 @@
 # DNS Blocklist Repository
 
-This package provides DNS blocklist functionality for filtering and blocking unwanted domains based on configurable blocklists. The implementation follows the repository pattern to abstract blocklist data sources and provides fast domain lookup capabilities.
+This package currently provides a no-op blocklist implementation for the resolver service. The `NoopBlocklist` satisfies the blocklist interface but always allows queries. The features described below are planned for future development.
 
 ## Overview
 
-The `blocklist` repository handles:
+Planned capabilities include:
 
 - **Domain blocking** based on configurable blocklist sources
 - **Fast lookup performance** using efficient data structures
 - **Multiple blocklist formats** (hosts files, domain lists, regex patterns)
 - **Real-time updates** with hot-reloading capability
 - **Pattern matching** for wildcard and subdomain blocking
+
+## Current Implementation
+
+- `NoopBlocklist`: a placeholder that implements the interface and always returns false from `IsBlocked`
 
 ## Architecture
 

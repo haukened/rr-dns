@@ -64,7 +64,7 @@ func main() {
     }
     
     // Create DNS query
-    query, _ := domain.NewQuestion(1234, "example.com.", domain.A, domain.IN)
+    query, _ := domain.NewQuestion(1234, "example.com.", domain.RRTypeA, domain.RRClassIN)
     
     // Resolve with context
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

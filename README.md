@@ -32,6 +32,72 @@ We are not trying to be BIND or Unbound. This is DNS done right — but simple.
 
 ---
 
+## I don't wanna read, i just wanna run it!
+
+> Great, docker is a fast way to do that!
+
+### Environment Variables
+
+| Variable Name | Purpose | Type | Default |
+| :-- | :-- | :-- | :-- |
+| DNS_CACHE_SIZE | cache entries capacity | Integer, >= 1 | 1000 |
+| DNS_DISABLE_CACHE | disable DNS response caching | Boolean | false |
+| DNS_ENV | runtime environment | `dev\|prod` | prod |
+| DNS_LOG_LEVEL | log verbosity | `debug\|info\|warn\|error` | info |
+| DNS_PORT | UDP listening port | Integer, 1-65534 | 8053 [^1] |
+| DNS_ZONE_DIR | directory for zone files | String (path) | /zones/ [^2] |
+| DNS_SERVERS | upstream DNS servers (ip:port) | List, space or comma-separated [^3] | 1.1.1.1:53, 1.0.0.1:53 |
+| DNS_MAX_RECURSION | max in-zone alias chase depth | Integer, >= 1 | 8 |
+
+[^1]: In docker containers, default port is set to 8053 to prevent privileged port use.
+[^2]: In docker containers, the default zone directory is changed from `/etc/rr-dns/zones/` to `/zones/` because we use distroless containers `/etc` isn't a guaranteed path, and `/zones/` is pragmatic for mount paths.
+[^3]: `DNS_SERVERS` accepts multiple values separated by spaces or commas, for example: `1.1.1.1:53, 1.0.0.1:53`.
+
+### Authoritative and Recursive DNS Modes
+rr-dns can operate in two modes:
+
+#### Authoritative DNS Server:
+
+For any zones you define (using standard zone files), rr-dns acts as an authoritative DNS server. This means it will answer queries for those domains directly, using the records you provide.
+
+#### Caching Recursive Resolver:
+
+For domains not covered by your zone files, rr-dns automatically acts as a recursive resolver. It will query upstream DNS servers, cache the results, and return answers to clients.
+
+>Note:
+>You are not required to define any zones. If you do not provide zone files, rr-dns will function purely as a recursive caching resolver, forwarding and caching queries for all domains.
+
+This approach allows you to use rr-dns as a flexible DNS solution—either as an authoritative server, a recursive resolver, or both, depending on your configuration.
+
+### Example Compose File
+
+```yaml
+version: "3.9"
+
+services:
+  dns:
+    container_name: rr-dns
+    image: ghcr.io/haukened/rr-dns:latest
+    environment:
+      - DNS_ENV=prod
+      - DNS_LOG_LEVEL=info
+      - DNS_PORT=8053
+      - DNS_ZONE_DIR=/zones
+      - DNS_CACHE_SIZE=1000
+      - DNS_DISABLE_CACHE=false
+      - DNS_MAX_RECURSION=8
+      - DNS_SERVERS=1.1.1.1:53,1.0.0.1:53
+    volumes:
+      - ./zones:/zones:ro
+    ports:
+      - "8053:8053/udp"  # map host 8053 -> container 8053 (UDP)
+      # If you want host port 53, ensure it's free and Docker runs with sufficient privileges:
+      # - "53:8053/udp"
+    restart: unless-stopped
+```
+
+---
+
 ## 🌐 Why Another DNS Server?
 
 The DNS ecosystem is full of powerful resolvers — from BIND to Unbound, dnsmasq to CoreDNS — each built for different environments and complexity levels. But many of them:

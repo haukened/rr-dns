@@ -10,7 +10,7 @@ The `resolver` service acts as the central DNS query processing engine, implemen
 - **Upstream Resolution**: Forwards queries to upstream DNS servers when not authoritative
 - **Response Caching**: Caches upstream responses with TTL-aware expiration
 - **Blocklist Support**: Framework for DNS filtering and security features
-- **Transport Abstraction**: Supports multiple DNS protocols (UDP, DoT, DoH, DoQ)
+- **Transport Abstraction**: Supports UDP transport and is designed for future protocols (DoT, DoH, DoQ)
 
 ## Architecture
 
@@ -62,15 +62,10 @@ resolver := resolver.NewResolver(resolver.ResolverOptions{
     Logger:        logger,
 })
 
-// Inject the same resolver into multiple transports
-udpTransport := udp.NewTransport(":53")
-dotTransport := dot.NewTransport(":853", tlsConfig)
-dohTransport := doh.NewTransport(":443", httpConfig)
-
-// All transports share the same resolver instance
-go udpTransport.Start(ctx, resolver)  // UDP on port 53
-go dotTransport.Start(ctx, resolver)  // DNS-over-TLS on port 853  
-go dohTransport.Start(ctx, resolver)  // DNS-over-HTTPS on port 443
+// Create UDP transport and start it
+udpTransport := transport.NewUDPTransport(":53", codec, logger)
+go udpTransport.Start(ctx, resolver)
+defer udpTransport.Stop()
 
 // Each transport calls resolver.HandleQuery() for incoming requests
 ```
@@ -108,6 +103,8 @@ type Resolver struct {
     upstream      UpstreamClient
     upstreamCache Cache
     zoneCache     ZoneCache
+    maxRecursion  int
+    aliasResolver AliasResolver
 }
 ```
 
@@ -123,6 +120,8 @@ type ResolverOptions struct {
     Upstream      UpstreamClient
     UpstreamCache Cache
     ZoneCache     ZoneCache
+    MaxRecursion  int
+    AliasResolver AliasResolver
 }
 ```
 
@@ -222,9 +221,9 @@ func main() {
     })
     
     // Create transport and inject resolver
-    transport := udp.NewTransport(":53")
+    srv := transport.NewUDPTransport(":53", codec, logger)
     ctx := context.Background()
-    err := transport.Start(ctx, resolver)
+    err := srv.Start(ctx, resolver)
     if err != nil {
         log.Fatal(map[string]any{"error": err}, "Failed to start transport")
     }

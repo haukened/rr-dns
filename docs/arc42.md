@@ -200,25 +200,6 @@ RR-DNS follows CLEAN architecture principles with clear separation between domai
 
 ## 5.2 Level 2
 
-### 5.2.x Key Design Change: Alias (CNAME) Resolution
-
-The resolver gained a dedicated alias (CNAME chain) expansion component (`AliasResolver`).
-
-Motivation:
-- Provide standards-compliant CNAME processing (RFC 1034 §3.6.2) without coupling core resolver logic to wire/zone parsing details.
-- Support deterministic loop and depth guards (resource abuse protection and correctness) with clear error classification.
-
-Design Highlights:
-- Authoritative-first lookup for each hop; upstream fallback only when authoritative data absent.
-- Maintains ordered chain: every CNAME hop appended in sequence; terminal RRset appended last (no duplication).
-- Loop detection via lowercase visited set; depth guard configurable (maxDepth <= 0 disables).
-- Uses only `ResourceRecord.Text` for CNAME target extraction (RDATA decoding delegated to zone loader / wire codec).
-- Returns partial chains for non-fatal issues (invalid target / synthesis failure) aiding observability.
-- Sentinel errors: depth exceeded, loop detected, invalid target, question build failure.
-
-Result:
-Simplifies resolver orchestration, isolates alias-specific policy, and enables focused unit tests for all termination branches.
-
 ### 5.2.1 White Box: Domain Layer
 
 > 📖 **Detailed Documentation**: [Domain README](../internal/dns/domain/README.md)
@@ -270,7 +251,7 @@ The domain layer contains pure business entities free from infrastructure concer
 ### 5.2.2 White Box: Infrastructure Layer
 
 > 📖 **Detailed Documentation**: 
-> - [Common Services](../internal/dns/common/README.md)
+> - Common Services: [log](../internal/dns/common/log/README.md), [clock](../internal/dns/common/clock/README.md), [utils](../internal/dns/common/utils/README.md), [rrdata](../internal/dns/common/rrdata/README.md)
 > - [Configuration](../internal/dns/config/README.md)  
 > - [Gateways](../internal/dns/gateways/README.md)
 > - [Repositories](../internal/dns/repos/README.md)
@@ -309,6 +290,8 @@ graph TD
             BlockList[Blocklist Repository] --> BlockDB[Block Sources]
         end
     end
+```
+
 ```go
 // Helper wrappers demonstrating current constructor signatures including text parameter
 func NewCachedRecord(name string, rrType RRType, ttl uint32, data []byte, text string, now time.Time) ResourceRecord {
@@ -319,6 +302,8 @@ func NewCachedRecord(name string, rrType RRType, ttl uint32, data []byte, text s
 func NewAuthoritativeRecord(name string, rrType RRType, ttl uint32, data []byte, text string) ResourceRecord {
     return NewAuthoritativeResourceRecord(name, rrType, RRClass(1), ttl, data, text)
 }
+```
+
 | **Directory** | **Components** | **Responsibility** |
 |---------------|----------------|-------------------|
 | **Common** | Logger, Clock, Utils | Structured logging, time abstraction for testing, DNS name utilities |
@@ -446,7 +431,26 @@ type ZoneCache interface {
 - DNS hierarchy-aware zone matching for proper subdomain resolution
 - Cache key-based organization for O(1) query-specific lookups
 
-### 5.3.4 Black Box: Configuration
+### 5.3.4 Key Design Change: Alias (CNAME) Resolution
+
+The resolver gained a dedicated alias (CNAME chain) expansion component (`AliasResolver`).
+
+Motivation:
+- Provide standards-compliant CNAME processing (RFC 1034 §3.6.2) without coupling core resolver logic to wire/zone parsing details.
+- Support deterministic loop and depth guards (resource abuse protection and correctness) with clear error classification.
+
+Design Highlights:
+- Authoritative-first lookup for each hop; upstream fallback only when authoritative data absent.
+- Maintains ordered chain: every CNAME hop appended in sequence; terminal RRset appended last (no duplication).
+- Loop detection via lowercase visited set; depth guard configurable (maxDepth <= 0 disables).
+- Uses only `ResourceRecord.Text` for CNAME target extraction (RDATA decoding delegated to zone loader / wire codec).
+- Returns partial chains for non-fatal issues (invalid target / synthesis failure) aiding observability.
+- Sentinel errors: depth exceeded, loop detected, invalid target, question build failure.
+
+Result:
+Simplifies resolver orchestration, isolates alias-specific policy, and enables focused unit tests for all termination branches.
+
+### 5.3.5 Black Box: Configuration
 
 > 📖 **Detailed Documentation**: [Configuration README](../internal/dns/config/README.md)
 
@@ -473,22 +477,26 @@ func Load() (*AppConfig, error)
 
 ***Quality/Performance Characteristics***
 - Comprehensive validation on load with detailed error messages
-- Environment variable prefix: `UDNS_` for all configuration
+- Environment variable prefix: `DNS_` for all configuration
 - Immutable configuration during runtime (fail-fast approach)
-- Custom validators for IP:port format and other domain-specific formats
+- Custom validators for IP:Port format and other domain-specific formats
 
 ***Directory/File Location***
 `internal/dns/config/config.go`
 
 ***Configuration Options***
-- `UDNS_CACHE_SIZE`: DNS cache size (default: 1000)
-- `UDNS_ENV`: Runtime environment "dev" or "prod" (default: "prod")
-- `UDNS_LOG_LEVEL`: Log level (default: "info")
-- `UDNS_PORT`: DNS server port (default: 53)
-- `UDNS_ZONE_DIR`: Zone files directory (default: "/etc/rr-dns/zones/")
-- `UDNS_UPSTREAM`: Upstream DNS servers (default: "1.1.1.1:53,1.0.0.1:53")
+- `DNS_CACHE_SIZE`: DNS cache size (default: 1000)
+- `DNS_DISABLE_CACHE`: Disable DNS response caching (default: false)
+- `DNS_ENV`: Runtime environment "dev" or "prod" (default: "prod")
+- `DNS_LOG_LEVEL`: Log level: `debug|info|warn|error` (default: "info")
+- `DNS_PORT`: DNS server UDP port (default: 53; valid 1–65534)
+- `DNS_ZONE_DIR`: Zone files directory (default: "/etc/rr-dns/zones/")
+- `DNS_SERVERS`: Upstream DNS servers in `ip:port` format (default: "1.1.1.1:53,1.0.0.1:53"). Multiple values can be space- or comma-separated.
+- `DNS_MAX_RECURSION`: Max in-zone alias (CNAME) chase depth (default: 8)
 
-### 5.3.5 Black Box: Structured Logger
+Note: The Docker image sets different runtime defaults for container convenience: `DNS_PORT=8053`, `DNS_ZONE_DIR=/zones`.
+
+### 5.3.6 Black Box: Structured Logger
 
 > 📖 **Detailed Documentation**: [Structured Logger README](../internal/dns/common/log/README.md)
 
@@ -521,7 +529,7 @@ func Fatal(fields map[string]any, msg string)
 ***Uses***
 - [`github.com/uber-go/zap`](https://github.com/uber-go/zap) for high-performance logging
 
-### 5.3.6 Black Box: Clock Abstraction
+### 5.3.7 Black Box: Clock Abstraction
 
 > 📖 **Detailed Documentation**: [Clock Abstraction README](../internal/dns/common/clock/README.md)
 
@@ -555,7 +563,7 @@ func (c *MockClock) Advance(d time.Duration) { c.CurrentTime = c.CurrentTime.Add
 ***Directory/File Location***
 `internal/dns/common/clock/clock.go`
 
-### 5.3.7 Black Box: DNS Utils
+### 5.3.8 Black Box: DNS Utils
 
 > 📖 **Detailed Documentation**: [DNS Utils README](../internal/dns/common/utils/README.md)
 
@@ -580,7 +588,7 @@ func GetApexDomain(name string) string        // Extract apex domain using PSL
 ***Directory/File Location***
 `internal/dns/common/utils/`
 
-### 5.3.8 Black Box: Upstream Resolver
+### 5.3.9 Black Box: Upstream Resolver
 
 > 📖 **Detailed Documentation**: [Upstream Resolver README](../internal/dns/gateways/upstream/README.md)
 
@@ -632,7 +640,7 @@ type Options struct {
 - Standard library `net` package for UDP communication via injectable `DialFunc`
 - Go context package for cancellation and timeout management
 
-### 5.3.9 Black Box: Transport Layer
+### 5.3.10 Black Box: Transport Layer
 
 > 📖 **Detailed Documentation**: [Transport README](../internal/dns/gateways/transport/README.md)
 
@@ -670,7 +678,7 @@ type RequestHandler interface {
 - 🚧 DNS over TLS (DoT) - Planned
 - 🚧 DNS over QUIC (DoQ) - Planned
 
-### 5.3.10 Black Box: Wire Format Codec
+### 5.3.11 Black Box: Wire Format Codec
 
 > 📖 **Detailed Documentation**: [Wire Format README](../internal/dns/gateways/wire/README.md)
 
@@ -705,7 +713,7 @@ type DNSCodec interface {
 - Comprehensive input validation
 - Detailed error messages for debugging
 
-### 5.3.11 Black Box: DNS Block List
+### 5.3.12 Black Box: DNS Block List
 
 > 📖 **Detailed Documentation**: [Blocklist README](../internal/dns/repos/blocklist/README.md)
 
@@ -807,8 +815,8 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-  Client --> rrdnsd[rrdnsd Binary]
-  rrdnsd --> HostOS
+    Client --> rr_dnsd[rr-dnsd Binary]
+    rr_dnsd --> HostOS
 ```
 
 Motivation  
@@ -931,7 +939,7 @@ log.Info(map[string]any{
 ## 8.5 Configuration Management
 
 ### Environment-Based Configuration
-- All configuration through environment variables with `UDNS_` prefix
+- All configuration through environment variables with `DNS_` prefix
 - Configuration validation at startup with clear error messages
 - Immutable configuration during runtime (no hot reloading)
 - Sensible defaults for all optional settings
@@ -941,19 +949,21 @@ log.Info(map[string]any{
 type AppConfig struct {
     // Server Configuration
     Port      int      `koanf:"port" validate:"required,gte=1,lt=65535"`
-    
-    // Performance Configuration  
-    CacheSize uint     `koanf:"cache_size" validate:"required,gte=1"`
-    
+
+    // Performance Configuration
+    CacheSize    uint     `koanf:"cache_size" validate:"required,gte=1"`
+    DisableCache bool     `koanf:"disable_cache"`
+
     // Operational Configuration
     Env       string   `koanf:"env" validate:"required,oneof=dev prod"`
     LogLevel  string   `koanf:"log_level" validate:"required,oneof=debug info warn error"`
-    
+
     // Zone Configuration
     ZoneDir   string   `koanf:"zone_dir" validate:"required"`
-    
+
     // Upstream Configuration
-    Upstream  []string `koanf:"upstream" validate:"required,dive,hostname_port"`
+    Servers      []string `koanf:"servers" validate:"required,dive,ip_port"`
+    MaxRecursion int      `koanf:"max_recursion" validate:"required,gte=1"`
 }
 ```
 

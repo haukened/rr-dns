@@ -140,19 +140,11 @@ func TestSomeFunction(t *testing.T) {
 
 ```go
 func TestSilentOperation(t *testing.T) {
-    // Create a no-op logger for silent testing
-    type noopLogger struct{}
-    func (n *noopLogger) Info(map[string]any, string)  {}
-    func (n *noopLogger) Error(map[string]any, string) {}
-    func (n *noopLogger) Debug(map[string]any, string) {}
-    func (n *noopLogger) Warn(map[string]any, string)  {}
-    func (n *noopLogger) Panic(map[string]any, string) {}
-    func (n *noopLogger) Fatal(map[string]any, string) {}
-    
-    // Disable all logging for test
-    log.SetLogger(&noopLogger{})
-    defer log.SetLogger(log.GetLogger()) // restore
-    
+    // Disable all logging for test using built-in noop logger
+    original := log.GetLogger()
+    log.SetLogger(log.NewNoopLogger())
+    defer log.SetLogger(original) // restore
+
     // Run code without log output
     someFunction()
 }
