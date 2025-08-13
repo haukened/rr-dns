@@ -15,15 +15,15 @@ Converts a DNS name to its canonical form for consistent processing and comparis
 **Transformations applied:**
 - Converts to lowercase (DNS names are case-insensitive)
 - Trims surrounding whitespace
-- Ensures trailing dot for fully-qualified domain names (FQDNs)
+- Removes any trailing dot
 
 **Usage:**
 ```go
 canonical := utils.CanonicalDNSName("  WwW.ExAmPlE.CoM  ")
-// Returns: "www.example.com."
+// Returns: "www.example.com"
 
 canonical = utils.CanonicalDNSName("localhost")
-// Returns: "localhost."
+// Returns: "localhost"
 
 canonical = utils.CanonicalDNSName("")
 // Returns: ""
@@ -42,35 +42,26 @@ Extracts the apex domain (effective TLD + 1) from a fully-qualified domain name 
 - Uses `golang.org/x/net/publicsuffix` for accurate TLD recognition
 - Handles complex TLDs like `.co.uk`, `.github.io`, `.amazonaws.com`
 - Graceful fallback for invalid domains
-- Consistent trailing dot formatting
 
 **Usage:**
 ```go
 apex := utils.GetApexDomain("api.service.example.com.")
-// Returns: "example.com."
+// Returns: "example.com"
 
 apex = utils.GetApexDomain("www.example.co.uk")
-// Returns: "example.co.uk."
+// Returns: "example.co.uk"
 
 apex = utils.GetApexDomain("user.github.io")
-// Returns: "user.github.io."
+// Returns: "user.github.io"
 
 apex = utils.GetApexDomain("localhost")
-// Returns: "localhost." (fallback for single labels)
+// Returns: "localhost" (fallback for single labels)
 ```
 
 **Error Handling:**
 - Invalid domains fallback to the original input with proper dot formatting
 - IP addresses are handled gracefully (though not recommended for DNS names)
 - Empty strings return empty strings
-
-### Utility Functions
-
-#### `removeTrailingDot(name string) string`
-Removes a trailing dot from the given domain name string, if present.
-
-#### `addTrailingDot(name string) string`  
-Ensures that the provided domain name ends with a trailing dot (useful for FQDNs).
 
 ## Use Cases
 
@@ -154,8 +145,8 @@ func processQuery(rawName string) (canonical, apex string) {
 
 // Example usage:
 canonical, apex := processQuery("  API.Service.EXAMPLE.com  ")
-// canonical: "api.service.example.com."
-// apex: "example.com."
+// canonical: "api.service.example.com"
+// apex: "example.com"
 ```
 
 ### Zone Cache Implementation

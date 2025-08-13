@@ -25,10 +25,10 @@ This package implements the `domain.DNSCodec` interface for standard DNS over UD
 
 ### Core Interface
 
-The package exports a single global variable implementing the `DNSCodec` interface:
+Create a UDP codec with a logger using the constructor:
 
 ```go
-var UDP domain.DNSCodec = &udpCodec{}
+codec := wire.NewUDPCodec(log.GetLogger())
 ```
 
 ### DNSCodec Methods
@@ -92,13 +92,15 @@ Parses a binary DNS response message, validating the response ID.
 
 ```go
 import (
+    "github.com/haukened/rr-dns/internal/dns/common/log"
     "github.com/haukened/rr-dns/internal/dns/domain"
     "github.com/haukened/rr-dns/internal/dns/gateways/wire"
 )
 
+codec := wire.NewUDPCodec(log.GetLogger())
 query, _ := domain.NewQuestion(12345, "example.com.", domain.RRTypeA, domain.RRClassIN)
 
-data, err := wire.UDP.EncodeQuery(query)
+data, err := codec.EncodeQuery(query)
 if err != nil {
     log.Fatal(err)
 }
@@ -111,7 +113,8 @@ if err != nil {
 // Assume 'responseData' contains binary DNS response from network
 expectedID := uint16(12345)
 
-response, err := wire.UDP.DecodeResponse(responseData, expectedID, time.Now())
+codec := wire.NewUDPCodec(log.GetLogger())
+response, err := codec.DecodeResponse(responseData, expectedID, time.Now())
 if err != nil {
     log.Fatal(err)
 }
@@ -126,16 +129,17 @@ for _, answer := range response.Answers {
 ### Complete Query/Response Cycle
 
 ```go
-// Create and encode query
+// Create codec and encode query
+codec := wire.NewUDPCodec(log.GetLogger())
 query, _ := domain.NewQuestion(42, "google.com.", domain.RRTypeA, domain.RRClassIN)
 
-queryData, _ := wire.UDP.EncodeQuery(query)
+queryData, _ := codec.EncodeQuery(query)
 
 // Send via UDP (pseudocode)
 responseData := sendUDPQuery(queryData)
 
 // Decode response
-response, err := wire.UDP.DecodeResponse(responseData, 42, time.Now())
+response, err := codec.DecodeResponse(responseData, 42, time.Now())
 if err != nil {
     log.Fatal(err)
 }
