@@ -5,7 +5,7 @@ CMD_DIR=./cmd/rr-dnsd
 
 .PHONY: all build test bench fmt vet lint clean ci
 
-all: build
+all: clean fmt vet test lint sec build
 
 build:
 	go build -o $(BINARY_NAME) $(CMD_DIR)
@@ -31,9 +31,6 @@ sec:
 clean:
 	go clean
 	rm -f $(BINARY_NAME)
-
-
-ci: fmt vet lint test
 
 cover:
 	go test -coverprofile=cover.out ./...
