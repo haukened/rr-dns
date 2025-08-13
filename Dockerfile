@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- Builder ----------
-FROM golang:1.24-alpine AS builder
+FROM cgr.dev/chainguard/go:latest AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags="-s -w" -o /app/rr-dnsd ./cmd/rr-dnsd
 
 # ---------- Runtime ----------
-FROM gcr.io/distroless/static:nonroot
+FROM cgr.dev/chainguard/static:latest
 
 # OCI labels
 LABEL org.opencontainers.image.title="rr-dns" \
