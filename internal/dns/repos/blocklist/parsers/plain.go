@@ -30,30 +30,23 @@ func ParsePlainList(r io.Reader, source string, logger logpkg.Logger, now time.T
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
-		// Remove potential BOM at start of first token
-		line = strings.TrimPrefix(line, "\uFEFF")
+		line := stripLineBOM(scanner.Text())
 
 		// Detect empty or full-line comment before stripping inline comments
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			logger.Debug(map[string]any{"line": lineNum}, "skip_empty")
-			continue
-		}
-		if strings.HasPrefix(trimmed, "#") {
-			logger.Debug(map[string]any{"line": lineNum}, "skip_comment")
+		if isEmpty, isComment := classifyLine(line); isEmpty || isComment {
+			if isEmpty {
+				logger.Debug(map[string]any{"line": lineNum}, "skip_empty")
+			} else {
+				logger.Debug(map[string]any{"line": lineNum}, "skip_comment")
+			}
 			continue
 		}
 
 		// Strip inline comments
-		if idx := strings.IndexByte(line, '#'); idx >= 0 {
-			line = line[:idx]
-		}
+		line = stripInlineComment(line)
 
 		// Trim and canonicalize base string
 		s := strings.TrimSpace(line)
-		// Remove potential BOM at start of first token
-		s = strings.TrimPrefix(s, "\uFEFF")
 		// Determine kind by marker and strip marker if suffix.
 		kind := ruleKindFromRaw(s)
 
