@@ -71,3 +71,31 @@ func isAlphaNumeric(r rune) bool {
 func isWildcard(r rune) bool {
 	return r == '*'
 }
+
+// stripLineBOM removes a potential UTF-8 BOM at the start of a line.
+// Note: We only handle U+FEFF here as tests/loaders assume UTF-8 input.
+func stripLineBOM(s string) string {
+	return strings.TrimPrefix(s, "\uFEFF")
+}
+
+// classifyLine trims whitespace and classifies the line as empty or comment.
+// Returns (isEmpty, isComment) based on the trimmed content.
+func classifyLine(s string) (bool, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return true, false
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		return false, true
+	}
+	return false, false
+}
+
+// stripInlineComment removes an inline comment starting with '#'.
+// If no '#' is present, the original string is returned.
+func stripInlineComment(s string) string {
+	if idx := strings.IndexByte(s, '#'); idx >= 0 {
+		return s[:idx]
+	}
+	return s
+}
