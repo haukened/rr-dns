@@ -34,6 +34,17 @@ func ParsePlainList(r io.Reader, source string, logger logpkg.Logger, now time.T
 		// Remove potential BOM at start of first token
 		line = strings.TrimPrefix(line, "\uFEFF")
 
+		// Detect empty or full-line comment before stripping inline comments
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			logger.Debug(map[string]any{"line": lineNum}, "skip_empty")
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			logger.Debug(map[string]any{"line": lineNum}, "skip_comment")
+			continue
+		}
+
 		// Strip inline comments
 		if idx := strings.IndexByte(line, '#'); idx >= 0 {
 			line = line[:idx]
@@ -47,11 +58,6 @@ func ParsePlainList(r io.Reader, source string, logger logpkg.Logger, now time.T
 		kind := ruleKindFromRaw(s)
 
 		name := normalizeDomainName(s)
-
-		if name == "" {
-			logger.Debug(map[string]any{"line": lineNum}, "skip_empty")
-			continue // skip blanks after trimming
-		}
 
 		if !isValidFQDN(name) {
 			// skip obviously invalid tokens (e.g., "\\t\\n")
