@@ -18,6 +18,7 @@ func TestParseHostsFile_Basic(t *testing.T) {
 0.0.0.0 *.bad.example.com .also.bad.example.com
 192.168.1.1 sub.Example.com
 1.2.3.4 . .
+255.255.255.255 broadcast
 `
 	now := time.Unix(1723551000, 0)
 	got, err := ParseHostsFile(bytes.NewBufferString(input), "hosts-src", log.NewNoopLogger(), now)

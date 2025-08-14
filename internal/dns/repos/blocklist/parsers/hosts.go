@@ -55,6 +55,7 @@ func ParseHostsFile(r io.Reader, source string, logger logpkg.Logger, now time.T
 		// fields[0] is IP (ignored)
 		for _, raw := range fields[1:] {
 			// Fast reject invalid hostfile tokens
+			// no domains, no wildcards, per standard host file syntax
 			if raw == "" || strings.HasPrefix(raw, ".") || strings.Contains(raw, "*") {
 				logger.Debug(map[string]any{"line": lineNum, "raw": raw}, "hosts_skip_invalid_token")
 				continue

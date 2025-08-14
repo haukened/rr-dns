@@ -31,6 +31,7 @@ func isValidFQDN(name string) bool {
 		return false
 	}
 	// require at least two labels (e.g., example.com)
+	// but not localhost or local name resolution
 	labels := strings.Split(name, ".")
 	if len(labels) < 2 {
 		return false
