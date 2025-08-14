@@ -39,15 +39,15 @@ web:
 	}
 
 	// Set environment
-	originalZoneDir := os.Getenv("DNS_ZONE_DIR")
+	originalZoneDir := os.Getenv("DNS_RESOLVER_ZONES")
 	defer func() {
 		if originalZoneDir == "" {
-			require.NoError(b, os.Unsetenv("DNS_ZONE_DIR"))
+			require.NoError(b, os.Unsetenv("DNS_RESOLVER_ZONES"))
 		} else {
-			require.NoError(b, os.Setenv("DNS_ZONE_DIR", originalZoneDir))
+			require.NoError(b, os.Setenv("DNS_RESOLVER_ZONES", originalZoneDir))
 		}
 	}()
-	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(b, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
 
 	cfg, err := config.Load()
 	require.NoError(b, err)
@@ -81,7 +81,7 @@ api:
 	require.NoError(b, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	originalEnv := map[string]string{
-		"DNS_ZONE_DIR": os.Getenv("DNS_ZONE_DIR"),
+		"DNS_RESOLVER_ZONES": os.Getenv("DNS_RESOLVER_ZONES"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -93,7 +93,7 @@ api:
 		}
 	}()
 
-	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(b, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
 
 	cfg, err := config.Load()
 	require.NoError(b, err)
@@ -132,14 +132,12 @@ func setupTestServer(b *testing.B, zoneContent string) (*Application, func()) {
 
 	// Set environment - no need for actual port since we're testing resolver directly
 	originalEnv := map[string]string{
-		"DNS_ZONE_DIR":      os.Getenv("DNS_ZONE_DIR"),
-		"DNS_CACHE_SIZE":    os.Getenv("DNS_CACHE_SIZE"),
-		"DNS_DISABLE_CACHE": os.Getenv("DNS_DISABLE_CACHE"),
+		"DNS_RESOLVER_ZONES":      os.Getenv("DNS_RESOLVER_ZONES"),
+		"DNS_RESOLVER_CACHE_SIZE": os.Getenv("DNS_RESOLVER_CACHE_SIZE"),
 	}
 
-	require.NoError(b, os.Setenv("DNS_ZONE_DIR", tempDir))
-	require.NoError(b, os.Setenv("DNS_CACHE_SIZE", "1000")) // Larger cache for testing
-	require.NoError(b, os.Unsetenv("DNS_DISABLE_CACHE"))    // CRITICAL: Ensure cache is enabled
+	require.NoError(b, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
+	require.NoError(b, os.Setenv("DNS_RESOLVER_CACHE_SIZE", "1000")) // Larger cache for testing
 
 	// Build application
 	cfg, err := config.Load()

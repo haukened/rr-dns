@@ -38,20 +38,40 @@ We are not trying to be BIND or Unbound. This is DNS done right — but simple.
 
 ### Environment Variables
 
+- Keys are loaded with the `DNS_` prefix and support nested fields via underscores.
+- Values with spaces or commas are split into lists automatically.
+
+Core
+
 | Variable Name | Purpose | Type | Default |
 | :-- | :-- | :-- | :-- |
-| DNS_CACHE_SIZE | cache entries capacity | Integer, >= 1 | 1000 |
-| DNS_DISABLE_CACHE | disable DNS response caching | Boolean | false |
 | DNS_ENV | runtime environment | `dev\|prod` | prod |
 | DNS_LOG_LEVEL | log verbosity | `debug\|info\|warn\|error` | info |
-| DNS_PORT | UDP listening port | Integer, 1-65534 | 8053 [^1] |
-| DNS_ZONE_DIR | directory for zone files | String (path) | /zones/ [^2] |
-| DNS_SERVERS | upstream DNS servers (ip:port) | List, space or comma-separated [^3] | 1.1.1.1:53, 1.0.0.1:53 |
-| DNS_MAX_RECURSION | max in-zone alias chase depth | Integer, >= 1 | 8 |
 
-[^1]: In docker containers, default port is set to 8053 to prevent privileged port use.
-[^2]: In docker containers, the default zone directory is changed from `/etc/rr-dns/zones/` to `/zones/` because we use distroless containers `/etc` isn't a guaranteed path, and `/zones/` is pragmatic for mount paths.
-[^3]: `DNS_SERVERS` accepts multiple values separated by spaces or commas, for example: `1.1.1.1:53, 1.0.0.1:53`.
+Resolver
+
+| Variable Name | Purpose | Type | Default |
+| :-- | :-- | :-- | :-- |
+| DNS_RESOLVER_PORT | UDP listening port | Integer, 1–65535 | 8053 [^1] |
+| DNS_RESOLVER_ZONES | directory for zone files | String (path) | /zones [^2] |
+| DNS_RESOLVER_UPSTREAM | upstream DNS servers (ip:port) | List (space/comma-separated) | 1.1.1.1:53, 1.0.0.1:53 |
+| DNS_RESOLVER_DEPTH | max in-zone alias chase depth | Integer, >= 1 | 8 |
+| DNS_RESOLVER_CACHE_SIZE | resolver cache capacity (0 disables) | Integer, >= 0 | 1000 |
+
+Blocklist
+
+| Variable Name | Purpose | Type | Default |
+| :-- | :-- | :-- | :-- |
+| DNS_BLOCKLIST_DIR | directory for blocklist files | String (path) | /etc/rr-dns/blocklist.d/ |
+| DNS_BLOCKLIST_URLS | remote blocklist URLs to ingest | List (space/comma-separated) | — |
+| DNS_BLOCKLIST_DB | blocklist database file path | String (path) | /var/lib/rr-dns/blocklist.db |
+| DNS_BLOCKLIST_CACHE_SIZE | blocklist cache capacity | Integer, >= 0 | 1000 |
+| DNS_BLOCKLIST_STRATEGY | blocking response strategy | `refused\|nxdomain\|sinkhole` | refused |
+| DNS_BLOCKLIST_SINKHOLE_TARGET | sinkhole IPs (A/AAAA) | List (space/comma-separated) | required if strategy=sinkhole |
+| DNS_BLOCKLIST_SINKHOLE_TTL | sinkhole record TTL (seconds) | Integer, >= 0 | required if strategy=sinkhole |
+
+[^1]: In docker containers, the default port is set to 8053 to avoid privileged ports.
+[^2]: In docker containers, the default zone directory is `/zones` (mount-friendly). Host default is `/etc/rr-dns/zone.d/`.
 
 ### Authoritative and Recursive DNS Modes
 rr-dns can operate in two modes:
@@ -79,14 +99,21 @@ services:
     container_name: rr-dns
     image: ghcr.io/haukened/rr-dns:latest
     environment:
-      - DNS_ENV=prod
-      - DNS_LOG_LEVEL=info
-      - DNS_PORT=8053
-      - DNS_ZONE_DIR=/zones
-      - DNS_CACHE_SIZE=1000
-      - DNS_DISABLE_CACHE=false
-      - DNS_MAX_RECURSION=8
-      - DNS_SERVERS=1.1.1.1:53,1.0.0.1:53
+  - DNS_ENV=prod
+  - DNS_LOG_LEVEL=info
+  - DNS_RESOLVER_PORT=8053
+  - DNS_RESOLVER_ZONES=/zones
+  - DNS_RESOLVER_CACHE_SIZE=1000
+  - DNS_RESOLVER_DEPTH=8
+  - DNS_RESOLVER_UPSTREAM=1.1.1.1:53,1.0.0.1:53
+  # Blocklist (optional)
+  - DNS_BLOCKLIST_DIR=/etc/rr-dns/blocklist.d/
+  - DNS_BLOCKLIST_DB=/var/lib/rr-dns/blocklist.db
+  - DNS_BLOCKLIST_STRATEGY=refused
+  # Example sinkhole strategy:
+  # - DNS_BLOCKLIST_STRATEGY=sinkhole
+  # - DNS_BLOCKLIST_SINKHOLE_TARGET=0.0.0.0,::
+  # - DNS_BLOCKLIST_SINKHOLE_TTL=300
     volumes:
       - ./zones:/zones:ro
     ports:

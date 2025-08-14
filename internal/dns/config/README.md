@@ -16,14 +16,40 @@ The `config` package handles:
 
 ```go
 type AppConfig struct {
-    CacheSize    uint     `koanf:"cache_size"`    // DNS cache size (default: 1000)
-    DisableCache bool     `koanf:"disable_cache"` // Disable DNS response caching (default: false)
-    Env          string   `koanf:"env"`           // Runtime environment: "dev" or "prod"
-    LogLevel     string   `koanf:"log_level"`     // Log level: "debug", "info", "warn", "error"
-    Port         int      `koanf:"port"`          // DNS server port (default: 53)
-    ZoneDir      string   `koanf:"zone_dir"`      // Zone files directory
-    Servers      []string `koanf:"servers"`       // Upstream DNS servers (ip:port format)
-    MaxRecursion int      `koanf:"max_recursion"` // Maximum in-zone CNAME recursion depth
+    Env      string        `koanf:"env"` // "dev" | "prod"
+    Log      LoggingConfig `koanf:"log"`
+    Resolver ResolverConfig `koanf:"resolver"`
+    Blocklist BlocklistConfig `koanf:"blocklist"`
+}
+
+type LoggingConfig struct {
+    Level string `koanf:"level"` // debug|info|warn|error
+}
+
+type CacheConfig struct {
+    Size uint `koanf:"size"` // entries, 0 disables
+}
+
+type ResolverConfig struct {
+    ZoneDirectory string   `koanf:"zones"`
+    Upstream      []string `koanf:"upstream"` // ip:port
+    MaxRecursion  int      `koanf:"depth"`
+    Port          int      `koanf:"port"`
+    Cache         CacheConfig `koanf:"cache"`
+}
+
+type BlocklistConfig struct {
+    BlocklistDirectory string   `koanf:"dir"`
+    URLs               []string `koanf:"urls"`
+    Cache              CacheConfig `koanf:"cache"`
+    DB                 string   `koanf:"db"`
+    Strategy           string   `koanf:"strategy"` // refused|nxdomain|sinkhole
+    Sinkhole           *SinkholeOptions `koanf:"sinkhole"` // required if strategy=sinkhole
+}
+
+type SinkholeOptions struct {
+    Target []string `koanf:"target"` // IPs (A/AAAA)
+    TTL    int      `koanf:"ttl"`
 }
 ```
 
@@ -55,18 +81,36 @@ func main() {
 
 ## Environment Variables
 
-All configuration is controlled via environment variables with the `DNS_` prefix:
+All configuration is controlled via environment variables with the `DNS_` prefix. Keys use underscores which are transformed to dots internally (e.g., `DNS_RESOLVER_CACHE_SIZE` → `resolver.cache.size`). Values with spaces or commas are split into lists.
+
+Core:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `DNS_CACHE_SIZE` | uint | 1000 | Maximum number of DNS records to cache |
-| `DNS_DISABLE_CACHE` | bool | false | Disable DNS response caching for testing |
-| `DNS_ENV` | string | "prod" | Runtime environment (`dev` or `prod`) |
-| `DNS_LOG_LEVEL` | string | "info" | Log verbosity level |
-| `DNS_PORT` | int | 53 | UDP port for DNS server to bind to |
-| `DNS_ZONE_DIR` | string | "/etc/rr-dns/zones/" | Directory containing zone files |
-| `DNS_SERVERS` | string | "1.1.1.1:53,1.0.0.1:53" | Comma-separated upstream DNS servers |
-| `DNS_MAX_RECURSION` | int | 8 | Maximum in-zone CNAME recursion depth |
+| `DNS_ENV` | string | `prod` | Runtime environment (`dev` or `prod`) |
+| `DNS_LOG_LEVEL` | string | `info` | Log verbosity level |
+
+Resolver:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DNS_RESOLVER_PORT` | int | 53 (8053 in Docker) | UDP port to bind |
+| `DNS_RESOLVER_ZONES` | string | `/etc/rr-dns/zone.d/` (`/zones` in Docker) | Zone directory |
+| `DNS_RESOLVER_UPSTREAM` | list | `1.1.1.1:53,1.0.0.1:53` | Upstream DNS servers (ip:port) |
+| `DNS_RESOLVER_DEPTH` | int | 8 | Max in-zone alias chase depth |
+| `DNS_RESOLVER_CACHE_SIZE` | uint | 1000 | Resolver cache entries (0 disables) |
+
+Blocklist:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DNS_BLOCKLIST_DIR` | string | `/etc/rr-dns/blocklist.d/` | Directory for blocklist files |
+| `DNS_BLOCKLIST_URLS` | list | — | Remote blocklist URLs (space/comma-separated) |
+| `DNS_BLOCKLIST_DB` | string | `/var/lib/rr-dns/blocklist.db` | Blocklist database path |
+| `DNS_BLOCKLIST_CACHE_SIZE` | uint | 1000 | Blocklist cache entries |
+| `DNS_BLOCKLIST_STRATEGY` | string | `refused` | `refused` | `nxdomain` | `sinkhole` |
+| `DNS_BLOCKLIST_SINKHOLE_TARGET` | list | — | Required if strategy=`sinkhole`; IPs (A/AAAA) |
+| `DNS_BLOCKLIST_SINKHOLE_TTL` | int | — | Required if strategy=`sinkhole`; TTL seconds |
 
 ## Example Configuration
 
@@ -74,22 +118,32 @@ All configuration is controlled via environment variables with the `DNS_` prefix
 ```bash
 export DNS_ENV=dev
 export DNS_LOG_LEVEL=debug
-export DNS_PORT=5053
-export DNS_CACHE_SIZE=500
-export DNS_ZONE_DIR=./zones/
-export DNS_SERVERS=8.8.8.8:53,8.8.4.4:53
-export DNS_MAX_RECURSION=8
+export DNS_RESOLVER_PORT=5053
+export DNS_RESOLVER_CACHE_SIZE=500
+export DNS_RESOLVER_ZONES=./zones/
+export DNS_RESOLVER_UPSTREAM="8.8.8.8:53,8.8.4.4:53"
+export DNS_RESOLVER_DEPTH=8
+# Blocklist (optional)
+export DNS_BLOCKLIST_DIR=/etc/rr-dns/blocklist.d/
+export DNS_BLOCKLIST_DB=/var/lib/rr-dns/blocklist.db
+export DNS_BLOCKLIST_STRATEGY=refused
 ```
 
 ### Production Environment
 ```bash
 export DNS_ENV=prod
 export DNS_LOG_LEVEL=info
-export DNS_PORT=53
-export DNS_CACHE_SIZE=10000
-export DNS_ZONE_DIR=/etc/rr-dns/zones/
-export DNS_SERVERS=1.1.1.1:53,1.0.0.1:53,8.8.8.8:53
-export DNS_MAX_RECURSION=8
+export DNS_RESOLVER_PORT=53
+export DNS_RESOLVER_CACHE_SIZE=10000
+export DNS_RESOLVER_ZONES=/etc/rr-dns/zone.d/
+export DNS_RESOLVER_UPSTREAM="1.1.1.1:53,1.0.0.1:53,8.8.8.8:53"
+export DNS_RESOLVER_DEPTH=8
+# Blocklist (optional)
+export DNS_BLOCKLIST_DIR=/etc/rr-dns/blocklist.d/
+export DNS_BLOCKLIST_DB=/var/lib/rr-dns/blocklist.db
+export DNS_BLOCKLIST_STRATEGY=sinkhole
+export DNS_BLOCKLIST_SINKHOLE_TARGET="127.0.0.1 ::1"
+export DNS_BLOCKLIST_SINKHOLE_TTL=30
 ```
 
 ## Validation
@@ -97,10 +151,11 @@ export DNS_MAX_RECURSION=8
 The configuration system includes comprehensive validation:
 
 ### Built-in Validations
-- **Required fields**: All configuration values must be provided or have defaults
-- **Enum validation**: `Env` must be "dev" or "prod"
-- **Range validation**: `Port` must be 1-65534, `CacheSize` must be ≥1
-- **Custom validation**: `Servers` must be valid IP:port combinations
+- **Required fields**: Core and required nested fields must be present, others have defaults
+- **Enum validation**: `Env` must be "dev" or "prod"; `Strategy` must be one of `refused|nxdomain|sinkhole`
+- **Range validation**: `Port` 1–65535; `Cache.Size` ≥ 0; `Sinkhole.TTL` ≥ 0
+- **Conditional validation**: `Sinkhole` is required when `Strategy=sinkhole`
+- **Custom validation**: `Resolver.Upstream` entries must be valid `ip:port`
 
 ### Custom Validators
 - **IP:Port format**: Validates upstream server addresses are properly formatted

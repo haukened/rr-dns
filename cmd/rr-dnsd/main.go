@@ -47,20 +47,30 @@ func main() {
 	}
 
 	// Configure global logging
-	err = log.Configure(cfg.Env, cfg.LogLevel)
+	err = log.Configure(cfg.Env, cfg.Log.Level)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Logging configuration error: %v\n", err)
 		os.Exit(1)
 	}
 
 	log.Info(map[string]any{
-		"version":    version,
-		"env":        cfg.Env,
-		"log_level":  cfg.LogLevel,
-		"port":       cfg.Port,
-		"cache_size": cfg.CacheSize,
-		"zone_dir":   cfg.ZoneDir,
-		"servers":    cfg.Servers,
+		"version":   version,
+		"env":       cfg.Env,
+		"log_level": cfg.Log.Level,
+		"resolver": map[string]any{
+			"port":       cfg.Resolver.Port,
+			"cache_size": cfg.Resolver.Cache.Size,
+			"zone_dir":   cfg.Resolver.ZoneDirectory,
+			"servers":    cfg.Resolver.Upstream,
+		},
+		"blocklist": map[string]any{
+			"directory":  cfg.Blocklist.Directory,
+			"db":         cfg.Blocklist.DB,
+			"strategy":   cfg.Blocklist.Strategy,
+			"cache_size": cfg.Blocklist.Cache.Size,
+			"urls":       cfg.Blocklist.URLs,
+			"sinkhole":   cfg.Blocklist.Sinkhole,
+		},
 	}, "Starting RR-DNS server")
 
 	// Build application with all dependencies
@@ -122,11 +132,11 @@ func buildApplication(cfg *config.AppConfig) (*Application, error) {
 		Upstream:      gateways.upstream,
 		UpstreamCache: repos.upstreamCache,
 		ZoneCache:     repos.zoneCache,
-		MaxRecursion:  cfg.MaxRecursion,
+		MaxRecursion:  cfg.Resolver.MaxRecursion,
 	})
 
 	// Build transport layer
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	addr := fmt.Sprintf(":%d", cfg.Resolver.Port)
 	udpTransport := transport.NewUDPTransport(addr, codec, logger)
 
 	return &Application{
@@ -156,22 +166,17 @@ func buildRepositories(cfg *config.AppConfig, logger log.Logger) (*repositories,
 	// Create upstream response cache
 	var upstreamCache resolver.Cache
 	var err error
-	if cfg.DisableCache {
+	if cfg.Resolver.Cache.Size == 0 {
 		upstreamCache = nil // No caching
 		log.Info(map[string]any{"disabled": true}, "DNS response caching disabled")
 	} else {
-		// Safely convert uint to int with bounds check
-		cacheSize := cfg.CacheSize
-		if cacheSize > uint(^uint(0)>>1) { // Check if it exceeds max int
-			return nil, fmt.Errorf("cache size too large: %d (max %d)", cacheSize, ^uint(0)>>1)
-		}
-		upstreamCache, err = dnscache.New(int(cacheSize))
+		upstreamCache, err = dnscache.New(cfg.Resolver.Cache.Size)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create upstream cache: %w", err)
 		}
 		log.Info(map[string]any{
 			"type": "LRU",
-			"size": cfg.CacheSize,
+			"size": cfg.Resolver.Cache.Size,
 		}, "DNS response cache configured")
 	}
 
@@ -179,7 +184,7 @@ func buildRepositories(cfg *config.AppConfig, logger log.Logger) (*repositories,
 	zoneCache := zonecache.New()
 
 	// load the zone files from the configured directory
-	zones, err := zone.LoadZoneDirectory(cfg.ZoneDir, 300*time.Second)
+	zones, err := zone.LoadZoneDirectory(cfg.Resolver.ZoneDirectory, 300*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load zone directory: %w", err)
 	}
@@ -190,7 +195,7 @@ func buildRepositories(cfg *config.AppConfig, logger log.Logger) (*repositories,
 	}
 
 	log.Info(map[string]any{
-		"zone_dir": cfg.ZoneDir,
+		"zone_dir": cfg.Resolver.ZoneDirectory,
 		"zones":    len(zoneCache.Zones()),
 	}, "Zone cache initialized")
 
@@ -205,7 +210,7 @@ func buildRepositories(cfg *config.AppConfig, logger log.Logger) (*repositories,
 func buildGateways(cfg *config.AppConfig, codec wire.DNSCodec, logger log.Logger) (*gateways, error) {
 	// Create upstream client
 	upstreamClient, err := upstream.NewResolver(upstream.Options{
-		Servers: cfg.Servers,
+		Servers: cfg.Resolver.Upstream,
 		Timeout: defaultUpstreamTimeout,
 		Codec:   codec,
 	})
@@ -214,7 +219,7 @@ func buildGateways(cfg *config.AppConfig, codec wire.DNSCodec, logger log.Logger
 	}
 
 	log.Info(map[string]any{
-		"servers": cfg.Servers,
+		"servers": cfg.Resolver.Upstream,
 		"timeout": defaultUpstreamTimeout,
 	}, "Upstream DNS client configured")
 

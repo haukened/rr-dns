@@ -44,9 +44,9 @@ web:
 
 	// Set environment
 	originalEnv := map[string]string{
-		"DNS_PORT":      os.Getenv("DNS_PORT"),
-		"DNS_ZONE_DIR":  os.Getenv("DNS_ZONE_DIR"),
-		"DNS_LOG_LEVEL": os.Getenv("DNS_LOG_LEVEL"),
+		"DNS_RESOLVER_PORT":  os.Getenv("DNS_RESOLVER_PORT"),
+		"DNS_RESOLVER_ZONES": os.Getenv("DNS_RESOLVER_ZONES"),
+		"DNS_LOG_LEVEL":      os.Getenv("DNS_LOG_LEVEL"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -58,8 +58,8 @@ web:
 		}
 	}()
 
-	require.NoError(t, os.Setenv("DNS_PORT", fmt.Sprintf("%d", port)))
-	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_PORT", fmt.Sprintf("%d", port)))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
 	require.NoError(t, os.Setenv("DNS_LOG_LEVEL", "error")) // Reduce noise
 
 	// Start application

@@ -32,10 +32,10 @@ www:
 
 	// Set environment variables for test configuration
 	originalEnv := map[string]string{
-		"DNS_PORT":       os.Getenv("DNS_PORT"),
-		"DNS_ZONE_DIR":   os.Getenv("DNS_ZONE_DIR"),
-		"DNS_LOG_LEVEL":  os.Getenv("DNS_LOG_LEVEL"),
-		"DNS_CACHE_SIZE": os.Getenv("DNS_CACHE_SIZE"),
+		"DNS_RESOLVER_PORT":       os.Getenv("DNS_RESOLVER_PORT"),
+		"DNS_RESOLVER_ZONES":      os.Getenv("DNS_RESOLVER_ZONES"),
+		"DNS_LOG_LEVEL":           os.Getenv("DNS_LOG_LEVEL"),
+		"DNS_RESOLVER_CACHE_SIZE": os.Getenv("DNS_RESOLVER_CACHE_SIZE"),
 	}
 	defer func() {
 		for key, value := range originalEnv {
@@ -53,10 +53,10 @@ www:
 	port := listener.Addr().(*net.TCPAddr).Port
 	require.NoError(t, listener.Close())
 
-	require.NoError(t, os.Setenv("DNS_PORT", fmt.Sprintf("%d", port)))
-	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_PORT", fmt.Sprintf("%d", port)))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
 	require.NoError(t, os.Setenv("DNS_LOG_LEVEL", "debug"))
-	require.NoError(t, os.Setenv("DNS_CACHE_SIZE", "100"))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_CACHE_SIZE", "100"))
 
 	// Build application
 	cfg, err := config.Load()
@@ -120,14 +120,14 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "minimal valid config",
 			setupEnv: func() {
-				require.NoError(t, os.Setenv("DNS_ZONE_DIR", t.TempDir()))
+				require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", t.TempDir()))
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid zone directory",
 			setupEnv: func() {
-				require.NoError(t, os.Setenv("DNS_ZONE_DIR", "/nonexistent/path"))
+				require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", "/nonexistent/path"))
 			},
 			wantErr:       true,
 			errorContains: "failed to load zone directory",
@@ -135,8 +135,9 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 		{
 			name: "cache disabled",
 			setupEnv: func() {
-				require.NoError(t, os.Setenv("DNS_ZONE_DIR", t.TempDir()))
-				require.NoError(t, os.Setenv("DNS_DISABLE_CACHE", "true"))
+				require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", t.TempDir()))
+				// size 0 disables cache per config.CacheConfig semantics
+				require.NoError(t, os.Setenv("DNS_RESOLVER_CACHE_SIZE", "0"))
 			},
 			wantErr: false,
 		},
@@ -145,7 +146,7 @@ func TestBuildApplication_ConfigurationVariations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
-			for _, key := range []string{"DNS_PORT", "DNS_ZONE_DIR", "DNS_DISABLE_CACHE"} {
+			for _, key := range []string{"DNS_RESOLVER_PORT", "DNS_RESOLVER_ZONES", "DNS_RESOLVER_CACHE_SIZE"} {
 				_ = os.Unsetenv(key)
 			}
 
@@ -191,11 +192,11 @@ web:
 	require.NoError(t, os.WriteFile(zoneFile, []byte(zoneContent), 0644))
 
 	// Set test environment
-	require.NoError(t, os.Setenv("DNS_ZONE_DIR", tempDir))
-	require.NoError(t, os.Setenv("DNS_CACHE_SIZE", "50"))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_ZONES", tempDir))
+	require.NoError(t, os.Setenv("DNS_RESOLVER_CACHE_SIZE", "50"))
 	defer func() {
-		_ = os.Unsetenv("DNS_ZONE_DIR")
-		_ = os.Unsetenv("DNS_CACHE_SIZE")
+		_ = os.Unsetenv("DNS_RESOLVER_ZONES")
+		_ = os.Unsetenv("DNS_RESOLVER_CACHE_SIZE")
 	}()
 
 	cfg, err := config.Load()
@@ -210,6 +211,6 @@ web:
 	assert.NotNil(t, app.resolver)
 
 	// Verify zone loading worked
-	assert.Equal(t, tempDir, app.config.ZoneDir)
-	assert.Equal(t, uint(50), app.config.CacheSize)
+	assert.Equal(t, tempDir, app.config.Resolver.ZoneDirectory)
+	assert.Equal(t, 50, app.config.Resolver.Cache.Size)
 }
