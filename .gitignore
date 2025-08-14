@@ -41,3 +41,6 @@ cmd/rr-dnsd/rr-dnsd
 
 # debugging
 __debug*
+
+# mcp server things
+.mcp*
