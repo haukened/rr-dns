@@ -3,6 +3,7 @@ module github.com/haukened/rr-dns
 go 1.24.5
 
 require (
+	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/koanf v1.5.0
 	github.com/knadh/koanf/v2 v2.2.2
@@ -10,6 +11,7 @@ require (
 )
 
 require (
+	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
