@@ -34,6 +34,16 @@ This folder now contains foundational pieces for the in-progress v0.3 blocklist 
 - Bloom filter (implemented in `bloom/` as `BloomFilter` with `BloomSizer`) provides fast negative checks before hitting storage. Reads are lock-free; writes (Add/Clear/swap) are serialized.
 - Persistent store (planned Bolt backend via `Store`) is the source of truth for exact names and suffix matches.
 
+### Quick summary
+
+- The store holds rules (exact names and suffix anchors). A single Bloom filter cheaply tests candidate keys (exact FQDN and reversed anchors) before touching Bolt.
+- On a cache miss, we canonicalize the name, test Bloom, and if “maybe,” probe Bolt:
+    - `ExistsExact(fqdn)`; if not found,
+    - `VisitSuffixes(reversed-prefix)` with a cursor, most-specific first; stop on first match.
+- That yields a `domain.BlockDecision`. We cache that decision by canonical name so repeated queries skip the Bloom + Bolt walk.
+- On blocklist update/swap, we rebuild the store and Bloom, then purge the decision cache to avoid staleness.
+- The decision cache is optional (size=0 disables).
+
 ### Roles
 
 - DecisionCache
