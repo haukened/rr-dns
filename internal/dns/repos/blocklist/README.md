@@ -26,6 +26,75 @@ Service Layer → BlocklistRepository Interface → Blocklist Implementation
                 File Sources, URL Sources, etc.
 ```
 
+## Lookup pipeline: cache → bloom → store (v0.3)
+
+This folder now contains foundational pieces for the in-progress v0.3 blocklist repository:
+
+- Decision cache (in-memory LRU; planned in `DecisionCache`) memoizes final decisions per canonical name to turn hot lookups into O(1).
+- Bloom filter (implemented in `bloom/` as `BloomFilter` with `BloomSizer`) provides fast negative checks before hitting storage. Reads are lock-free; writes (Add/Clear/swap) are serialized.
+- Persistent store (planned Bolt backend via `Store`) is the source of truth for exact names and suffix matches.
+
+### Roles
+
+- DecisionCache
+    - Get/Put of final BlockDecision keyed by canonical name
+    - Tracks hits/misses/evictions for observability
+
+- BloomFilter
+    - Add([]byte), MightContain([]byte), Clear()
+    - Single filter sized once per build/update using `BloomSizer.Size(n, p)` with N = exact_count + wildcard_anchor_count
+
+- Store
+    - ExistsExact(name string) (bool, error)
+    - VisitSuffixes(revPrefix []byte, visit func(key []byte) bool) error — keys are stored as reversed domains so suffix search becomes a prefix scan
+    - Stats() and Close()
+
+### Read path (Decide)
+
+1. Canonicalize the DNS name (lowercase, FQDN) before lookup.
+2. Cache: if `DecisionCache.Get(name)` hits, return the memoized decision.
+3. Single Bloom pre-checks (advisory):
+    - Test `MightContain(name)` for an exact rule.
+    - For each ancestor a of the name (most-specific → apex), test `MightContain(reverse(a))` for wildcard anchors.
+    - If all are false → skip storage entirely and Allow.
+4. Store probes (authoritative):
+    - Exact: if the exact test was maybe, call `ExistsExact(name)`. If true → Block.
+    - Suffix: for ancestors whose reversed test was maybe, call `VisitSuffixes(reverse(a))` most-specific → least; on first match → Block.
+5. If no store matches, decision is Allow.
+6. Cache the final decision with `DecisionCache.Put(name, decision)` and update stats.
+
+Pseudo-flow:
+
+```
+if d, ok := cache.Get(name); ok { return d }
+
+if bloom.MightContain([]byte(name)) {
+    if store.ExistsExact(name) { d = Block; cache.Put(name, d); return d }
+}
+for a := range ancestorsMostSpecificToApex(name) {
+    if bloom.MightContain(reverse(a)) {
+        if visitSuffixHit(store, a) { d = Block; cache.Put(name, d); return d }
+    }
+}
+
+d = Allow; cache.Put(name, d); return d
+```
+
+### Update path (Repository.Update)
+
+- Rebuild or refresh the store atomically from sources (planned #31/#32).
+- Compute bloom parameters via `BloomSizer` from store stats (n and target p), rebuild filters by scanning store keys.
+- Swap in new store/blooms under a write lock; clear `DecisionCache` to avoid stale decisions.
+- Publish repo stats (`RepoStats`) including LastUpdate.
+
+### Guarantees and notes
+
+- The Bloom filter can return false positives (extra DB work) but not false negatives; correctness is enforced by the store.
+- Reads against the Bloom are lock-free; Add/Clear (and swaps) are write-locked.
+- On store errors during Decide, prefer "allow and log" to avoid accidental blocking (policy choice).
+- Use identical canonicalization for cache keys, bloom keys, and store keys.
+- Suffix search prioritizes the most specific suffix; stop at first positive match.
+
 ## Planned Features
 
 ### Domain Blocking Capabilities
