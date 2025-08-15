@@ -7,6 +7,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/knadh/koanf v1.5.0
 	github.com/knadh/koanf/v2 v2.2.2
+	go.etcd.io/bbolt v1.4.2
 	golang.org/x/net v0.43.0
 )
 
