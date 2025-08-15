@@ -26,7 +26,7 @@ type AppConfig struct {
 
 type CacheConfig struct {
 	// LRU cache size, 0 to disable
-	Size int `koanf:"size" validate:"required,gte=0"`
+	Size int `koanf:"size" validate:"gte=0"`
 }
 
 type LoggingConfig struct {
@@ -52,8 +52,8 @@ type ResolverConfig struct {
 	// default: 53
 	Port int `koanf:"port" validate:"required,gte=1,lte=65535"`
 
-	// Upstream cache configuration
-	Cache CacheConfig `koanf:"cache" validate:"required"`
+	// Upstream cache configuration (size 0 disables cache)
+	Cache CacheConfig `koanf:"cache"`
 }
 
 type BlocklistConfig struct {
@@ -65,8 +65,8 @@ type BlocklistConfig struct {
 	// default: none
 	URLs []string `koanf:"urls" validate:"omitempty,dive,url"`
 
-	// LRU Cache Config
-	Cache CacheConfig `koanf:"cache" validate:"required"`
+	// LRU Cache Config (size 0 disables cache)
+	Cache CacheConfig `koanf:"cache"`
 
 	// Database file path for badgerDB
 	DB string `koanf:"db" validate:"required"`
