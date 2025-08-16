@@ -29,7 +29,7 @@ func New(size int) (blocklist.DecisionCache, error) {
 
 	var dc decisionCache
 	// Use NewWithEvict to observe evictions, including Purge-induced ones.
-	cache, err := lru.NewWithEvict[string, domain.BlockDecision](size, func(_ string, _ domain.BlockDecision) {
+	cache, err := lru.NewWithEvict(size, func(_ string, _ domain.BlockDecision) {
 		atomic.AddUint64(&dc.evictions, 1)
 	})
 	if err != nil {
