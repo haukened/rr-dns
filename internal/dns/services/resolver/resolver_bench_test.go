@@ -166,8 +166,6 @@ func BenchmarkResolver_HandleQuery_UpstreamResolution(b *testing.B) {
 	// Setup successful upstream response
 	record := createTestRecord("upstream.com.", domain.RRType(1), []byte{192, 0, 2, 1}, "192.0.2.1")
 	upstreamResp := domain.DNSResponse{
-		ID:      1,
-		RCode:   domain.NOERROR,
 		Answers: []domain.ResourceRecord{record},
 	}
 
