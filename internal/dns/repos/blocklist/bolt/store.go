@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"math"
 	"time"
 
 	bbolt "go.etcd.io/bbolt"
@@ -140,16 +141,29 @@ func (s *boltStore) Stats() blocklist.StoreStats {
 				out.Version = binary.BigEndian.Uint64(v)
 			}
 			if v := mb.Get([]byte("updated")); len(v) == 8 {
-				out.UpdatedUnix = int64(binary.BigEndian.Uint64(v))
+				u := binary.BigEndian.Uint64(v)
+				if u > math.MaxInt64 {
+					out.UpdatedUnix = math.MaxInt64
+				} else {
+					out.UpdatedUnix = int64(u)
+				}
 			}
 		}
 		if eb := tx.Bucket(bucketExact); eb != nil {
-			st := eb.Stats()
-			out.ExactKeys = uint64(st.KeyN)
+			st := bucketStatsFn(eb)
+			if st.KeyN < 0 {
+				out.ExactKeys = 0
+			} else {
+				out.ExactKeys = uint64(st.KeyN)
+			}
 		}
 		if sb := tx.Bucket(bucketSuffix); sb != nil {
-			st := sb.Stats()
-			out.SuffixKeys = uint64(st.KeyN)
+			st := bucketStatsFn(sb)
+			if st.KeyN < 0 {
+				out.SuffixKeys = 0
+			} else {
+				out.SuffixKeys = uint64(st.KeyN)
+			}
 		}
 		return nil
 	})
@@ -159,10 +173,21 @@ func (s *boltStore) Stats() blocklist.StoreStats {
 // Helpers for encoding/decoding rule values.
 // value format: [kind:1][addedAt:8be][sourceLen:2be][source bytes]
 func encodeRuleValue(r domain.BlockRule) []byte {
+	// Cap source length to 65535 to fit into uint16 field
 	src := []byte(r.Source)
+	if len(src) > 0xFFFF {
+		src = src[:0xFFFF]
+	}
 	buf := make([]byte, 1+8+2+len(src))
 	buf[0] = byte(r.Kind)
-	binary.BigEndian.PutUint64(buf[1:9], uint64(r.AddedAt.Unix()))
+	// Store non-negative Unix seconds; clamp negatives to 0
+	ts := r.AddedAt.Unix()
+	if ts < 0 {
+		ts = 0
+	}
+	// #nosec G115 -- ts is clamped to >= 0 above; safe narrowing to uint64 seconds
+	binary.BigEndian.PutUint64(buf[1:9], uint64(ts))
+	// #nosec G115 -- src length is truncated to <= 0xFFFF above; safe narrowing to uint16
 	binary.BigEndian.PutUint16(buf[9:11], uint16(len(src)))
 	copy(buf[11:], src)
 	return buf
@@ -179,7 +204,12 @@ func decodeRuleValue(name string, v []byte, defaultKind domain.BlockRuleKind) (d
 		return r, nil
 	}
 	r.Kind = domain.BlockRuleKind(v[0])
-	ts := int64(binary.BigEndian.Uint64(v[1:9]))
+	u := binary.BigEndian.Uint64(v[1:9])
+	if u > math.MaxInt64 {
+		u = uint64(math.MaxInt64)
+	}
+	// #nosec G115 -- u is capped to MaxInt64 above; safe narrowing to int64
+	ts := int64(u)
 	r.AddedAt = time.Unix(ts, 0)
 	sl := int(binary.BigEndian.Uint16(v[9:11]))
 	if 11+sl > len(v) {
@@ -287,7 +317,12 @@ func writeMeta(tx *bbolt.Tx, version uint64, updatedUnix int64) error {
 	vbuf := make([]byte, 8)
 	ubuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(vbuf, version)
-	binary.BigEndian.PutUint64(ubuf, uint64(updatedUnix))
+	// Store non-negative Unix seconds; clamp negatives to 0
+	if updatedUnix < 0 {
+		binary.BigEndian.PutUint64(ubuf, 0)
+	} else {
+		binary.BigEndian.PutUint64(ubuf, uint64(updatedUnix))
+	}
 	if err := mb.Put([]byte("version"), vbuf); err != nil {
 		return err
 	}
@@ -296,3 +331,6 @@ func writeMeta(tx *bbolt.Tx, version uint64, updatedUnix int64) error {
 
 // reverseBytesInPlace keeps the old API used in tests; historically it returned a new slice.
 func reverseBytesInPlace(b []byte) []byte { return reverseBytesToNew(b) }
+
+// bucketStatsFn allows tests to stub bucket statistics.
+var bucketStatsFn = func(b *bbolt.Bucket) bbolt.BucketStats { return b.Stats() }

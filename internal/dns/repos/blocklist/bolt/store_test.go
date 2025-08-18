@@ -378,6 +378,35 @@ func TestDecodeRuleValue_InvalidKindAndOversizedSourceLen(t *testing.T) {
 	}
 }
 
+// Ensure decodeRuleValue caps oversized uint64 timestamps to MaxInt64 before narrowing to int64.
+func TestDecodeRuleValue_TimestampCapToMaxInt64(t *testing.T) {
+	// Build a buffer with kind=Exact, timestamp=MaxUint64, and zero-length source.
+	v := make([]byte, 11)
+	v[0] = byte(domain.BlockRuleExact)
+	// Put MaxUint64 into the timestamp field [1:9]
+	for i := 1; i < 9; i++ {
+		v[i] = 0xFF
+	}
+	// source length = 0
+	binary.BigEndian.PutUint16(v[9:11], 0)
+
+	r, err := decodeRuleValue("cap.example", v, domain.BlockRuleExact)
+	if err != nil {
+		t.Fatalf("decode err: %v", err)
+	}
+	// Expect AddedAt clamped to MaxInt64
+	maxInt64 := int64(^uint64(0) >> 1)
+	if r.AddedAt.Unix() != maxInt64 {
+		t.Fatalf("expected AddedAt=%d (MaxInt64), got %d", maxInt64, r.AddedAt.Unix())
+	}
+	if r.Kind != domain.BlockRuleExact {
+		t.Fatalf("expected kind exact, got %v", r.Kind)
+	}
+	if r.Source != "" {
+		t.Fatalf("expected empty source, got %q", r.Source)
+	}
+}
+
 // When the exact bucket is missing, we should still return a suffix match if present.
 func TestGetFirstMatch_NoExactBucket_ButSuffixHit(t *testing.T) {
 	dbPath := tempDB(t)
@@ -632,5 +661,146 @@ func TestGetFirstMatch_DecodeErrors(t *testing.T) {
 	}
 	if _, _, err := st.GetFirstMatch("a.y.example"); err == nil {
 		t.Fatalf("expected error from suffix decode failure")
+	}
+}
+
+// Ensure writeMeta clamps negative updatedUnix to 0 and Stats() reflects it.
+func TestWriteMeta_ClampNegativeUpdatedUnix(t *testing.T) {
+	dbPath := tempDB(t)
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close(); _ = os.Remove(dbPath) })
+
+	now := time.Now()
+	rules := []domain.BlockRule{{Name: "neg.example", Kind: domain.BlockRuleExact, Source: "s", AddedAt: now}}
+	if err := st.RebuildAll(rules, 1, -5); err != nil { // negative updatedUnix
+		t.Fatalf("RebuildAll: %v", err)
+	}
+	stats := st.Stats()
+	if stats.UpdatedUnix != 0 {
+		t.Fatalf("expected UpdatedUnix=0 after clamp, got %d", stats.UpdatedUnix)
+	}
+}
+
+// Force meta.updated to a value > MaxInt64 to exercise Stats() cap when decoding.
+func TestStats_UpdatedUnix_CapUint64ToMaxInt64(t *testing.T) {
+	dbPath := tempDB(t)
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	bs := st.(*boltStore)
+	t.Cleanup(func() { _ = st.Close(); _ = os.Remove(dbPath) })
+
+	// Seed meta buckets with version and an oversized updated value (all 0xFF = MaxUint64)
+	if err := bs.db.Update(func(tx *bbolt.Tx) error {
+		if err := ensureBuckets(tx); err != nil {
+			return err
+		}
+		mb := tx.Bucket(bucketMeta)
+		if err := mb.Put([]byte("version"), func() []byte { b := make([]byte, 8); binary.BigEndian.PutUint64(b, 7); return b }()); err != nil {
+			return err
+		}
+		// updated = MaxUint64
+		ub := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+		return mb.Put([]byte("updated"), ub)
+	}); err != nil {
+		t.Fatalf("seed meta: %v", err)
+	}
+
+	s := st.Stats()
+	if s.Version != 7 {
+		t.Fatalf("expected version 7, got %d", s.Version)
+	}
+	// Expect cap to MaxInt64
+	if s.UpdatedUnix != int64(^uint64(0)>>1) { // math.MaxInt64 without importing math here
+		t.Fatalf("expected UpdatedUnix capped to MaxInt64, got %d", s.UpdatedUnix)
+	}
+}
+
+// Ensure encodeRuleValue clamps negative AddedAt and truncates oversized Source.
+func TestEncodeRuleValue_ClampsAndTruncates(t *testing.T) {
+	dbPath := tempDB(t)
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close(); _ = os.Remove(dbPath) })
+
+	// Build a very long source (> 0xFFFF)
+	long := make([]byte, 70000)
+	for i := range long {
+		long[i] = 'x'
+	}
+	src := string(long)
+
+	// Negative AddedAt should be clamped to 0 when stored.
+	rules := []domain.BlockRule{{Name: "clamp.example", Kind: domain.BlockRuleExact, Source: src, AddedAt: time.Unix(-5, 0)}}
+	if err := st.RebuildAll(rules, 1, time.Now().Unix()); err != nil {
+		t.Fatalf("RebuildAll: %v", err)
+	}
+
+	r, ok, err := st.GetFirstMatch("clamp.example")
+	if err != nil || !ok {
+		t.Fatalf("expected hit: ok=%v err=%v", ok, err)
+	}
+	if r.AddedAt.Unix() != 0 {
+		t.Fatalf("expected AddedAt clamped to 0, got %d", r.AddedAt.Unix())
+	}
+	if len(r.Source) != 0xFFFF {
+		t.Fatalf("expected truncated source length %d, got %d", 0xFFFF, len(r.Source))
+	}
+	// Verify content equals prefix of original
+	if wantPrefix := string(long[:0xFFFF]); r.Source != wantPrefix {
+		t.Fatalf("truncated source content mismatch")
+	}
+}
+
+// TestStats_NegativeKeyN exercises the st.KeyN < 0 branches for both exact and suffix buckets
+// by stubbing bucketStatsFn to return negative counts.
+func TestStats_NegativeKeyN(t *testing.T) {
+	// Save and restore seam
+	orig := bucketStatsFn
+	t.Cleanup(func() { bucketStatsFn = orig })
+
+	// Stub to return negative KeyN regardless of input bucket
+	bucketStatsFn = func(b *bbolt.Bucket) bbolt.BucketStats {
+		return bbolt.BucketStats{KeyN: -1}
+	}
+
+	dbPath := tempDB(t)
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close(); _ = os.Remove(dbPath) })
+
+	// Ensure meta has version/updated so we also cover that path without caring about values
+	bs := st.(*boltStore)
+	if err := bs.db.Update(func(tx *bbolt.Tx) error {
+		mb := tx.Bucket(bucketMeta)
+		if mb == nil {
+			return nil
+		}
+		vbuf := make([]byte, 8)
+		ubuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(vbuf, 1)
+		binary.BigEndian.PutUint64(ubuf, 0)
+		if err := mb.Put([]byte("version"), vbuf); err != nil {
+			return err
+		}
+		return mb.Put([]byte("updated"), ubuf)
+	}); err != nil {
+		t.Fatalf("seed meta: %v", err)
+	}
+
+	got := st.Stats()
+	if got.ExactKeys != 0 {
+		t.Fatalf("ExactKeys: got %d, want 0", got.ExactKeys)
+	}
+	if got.SuffixKeys != 0 {
+		t.Fatalf("SuffixKeys: got %d, want 0", got.SuffixKeys)
 	}
 }
