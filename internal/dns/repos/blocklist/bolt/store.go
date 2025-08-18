@@ -3,10 +3,13 @@ package bolt
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"time"
 
 	bbolt "go.etcd.io/bbolt"
+	bberrors "go.etcd.io/bbolt/errors"
 
+	"github.com/haukened/rr-dns/internal/dns/domain"
 	"github.com/haukened/rr-dns/internal/dns/repos/blocklist"
 )
 
@@ -15,6 +18,18 @@ var (
 	bucketSuffix = []byte("suffix")
 	bucketMeta   = []byte("meta")
 )
+
+// bucketCreator is the minimal contract needed for creating buckets.
+// It matches the method on *bbolt.Tx so we can pass it directly, and also
+// allows tests to provide a fake to simulate error paths.
+type bucketCreator interface {
+	CreateBucketIfNotExists(name []byte) (*bbolt.Bucket, error)
+}
+
+// bucketDeleter is the minimal contract needed for deleting buckets.
+type bucketDeleter interface {
+	DeleteBucket(name []byte) error
+}
 
 // boltStore implements blocklist.Store using bbolt.
 type boltStore struct {
@@ -27,18 +42,7 @@ func New(path string) (blocklist.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Update(func(tx *bbolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists(bucketExact); err != nil {
-			return err
-		}
-		if _, err := tx.CreateBucketIfNotExists(bucketSuffix); err != nil {
-			return err
-		}
-		if _, err := tx.CreateBucketIfNotExists(bucketMeta); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	if err := db.Update(func(tx *bbolt.Tx) error { return ensureBucketsFn(tx) }); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -47,46 +51,42 @@ func New(path string) (blocklist.Store, error) {
 
 func (s *boltStore) Close() error { return s.db.Close() }
 
-func (s *boltStore) ExistsExact(name string) (bool, error) {
-	var present bool
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(bucketExact)
-		if b == nil {
-			present = false
-			return nil
+// GetFirstMatch returns exact match first; otherwise walks suffix anchors from
+// most- to least-specific and returns the first match.
+func (s *boltStore) GetFirstMatch(name string) (out domain.BlockRule, ok bool, err error) {
+	err = s.db.View(func(tx *bbolt.Tx) error {
+		// 1) Exact match
+		if b := tx.Bucket(bucketExact); b != nil {
+			if v := b.Get([]byte(name)); v != nil {
+				rule, err := decodeRuleValueFn(name, v, domain.BlockRuleExact)
+				if err != nil {
+					return err
+				}
+				out = rule
+				return nil
+			}
 		}
-		v := b.Get([]byte(name))
-		present = v != nil
-		return nil
-	})
-	return present, err
-}
-
-// VisitSuffixes walks existing suffix anchors for the provided reversed
-// name prefix, from most-specific to least (trimming at dot boundaries),
-// and invokes visit for each match. If visit returns false, iteration stops.
-func (s *boltStore) VisitSuffixes(revPrefix []byte, visit func(key []byte) bool) error {
-	return s.db.View(func(tx *bbolt.Tx) error {
+		// 2) Suffix walk using reversed prefix trimming
 		b := tx.Bucket(bucketSuffix)
 		if b == nil {
 			return nil
 		}
 		c := b.Cursor()
-		rp := make([]byte, len(revPrefix))
-		copy(rp, revPrefix)
+		rp := reverseBytesInPlace([]byte(name))
 		for {
 			if len(rp) == 0 {
 				break
 			}
-			// Prefix scan via cursor: seek to rp and iterate matches with rp as prefix.
-			for k, _ := c.Seek(rp); k != nil && bytes.HasPrefix(k, rp); k, _ = c.Next() {
-				kk := make([]byte, len(k))
-				copy(kk, k)
-				if !visit(kk) {
-					return nil
+			k, v := c.Seek(rp)
+			if k != nil && bytes.HasPrefix(k, rp) {
+				// first hit at this specificity
+				anchor := reverseString(string(k))
+				rule, err := decodeRuleValueFn(anchor, v, domain.BlockRuleSuffix)
+				if err != nil {
+					return err
 				}
-				// Only need the first match for this rp (most-specific to least handling is done by rp trimming).
-				break
+				out = rule
+				return nil
 			}
 			idx := bytes.LastIndexByte(rp, '.')
 			if idx < 0 {
@@ -96,56 +96,166 @@ func (s *boltStore) VisitSuffixes(revPrefix []byte, visit func(key []byte) bool)
 		}
 		return nil
 	})
+	if err != nil {
+		return domain.BlockRule{}, false, err
+	}
+	if out.Name == "" {
+		return domain.BlockRule{}, false, nil
+	}
+	return out, true, nil
 }
 
-func (s *boltStore) Stats() blocklist.StoreStats {
-	st := blocklist.StoreStats{}
-	_ = s.db.View(func(tx *bbolt.Tx) error {
-		if b := tx.Bucket(bucketExact); b != nil {
-			st.ExactCount = uint64(b.Stats().KeyN)
-		}
-		if b := tx.Bucket(bucketSuffix); b != nil {
-			st.SuffixCount = uint64(b.Stats().KeyN)
-		}
-		if b := tx.Bucket(bucketMeta); b != nil {
-			if v := b.Get([]byte("version")); len(v) == 8 {
-				st.Version = binary.BigEndian.Uint64(v)
-			}
-			if v := b.Get([]byte("updated")); len(v) == 8 {
-				st.UpdatedUnix = int64(binary.BigEndian.Uint64(v))
-			}
-		}
-		return nil
-	})
-	return st
-}
-
-// Below are helper methods to populate data (used in tests and future updaters).
-
-func (s *boltStore) putExact(name string) error {
+// RebuildAll replaces all data atomically in a single write transaction.
+func (s *boltStore) RebuildAll(rules []domain.BlockRule, version uint64, updatedUnix int64) (err error) {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(bucketExact)
-		return b.Put([]byte(name), []byte{1})
-	})
-}
-
-func (s *boltStore) putSuffix(reversed string) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(bucketSuffix)
-		return b.Put([]byte(reversed), []byte{1})
-	})
-}
-
-func (s *boltStore) setMeta(version uint64, updatedUnix int64) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(bucketMeta)
-		vbuf := make([]byte, 8)
-		ubuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(vbuf, version)
-		binary.BigEndian.PutUint64(ubuf, uint64(updatedUnix))
-		if err := b.Put([]byte("version"), vbuf); err != nil {
+		// Drop buckets if present, then (re)create them via ensureBucketsFn.
+		if err := deleteBucketsFn(tx, bucketExact, bucketSuffix, bucketMeta); err != nil {
 			return err
 		}
-		return b.Put([]byte("updated"), ubuf)
+		if err := ensureBucketsFn(tx); err != nil {
+			return err
+		}
+		if err := loadRulesFn(tx, rules); err != nil {
+			return err
+		}
+		return writeMetaFn(tx, version, updatedUnix)
 	})
+}
+
+// Purge clears all buckets.
+func (s *boltStore) Purge() error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		if err := deleteBucketsFn(tx, bucketExact, bucketSuffix, bucketMeta); err != nil {
+			return err
+		}
+		return ensureBucketsFn(tx)
+	})
+}
+
+// Helpers for encoding/decoding rule values.
+// value format: [kind:1][addedAt:8be][sourceLen:2be][source bytes]
+func encodeRuleValue(r domain.BlockRule) []byte {
+	src := []byte(r.Source)
+	buf := make([]byte, 1+8+2+len(src))
+	buf[0] = byte(r.Kind)
+	binary.BigEndian.PutUint64(buf[1:9], uint64(r.AddedAt.Unix()))
+	binary.BigEndian.PutUint16(buf[9:11], uint16(len(src)))
+	copy(buf[11:], src)
+	return buf
+}
+
+func decodeRuleValue(name string, v []byte, defaultKind domain.BlockRuleKind) (domain.BlockRule, error) {
+	var r domain.BlockRule
+	r.Name = name
+	if len(v) < 11 {
+		// tolerate legacy minimal values; fill defaults
+		r.Kind = defaultKind
+		r.AddedAt = time.Time{}
+		r.Source = ""
+		return r, nil
+	}
+	r.Kind = domain.BlockRuleKind(v[0])
+	ts := int64(binary.BigEndian.Uint64(v[1:9]))
+	r.AddedAt = time.Unix(ts, 0)
+	sl := int(binary.BigEndian.Uint16(v[9:11]))
+	if 11+sl > len(v) {
+		sl = len(v) - 11
+	}
+	r.Source = string(v[11 : 11+sl])
+	if r.Kind != domain.BlockRuleExact && r.Kind != domain.BlockRuleSuffix {
+		r.Kind = defaultKind
+	}
+	return r, nil
+}
+
+// decodeRuleValueFn allows tests to override decoding to simulate errors.
+var decodeRuleValueFn = decodeRuleValue
+
+func reverseString(s string) string {
+	b := []byte(s)
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
+	return string(b)
+}
+
+func reverseBytesInPlace(b []byte) []byte {
+	out := make([]byte, len(b))
+	copy(out, b)
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+// ensureBuckets creates all required buckets. Kept as a var for test seams.
+var ensureBucketsFn = ensureBuckets
+
+func ensureBuckets(tx bucketCreator) error {
+	if _, err := tx.CreateBucketIfNotExists(bucketExact); err != nil {
+		return err
+	}
+	if _, err := tx.CreateBucketIfNotExists(bucketSuffix); err != nil {
+		return err
+	}
+	if _, err := tx.CreateBucketIfNotExists(bucketMeta); err != nil {
+		return err
+	}
+	return nil
+}
+
+// deleteBuckets removes the provided buckets, ignoring ErrBucketNotFound.
+// Exposed via var for test seams if needed.
+var deleteBucketsFn = deleteBuckets
+
+func deleteBuckets(tx bucketDeleter, names ...[]byte) error {
+	for _, n := range names {
+		if err := tx.DeleteBucket(n); err != nil {
+			if errors.Is(err, bberrors.ErrBucketNotFound) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// loadRules writes all rules into the newly created buckets. Seamed for tests.
+var loadRulesFn = loadRules
+
+func loadRules(tx *bbolt.Tx, rules []domain.BlockRule) error {
+	eb := tx.Bucket(bucketExact)
+	sb := tx.Bucket(bucketSuffix)
+	for _, r := range rules {
+		val := encodeRuleValue(r)
+		switch r.Kind {
+		case domain.BlockRuleExact:
+			if err := eb.Put([]byte(r.Name), val); err != nil {
+				return err
+			}
+		case domain.BlockRuleSuffix:
+			key := []byte(reverseString(r.Name))
+			if err := sb.Put(key, val); err != nil {
+				return err
+			}
+		default:
+			// ignore unsupported kinds
+		}
+	}
+	return nil
+}
+
+// writeMeta persists version and updated timestamp. Seamed for tests.
+var writeMetaFn = writeMeta
+
+func writeMeta(tx *bbolt.Tx, version uint64, updatedUnix int64) error {
+	mb := tx.Bucket(bucketMeta)
+	vbuf := make([]byte, 8)
+	ubuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(vbuf, version)
+	binary.BigEndian.PutUint64(ubuf, uint64(updatedUnix))
+	if err := mb.Put([]byte("version"), vbuf); err != nil {
+		return err
+	}
+	return mb.Put([]byte("updated"), ubuf)
 }
