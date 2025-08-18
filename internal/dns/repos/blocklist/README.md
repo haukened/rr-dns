@@ -1,358 +1,164 @@
-# DNS Blocklist Repository
+# DNS Blocklist Repository (v0.3 components)
 
-This package currently provides a no-op blocklist implementation for the resolver service. The `NoopBlocklist` satisfies the blocklist interface but always allows queries. The features described below are planned for future development.
+This folder contains the building blocks for the blocklist repository used by rr-dns. The current implementation provides:
 
-## Overview
+- A Bloom filter wrapper and factory (`bloom/`)
+- A persistent Bolt-backed store with first-match semantics (`bolt/`)
+- An in-memory LRU decision cache (`lru/`)
+- Plain-text and hosts-file parsers that emit `domain.BlockRule` values (`parsers/`)
 
-Planned capabilities include:
+These parts are designed to be wired together by a higher-level `Repository` (not included here) following CLEAN architecture.
 
-- **Domain blocking** based on configurable blocklist sources
-- **Fast lookup performance** using efficient data structures
-- **Multiple blocklist formats** (hosts files, domain lists, regex patterns)
-- **Real-time updates** with hot-reloading capability
-- **Pattern matching** for wildcard and subdomain blocking
+## Interfaces at a glance
 
-## Current Implementation
+As defined in `interfaces.go`:
 
-- `NoopBlocklist`: a placeholder that implements the interface and always returns false from `IsBlocked`
+- BloomFactory: `New(capacity uint64, fpRate float64) BloomFilter`
+- BloomFilter: `Add([]byte)`, `MightContain([]byte) bool`
+- DecisionCache: `Get(name)`, `Put(name, decision)`, `Len()`, `Purge()`
+- Store:
+    - `GetFirstMatch(name) (rule domain.BlockRule, ok bool, err error)`
+    - `RebuildAll(rules []domain.BlockRule, version uint64, updatedUnix int64) error`
+    - `Purge() error`
+    - `Close() error`
+- Repository (to be wired elsewhere): `Decide(name)`, `UpdateAll(rules, version, updated)`
 
-## Architecture
+## Lookup pipeline: cache → bloom → store
 
-The blocklist repository implements the repository pattern:
+Typical read path for a canonical DNS name:
 
-```
-Service Layer → BlocklistRepository Interface → Blocklist Implementation
-                        ↓
-                File Sources, URL Sources, etc.
-```
+1) Check `DecisionCache` → return on hit
+2) Bloom pre-checks (advisory): test exact FQDN and candidate reversed anchors; skip store entirely if all tests are negative
+3) Store authoritative check via `GetFirstMatch(name)` which returns:
+     - exact match if present, else
+     - first matching suffix anchor found by a reversed-prefix cursor walk
+4) Materialize a `domain.BlockDecision` and cache it via `DecisionCache.Put`
 
-## Lookup pipeline: cache → bloom → store (v0.3)
+Update path (atomic):
 
-This folder now contains foundational pieces for the in-progress v0.3 blocklist repository:
+- `Store.RebuildAll(allRules, version, updatedUnix)` replaces data in a single write transaction
+- Recreate the Bloom (via `BloomFactory`) sized for the dataset
+- Purge the decision cache to avoid stale decisions
 
-- Decision cache (in-memory LRU; planned in `DecisionCache`) memoizes final decisions per canonical name to turn hot lookups into O(1).
-- Bloom filter (implemented in `bloom/` as `BloomFilter` with `BloomSizer`) provides fast negative checks before hitting storage. Reads are lock-free; writes (Add/Clear/swap) are serialized.
-- Persistent store (planned Bolt backend via `Store`) is the source of truth for exact names and suffix matches.
+---
 
-### Quick summary
+## bloom/
 
-- The store holds rules (exact names and suffix anchors). A single Bloom filter cheaply tests candidate keys (exact FQDN and reversed anchors) before touching Bolt.
-- On a cache miss, we canonicalize the name, test Bloom, and if “maybe,” probe Bolt:
-    - `ExistsExact(fqdn)`; if not found,
-    - `VisitSuffixes(reversed-prefix)` with a cursor, most-specific first; stop on first match.
-- That yields a `domain.BlockDecision`. We cache that decision by canonical name so repeated queries skip the Bloom + Bolt walk.
-- On blocklist update/swap, we rebuild the store and Bloom, then purge the decision cache to avoid staleness.
-- The decision cache is optional (size=0 disables).
+Thread-safe adapter around bits-and-blooms with an internal sizer.
 
-### Roles
+- `factory.go`: `bloom.NewFactory()` returns a `blocklist.BloomFactory`. `New(capacity, fpRate)` computes m/k via standard formulas and builds a filter.
+- `filter.go`: `Add` is serialized with a mutex; `MightContain` is read-safe. Interface exposes only `Add` and `MightContain`.
+- `sizer.go`: internal helpers for m/k; not exported.
 
-- DecisionCache
-    - Get/Put of final BlockDecision keyed by canonical name
-    - Tracks hits/misses/evictions for observability
-
-- BloomFilter
-    - Add([]byte), MightContain([]byte), Clear()
-    - Single filter sized once per build/update using `BloomSizer.Size(n, p)` with N = exact_count + wildcard_anchor_count
-
-- Store
-    - ExistsExact(name string) (bool, error)
-    - VisitSuffixes(revPrefix []byte, visit func(key []byte) bool) error — keys are stored as reversed domains so suffix search becomes a prefix scan
-    - Stats() and Close()
-
-### Read path (Decide)
-
-1. Canonicalize the DNS name (lowercase, FQDN) before lookup.
-2. Cache: if `DecisionCache.Get(name)` hits, return the memoized decision.
-3. Single Bloom pre-checks (advisory):
-    - Test `MightContain(name)` for an exact rule.
-    - For each ancestor a of the name (most-specific → apex), test `MightContain(reverse(a))` for wildcard anchors.
-    - If all are false → skip storage entirely and Allow.
-4. Store probes (authoritative):
-    - Exact: if the exact test was maybe, call `ExistsExact(name)`. If true → Block.
-    - Suffix: for ancestors whose reversed test was maybe, call `VisitSuffixes(reverse(a))` most-specific → least; on first match → Block.
-5. If no store matches, decision is Allow.
-6. Cache the final decision with `DecisionCache.Put(name, decision)` and update stats.
-
-Pseudo-flow:
-
-```
-if d, ok := cache.Get(name); ok { return d }
-
-if bloom.MightContain([]byte(name)) {
-    if store.ExistsExact(name) { d = Block; cache.Put(name, d); return d }
-}
-for a := range ancestorsMostSpecificToApex(name) {
-    if bloom.MightContain(reverse(a)) {
-        if visitSuffixHit(store, a) { d = Block; cache.Put(name, d); return d }
-    }
-}
-
-d = Allow; cache.Put(name, d); return d
-```
-
-### Update path (Repository.Update)
-
-- Rebuild or refresh the store atomically from sources (planned #31/#32).
-- Compute bloom parameters via `BloomSizer` from store stats (n and target p), rebuild filters by scanning store keys.
-- Swap in new store/blooms under a write lock; clear `DecisionCache` to avoid stale decisions.
-- Publish repo stats (`RepoStats`) including LastUpdate.
-
-### Guarantees and notes
-
-- The Bloom filter can return false positives (extra DB work) but not false negatives; correctness is enforced by the store.
-- Reads against the Bloom are lock-free; Add/Clear (and swaps) are write-locked.
-- On store errors during Decide, prefer "allow and log" to avoid accidental blocking (policy choice).
-- Use identical canonicalization for cache keys, bloom keys, and store keys.
-- Suffix search prioritizes the most specific suffix; stop at first positive match.
-
-## Planned Features
-
-### Domain Blocking Capabilities
-- **Exact domain matching**: Block specific domains (e.g., `malware.example.com`)
-- **Wildcard blocking**: Block domain patterns (e.g., `*.ads.example.com`)
-- **Subdomain blocking**: Block all subdomains of a domain
-- **Whitelist support**: Allow specific domains despite blocklist matches
-- **Category-based blocking**: Block by malware, ads, tracking, etc.
-
-### Blocklist Sources
-- **Static files**: Local hosts files and domain lists
-- **Remote sources**: Download blocklists from URLs
-- **Custom patterns**: User-defined regex and wildcard patterns
-- **Popular lists**: Integration with common blocklist providers
-
-### Performance Optimizations
-- **Bloom filters**: Fast negative lookups for non-blocked domains
-- **Trie structures**: Efficient prefix matching for domain hierarchies
-- **Memory caching**: In-memory storage for fast access
-- **Lazy loading**: Load blocklist data on demand
-
-## Interface Design
+Example:
 
 ```go
-// BlocklistRepository defines the interface for domain blocking
-type BlocklistRepository interface {
-    // IsBlocked checks if a domain should be blocked
-    IsBlocked(domain string) (bool, string, error)
-    
-    // IsBlockedWithCategory returns blocking status and category
-    IsBlockedWithCategory(domain string) (blocked bool, category string, reason string, error)
-    
-    // Reload refreshes blocklist data from sources
-    Reload() error
-    
-    // Stats returns blocklist statistics
-    Stats() BlocklistStats
-}
-
-// BlocklistStats provides metrics about the blocklist
-type BlocklistStats struct {
-    TotalDomains    int
-    BlockedQueries  uint64
-    AllowedQueries  uint64
-    LastUpdate      time.Time
-    Sources         []string
-}
+f := bloom.NewFactory()
+bf := f.New(100_000, 0.01)
+key := []byte("example.com")
+bf.Add(key)
+_ = bf.MightContain(key) // probabilistic “maybe”
 ```
 
-## Usage Examples
+Notes:
+- Interface intentionally omits Clear/Swap; rebuild a new filter on updates.
 
-### Basic Domain Blocking
+## bolt/
+
+Bolt-backed `blocklist.Store` with first-match semantics and atomic snapshot updates.
+
+Buckets:
+- `exact`   → exact FQDN keys
+- `suffix`  → reversed domain keys for anchor-style suffix matches (e.g., `example.com` stored as `moc.elpmaxe`)
+- `meta`    → versioning metadata (`version`, `updated` as big-endian uint64)
+
+API:
+- `New(path) (blocklist.Store, error)` opens/creates the DB and ensures buckets
+- `GetFirstMatch(name)` returns exact match first; else walks reversed prefixes most-specific→least and returns first suffix match
+- `RebuildAll(rules, version, updatedUnix)` deletes+recreates buckets, loads rules, and writes meta in a single write tx
+- `Purge()` clears and recreates buckets
+- `Close()` closes the DB
+
+Behavior:
+- Suffix search is implemented via a cursor `Seek` on the reversed name and iterative trimming at label boundaries
+- Values encode `{kind|addedAt|sourceLen|source}`; decoder tolerates legacy/minimal values
+- Writes are atomic; reads are consistent; error paths are covered (including read-only tx and invalid keys)
+
+Example:
 
 ```go
-package main
+st, _ := bolt.New("/tmp/bl.db")
+defer st.Close()
 
-import (
-    "context"
-    "fmt"
-    
-    "github.com/haukened/rr-dns/internal/dns/repos/blocklist"
-)
+rules := []domain.BlockRule{
+    domain.MustNewExactBlockRule("a.example.com", "source", time.Now()),
+    domain.MustNewSuffixBlockRule("example.org", "source", time.Now()),
+}
+_ = st.RebuildAll(rules, 1, time.Now().Unix())
 
-func main() {
-    // Create blocklist repository
-    repo, err := blocklist.New(blocklist.Config{
-        Sources: []string{
-            "/etc/rr-dns/blocklists/malware.txt",
-            "/etc/rr-dns/blocklists/ads.txt",
-        },
-        UpdateInterval: 1 * time.Hour,
-    })
-    if err != nil {
-        log.Fatalf("Failed to create blocklist: %v", err)
-    }
-    
-    // Check if domain is blocked
-    blocked, reason, err := repo.IsBlocked("malware.example.com")
-    if err != nil {
-        log.Fatalf("Blocklist check failed: %v", err)
-    }
-    
-    if blocked {
-        fmt.Printf("Domain blocked: %s\n", reason)
-        // Return NXDOMAIN or redirect response
-    } else {
-        fmt.Println("Domain allowed")
-        // Continue with normal resolution
-    }
+if r, ok, _ := st.GetFirstMatch("a.example.com"); ok {
+    _ = r // exact
+}
+if r, ok, _ := st.GetFirstMatch("x.example.org"); ok {
+    _ = r // suffix anchor
 }
 ```
 
-### Integration with DNS Resolution
+## lru/
+
+LRU-backed implementation of `blocklist.DecisionCache`.
+
+- `New(size int) (blocklist.DecisionCache, error)` returns an LRU cache; when `size <= 0`, returns a disabled no-op cache
+- Methods: `Get`, `Put`, `Len`, `Purge`
+- Backed by `github.com/hashicorp/golang-lru/v2`
+
+Notes:
+- No internal stats counters; it’s a simple memoization layer
+- Not concurrency-safe by itself; coordinate access at the repository/service layer
+
+## parsers/
+
+Parsers that produce `[]domain.BlockRule` from common list formats. All parsers:
+
+- Trim and normalize via `utils.CanonicalDNSName`
+- Validate with a lightweight FQDN check
+- Skip empty lines and comments (`#`), support inline comments
+- De-duplicate while preserving first-seen order
+- Attribute rules to the provided `source` and timestamp with `now`
+
+Plain lists (`plain.go`):
+- Each non-empty, non-comment line is a token
+- Leading `*.` or `.` indicates a suffix rule; otherwise exact
+
+Hosts files (`hosts.go`):
+- Parse `/etc/hosts`-style lines; ignore IP field and extract hostnames
+- Only exact rules are emitted; wildcards and names starting with `.` are ignored
+
+Example:
 
 ```go
-func resolveDNSQuery(query domain.Question, blocklist blocklist.Repository) domain.DNSResponse {
-    // Check blocklist first
-    blocked, category, err := blocklist.IsBlockedWithCategory(query.Name)
-    if err != nil {
-        log.Error(map[string]any{"error": err.Error()}, "Blocklist check failed")
-    }
-    
-    if blocked {
-        log.Info(map[string]any{
-            "domain":   query.Name,
-            "category": category,
-            "client":   clientAddr,
-        }, "Domain blocked")
-        
-        // Return NXDOMAIN response
-        return domain.NewDNSResponse(query.ID, 3, nil, nil, nil) // NXDOMAIN
-    }
-    
-    // Continue with normal resolution
-    return resolveUpstream(query)
-}
+r, _ := parsers.ParsePlainList(strings.NewReader("""
+# comment
+example.com
+*.ads.example.net
+"""), "list.txt", logger, time.Now())
+// r contains exact(example.com) and suffix(ads.example.net)
 ```
 
-## Configuration
-
-### Blocklist Sources Configuration
-
-```yaml
-# DNS server configuration
-blocklist:
-  enabled: true
-  update_interval: "1h"
-  sources:
-    - type: "file"
-      path: "/etc/rr-dns/blocklists/malware.txt"
-      category: "malware"
-    - type: "url"
-      url: "https://someonewhocares.org/hosts/zero/hosts"
-      category: "ads"
-      update_interval: "24h"
-    - type: "pattern"
-      patterns: ["*.doubleclick.net", "*.googleadservices.com"]
-      category: "tracking"
-  
-  # Response strategy for blocked domains
-  response_type: "nxdomain"  # Options: "nxdomain", "refused", "redirect"
-  redirect_ip: "0.0.0.0"     # For redirect response type
-  
-  # Performance settings
-  bloom_filter_size: 1000000
-  cache_size: 100000
-```
-
-### Environment Variables
-
-```bash
-# Blocklist configuration
-UDNS_BLOCKLIST_ENABLED=true
-UDNS_BLOCKLIST_UPDATE_INTERVAL=1h
-UDNS_BLOCKLIST_SOURCES=/etc/rr-dns/blocklists/
-UDNS_BLOCKLIST_RESPONSE_TYPE=nxdomain
-```
-
-## File Formats
-
-### Hosts File Format
-```
-# Standard hosts file format
-0.0.0.0 malware.example.com
-0.0.0.0 ads.badsite.com
-127.0.0.1 localhost  # Comments supported
-```
-
-### Domain List Format
-```
-# Simple domain list
-malware.example.com
-ads.badsite.com
-tracking.example.net
-# Comments and empty lines ignored
-```
-
-### Pattern File Format
-```
-# Wildcard patterns
-*.doubleclick.net
-*.googleadservices.com
-ads.*
-*tracking*
-```
-
-## Performance Characteristics
-
-- **Lookup Time**: O(1) for exact matches, O(log n) for pattern matches
-- **Memory Usage**: ~50-100 bytes per blocked domain
-- **Update Performance**: Incremental updates for large blocklists
-- **Cache Hit Ratio**: 95%+ for repeated domain checks
-
-## Architecture Integration
-
-This blocklist repository follows CLEAN architecture principles:
-
-- **Repository Pattern**: Abstracts data source concerns from business logic
-- **Interface-Based**: Service layer depends on interfaces, not implementations
-- **Dependency Injection**: All external dependencies are injectable
-- **Testable Design**: Comprehensive mocking and testing support
-
-## Future Enhancements
-
-### Advanced Features
-- **Regex pattern support**: Complex pattern matching beyond wildcards
-- **Time-based blocking**: Block domains during specific time periods
-- **Geographic blocking**: Block based on client location
-- **Dynamic updates**: Real-time blocklist updates via API
-
-### Integration Possibilities
-- **Threat intelligence feeds**: Integration with security vendors
-- **Machine learning**: Automatic malware domain detection
-- **User reporting**: Community-based domain reporting
-- **Analytics**: Detailed blocking statistics and reporting
-
-## Dependencies
-
-- **[Domain Package](../../../domain/)**: Core DNS domain types
-- **[Bloom Filter](https://github.com/bits-and-blooms/bloom)**: Fast negative lookups
-- **[Trie](https://github.com/derekparker/trie)**: Efficient prefix matching
+---
 
 ## Testing
 
-The package will include comprehensive tests covering:
+This package includes unit tests for all subpackages. To run:
 
-- **Basic blocking functionality** with various domain formats
-- **Pattern matching** for wildcards and regex patterns
-- **Performance testing** with large blocklists
-- **Update mechanisms** and hot-reloading
-- **Error handling** for malformed blocklist files
-
-Run tests with:
 ```bash
-go test ./internal/dns/repos/blocklist/
+go test ./internal/dns/repos/blocklist/...
 ```
 
-## Implementation Status
+Highlights:
+- `bolt/` store has 100% coverage of its code paths (including error branches)
+- `bloom/`, `lru/`, and `parsers/` have focused unit tests covering core behavior and edge cases
 
-🚧 **This package is currently planned but not yet implemented.**
+## Architecture notes
 
-The blocklist repository is part of the planned infrastructure for the RR-DNS server. The interface design and architecture have been defined to support future implementation without breaking changes to the service layer.
-
-## Related Packages
-
-- **[DNSCache](../dnscache/)**: Caching layer for DNS responses
-- **[Zone](../zone/)**: Authoritative zone data repository
-- **[Domain](../../domain/)**: Core DNS domain types and interfaces
-- **[Config](../../config/)**: Application configuration management
-
-This blocklist repository will integrate seamlessly with existing components to provide comprehensive DNS filtering capabilities while maintaining the clean architecture principles of the RR-DNS server.
+These components stay within the repos layer and expose minimal interfaces to keep the service layer testable and decoupled. Wiring (BloomFactory + DecisionCache + Store) happens in the composition root (cmd), following the CLEAN architecture boundaries defined in this repo.
