@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -298,6 +299,34 @@ func BenchmarkRepo_Positive_Random_WithCache(b *testing.B) {
 	cacheHits := atomic.LoadUint64(&ctrs.cache.hits)
 	cacheGets := atomic.LoadUint64(&ctrs.cache.gets)
 	b.Logf("store_calls=%d cache_hits=%d cache_gets=%d", storeGets, cacheHits, cacheGets)
+}
+
+// Metrics: percentile latencies and FP-driven store rate for mixed negatives.
+func BenchmarkRepo_Negative_Mixed_Perc(b *testing.B) {
+	rules := append(repoBenchExact(20000, "bench.repo"), repoBenchSuffix("ads.bench.repo", "track.bench.repo")...)
+	repo, ctrs, cleanup := buildRepoWithCounters(b, 128*1024, rules)
+	defer cleanup()
+	const negatives = 50000
+	qs := make([]string, negatives)
+	for i := 0; i < negatives; i++ {
+		qs[i] = fmt.Sprintf("absent-%06d.nohit.repo", i)
+	}
+	// Collect per-call durations (in ns) outside the benchmark timer; this is for diagnostics.
+	b.StopTimer()
+	durs := make([]int64, negatives)
+	for i := 0; i < negatives; i++ {
+		t0 := time.Now()
+		_ = repo.Decide(qs[i])
+		durs[i] = time.Since(t0).Nanoseconds()
+	}
+	// Compute percentiles.
+	sort.Slice(durs, func(i, j int) bool { return durs[i] < durs[j] })
+	p50 := durs[(50*len(durs))/100]
+	p95 := durs[(95*len(durs))/100]
+	p99 := durs[(99*len(durs))/100]
+	gets := atomic.LoadUint64(&ctrs.store.gets)
+	storeRate := float64(gets) / float64(len(durs)) * 100.0
+	b.Logf("negatives=%d p50=%dns p95=%dns p99=%dns store_calls=%d (%.2f%%)", len(durs), p50, p95, p99, gets, storeRate)
 }
 
 // --- Parallel benchmarks (concurrency verification) ---

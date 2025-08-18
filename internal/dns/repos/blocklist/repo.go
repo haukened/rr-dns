@@ -1,6 +1,7 @@
 package blocklist
 
 import (
+	"bytes"
 	"strings"
 	"sync"
 
@@ -100,10 +101,31 @@ func (r *repository) checkBloom(cn string) bool {
 	if bf == nil {
 		return true
 	}
+	// Exact key first
 	if bf.MightContain([]byte(cn)) {
 		return true
 	}
-	// test reversed anchors for suffix candidates, most-specific → apex
+	// Suffix anchors via reversed keys, most-specific → apex.
+	// ASCII fast-path: reverse once and trim at last '.' without allocating per label.
+	if isASCII(cn) {
+		b := []byte(cn)
+		reverseBytesInPlace(b)
+		for {
+			if bf.MightContain(b) {
+				return true
+			}
+			if i := bytes.LastIndexByte(b, '.'); i >= 0 {
+				b = b[:i]
+				if len(b) == 0 {
+					break
+				}
+			} else {
+				break
+			}
+		}
+		return false
+	}
+	// Unicode-safe fallback: reverse per suffix like before.
 	a := cn
 	for {
 		rev := reverseString(a)
@@ -145,4 +167,21 @@ func (r *repository) updateCache(cn string, dec domain.BlockDecision) {
 	r.mu.Lock()
 	r.cache.Put(cn, dec)
 	r.mu.Unlock()
+}
+
+// reverseBytesInPlace reverses a byte slice in place.
+func reverseBytesInPlace(b []byte) {
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
+}
+
+// isASCII reports whether s contains only ASCII bytes.
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
