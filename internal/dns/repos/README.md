@@ -9,7 +9,7 @@ The `repos` package provides:
 - **Data access abstractions** for various DNS data sources
 - **Caching strategies** for improved query performance  
 - **Zone data management** from multiple file formats
-- **Blocklist functionality** for domain filtering (planned)
+- **Blocklist functionality** for domain filtering
 
 ## Architecture Role
 
@@ -24,10 +24,10 @@ In the CLEAN architecture, repositories serve as:
 
 ```
 repos/
-├── blocklist/      # DNS blocklist repository (planned)
+├── blocklist/      # DNS blocklist repository (Bloom + Bolt + LRU)
 ├── dnscache/       # High-performance DNS record caching
-├── zone/          # Zone file loading and management
-└── zonecache/     # In-memory authoritative record storage
+├── zone/           # Zone file loading and management
+└── zonecache/      # In-memory authoritative record storage
 ```
 
 ## Components
@@ -88,18 +88,40 @@ Multi-format zone file loader supporting YAML, JSON, and TOML formats.
 - **JSON**: Machine-readable structured format
 - **TOML**: Configuration-style zone definition
 
-### [Blocklist Repository (`blocklist/`) 🚧](blocklist/)
+### [Blocklist Repository (`blocklist/`)](blocklist/)
 
-Planned DNS blocklist functionality for domain filtering.
+DNS blocklist repository implementing fast domain filtering with cache-first lookups, Bloom-filter acceleration, and BoltDB-backed storage.
 
-**Planned Features:**
-- Domain blocking with multiple pattern types
-- Fast lookup performance using bloom filters
-- Multiple blocklist source support
-- Real-time updates with hot-reloading
-- Category-based blocking and whitelisting
+**Flow (read path):**
+- Cache → Bloom → Store → Cache update
+    - Check decision cache first (both allow and block decisions are cached)
+    - If not cached, consult Bloom:
+        - If Bloom is definitely negative, early-allow (no store call)
+        - If Bloom is maybe-positive, consult the store
+    - Store returns first match (exact preferred, else suffix anchor), and result is cached
 
-**Status**: Interface designed, implementation planned
+**Write path (UpdateAll):**
+- Rebuild persistent store atomically with the full snapshot of rules
+- Build a new Bloom sized to the dataset and populate with exact names and reversed suffix anchors
+- Swap in the new Bloom and purge the decision cache atomically
+
+**Patterns supported:**
+- Exact domain blocks (e.g., `example.com`)
+- Suffix anchors (e.g., `ads.example.com`), matched via reversed-key indexing
+
+**Implementation details:**
+- Store: BoltDB with exact and reversed-suffix buckets; first-match semantics (short-circuit on exact, then suffix from most- to least-specific)
+- Bloom: bits-and-blooms; keys are exact names and reversed suffix anchors to mirror store lookups
+- Cache: LRU; caches both blocked and allowed decisions to make repeated negatives/positives hot
+- Concurrency: RW lock protects Bloom pointer swap and cache access; Bolt supports many readers, single writer
+
+**Performance snapshot (from benchmarks on a modern x86 CPU):**
+- Cached decisions (positive/negative): ~50–65 ns/op, 0 allocs
+- Positive exact without cache (store each time): ~645 ns/op
+- Negative random uniques: ~480–590 ns/op; ~2% of queries hit store due to multiple Bloom checks per name (amplifies a 1% configured FPR)
+- Negative repeated: one initial store consult (on Bloom FP) then cache-speed thereafter
+
+This design favors hot-path latency by making cache checks first and minimizes store traffic by using Bloom for early negatives.
 
 ## Repository Pattern
 
@@ -345,6 +367,8 @@ blocklist:
 Repositories use minimal, focused dependencies:
 
 - **[HashiCorp LRU](https://github.com/hashicorp/golang-lru)**: Cache implementation
+- **[bits-and-blooms](https://github.com/bits-and-blooms/bloom)**: Bloom filter for blocklist acceleration
+- **[bbolt](https://github.com/etcd-io/bbolt)**: Embedded key/value store backing the blocklist repository
 - **[Koanf](https://github.com/knadh/koanf)**: Configuration parsing for zones
 - **Standard Library**: File I/O, time handling, data structures
 - **Domain Package**: Core DNS types and interfaces
