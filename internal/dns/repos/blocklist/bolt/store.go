@@ -74,10 +74,7 @@ func (s *boltStore) GetFirstMatch(name string) (out domain.BlockRule, ok bool, e
 		c := b.Cursor()
 		// Build reversed bytes directly from the query with a single allocation.
 		rp := reverseToBytesFromString(name)
-		for {
-			if len(rp) == 0 {
-				break
-			}
+		for len(rp) > 0 {
 			k, v := c.Seek(rp)
 			if k != nil && bytes.HasPrefix(k, rp) {
 				// first hit at this specificity
