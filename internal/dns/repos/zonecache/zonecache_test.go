@@ -11,12 +11,15 @@ func TestNew(t *testing.T) {
 	zc := New()
 	if zc == nil {
 		t.Fatal("New() returned nil")
+		return
 	}
 	if zc.zones == nil {
 		t.Error("zones map not initialized")
+		return
 	}
 	if len(zc.zones) != 0 {
 		t.Errorf("expected empty zones map, got %d entries", len(zc.zones))
+		return
 	}
 }
 
