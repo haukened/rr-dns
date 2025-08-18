@@ -3,6 +3,7 @@ package bolt
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -401,6 +402,93 @@ func TestGetFirstMatch_NoExactBucket_ButSuffixHit(t *testing.T) {
 	r, ok, err := st.GetFirstMatch("a.example.org")
 	if err != nil || !ok || r.Kind != domain.BlockRuleSuffix || r.Name != "example.org" {
 		t.Fatalf("expected suffix hit with no exact bucket: r=%+v ok=%v err=%v", r, ok, err)
+	}
+}
+
+// Verify readers can continue without disruption while RebuildAll swaps data (RCU-style snapshot semantics),
+// and that the active version marker (Stats().Version) reflects the new snapshot after the swap.
+func TestRebuildAll_ConcurrentReadsAndVersionMarker(t *testing.T) {
+	dbPath := tempDB(t)
+	st, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close(); _ = os.Remove(dbPath) })
+
+	now := time.Now()
+	// Initial dataset V1
+	v1 := []domain.BlockRule{
+		{Name: "a.example.com", Kind: domain.BlockRuleExact, Source: "v1", AddedAt: now},
+		{Name: "example.org", Kind: domain.BlockRuleSuffix, Source: "v1", AddedAt: now},
+	}
+	if err := st.RebuildAll(v1, 1, now.Unix()); err != nil {
+		t.Fatalf("RebuildAll v1: %v", err)
+	}
+
+	// Prepare dataset V2 with different answers
+	v2 := []domain.BlockRule{
+		{Name: "b.example.com", Kind: domain.BlockRuleExact, Source: "v2", AddedAt: now.Add(time.Second)},
+		{Name: "example.net", Kind: domain.BlockRuleSuffix, Source: "v2", AddedAt: now.Add(time.Second)},
+	}
+
+	// Start readers that continuously query while we rebuild.
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	// Queries that will hit in V1 but not necessarily in V2, and vice versa.
+	queries := []string{
+		"a.example.com", // exact in V1
+		"x.example.org", // suffix in V1
+		"b.example.com", // exact in V2
+		"y.example.net", // suffix in V2
+		"nope.tld",      // always miss
+	}
+	// Launch several reader goroutines.
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					for _, q := range queries {
+						// GetFirstMatch should never error or panic; ok can be true/false depending on timing.
+						if _, _, err := st.GetFirstMatch(q); err != nil {
+							t.Errorf("GetFirstMatch(%q) err: %v", q, err)
+							return
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	// Give readers a moment to start, then swap to V2.
+	time.Sleep(25 * time.Millisecond)
+	if err := st.RebuildAll(v2, 2, now.Add(time.Second).Unix()); err != nil {
+		t.Fatalf("RebuildAll v2: %v", err)
+	}
+	// Let readers observe post-swap state too.
+	time.Sleep(25 * time.Millisecond)
+	close(done)
+	wg.Wait()
+
+	// Validate version marker reflects latest snapshot.
+	stats := st.Stats()
+	if stats.Version != 2 {
+		t.Fatalf("expected Stats().Version=2, got %d", stats.Version)
+	}
+	if stats.ExactKeys == 0 || stats.SuffixKeys == 0 {
+		t.Fatalf("expected non-zero key counts after swap, got exact=%d suffix=%d", stats.ExactKeys, stats.SuffixKeys)
+	}
+
+	// Spot-check a couple of lookups post-swap.
+	if r, ok, err := st.GetFirstMatch("b.example.com"); err != nil || !ok || r.Source != "v2" {
+		t.Fatalf("post-swap exact miss or wrong source: r=%+v ok=%v err=%v", r, ok, err)
+	}
+	if r, ok, err := st.GetFirstMatch("z.example.net"); err != nil || !ok || r.Source != "v2" {
+		t.Fatalf("post-swap suffix miss or wrong source: r=%+v ok=%v err=%v", r, ok, err)
 	}
 }
 
