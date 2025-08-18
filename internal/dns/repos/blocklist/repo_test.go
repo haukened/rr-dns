@@ -334,3 +334,118 @@ func TestNewRepository_SetsFields(t *testing.T) {
 		t.Fatalf("new repository should start with nil bloom")
 	}
 }
+func TestCacheStats_ReturnsCacheStats(t *testing.T) {
+	st := &fakeStore{}
+	ca := newFakeCache()
+	ca.m["foo.com"] = domain.BlockDecision{Blocked: true}
+	repo := &repository{store: st, cache: ca}
+
+	stats := repo.CacheStats()
+	if stats.Size != 1 {
+		t.Fatalf("expected cache size 1, got %d", stats.Size)
+	}
+}
+
+func TestCacheStats_NilCacheReturnsZeroStats(t *testing.T) {
+	repo := &repository{cache: nil}
+	stats := repo.CacheStats()
+	if stats.Size != 0 || stats.Capacity != 0 {
+		t.Fatalf("expected zero stats for nil cache, got %+v", stats)
+	}
+}
+func TestStoreStats_ReturnsStoreStats(t *testing.T) {
+	st := &fakeStore{}
+	repo := &repository{store: st}
+
+	stats := repo.StoreStats()
+	if stats != (StoreStats{}) {
+		t.Fatalf("expected zero stats from fakeStore, got %+v", stats)
+	}
+}
+
+func TestStoreStats_NilStoreReturnsZeroStats(t *testing.T) {
+	repo := &repository{store: nil}
+	stats := repo.StoreStats()
+	if stats.Version != 0 || stats.UpdatedUnix != 0 {
+		t.Fatalf("expected zero stats for nil store, got %+v", stats)
+	}
+}
+func TestIsASCII(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", true},
+		{"abc", true},
+		{"ABC123", true},
+		{"domain.com", true},
+		{"with space", true},
+		{"with-dash_underscore", true},
+		{"\x7F", true},  // DEL is still ASCII
+		{"\x80", false}, // first non-ASCII byte
+		{"abc\x80", false},
+		{"你好", false},
+		{"abc你好", false},
+		{"😀", false},
+		{"abc😀", false},
+		{"\xff", false},
+	}
+
+	for _, tt := range tests {
+		got := isASCII(tt.in)
+		if got != tt.want {
+			t.Errorf("isASCII(%q) = %v; want %v", tt.in, got, tt.want)
+		}
+	}
+}
+func TestRepository_checkBloom_ExactMatch(t *testing.T) {
+	bf := newFakeBloom()
+	bf.contains["foo.com"] = true
+	repo := &repository{bloom: bf}
+
+	if !repo.checkBloom("foo.com") {
+		t.Fatalf("expected true for exact match in bloom")
+	}
+}
+
+func TestRepository_checkBloom_SuffixASCII(t *testing.T) {
+	bf := newFakeBloom()
+	// Suffix anchor for "bar.com" (reversed)
+	bf.contains[reverseString("bar.com")] = true
+	repo := &repository{bloom: bf}
+
+	if !repo.checkBloom("sub.bar.com") {
+		t.Fatalf("expected true for suffix anchor in bloom (ASCII)")
+	}
+}
+
+func TestRepository_checkBloom_SuffixUnicode(t *testing.T) {
+	bf := newFakeBloom()
+	// Suffix anchor for "例子.公司" (reversed)
+	bf.contains[reverseString("例子.公司")] = true
+	repo := &repository{bloom: bf}
+
+	if !repo.checkBloom("子域.例子.公司") {
+		t.Fatalf("expected true for suffix anchor in bloom (Unicode)")
+	}
+}
+
+// Cover the Unicode fallback loop breaks and the final return false.
+func TestRepository_checkBloom_UnicodeBreaksAndReturnFalse(t *testing.T) {
+	t.Run("break when a becomes empty after dot", func(t *testing.T) {
+		bf := newFakeBloom() // negative bloom
+		repo := &repository{bloom: bf}
+		// Non-ASCII with trailing dot to force a=="" after trimming at '.'
+		if repo.checkBloom("你好.") { // isASCII=false -> Unicode path
+			t.Fatalf("expected false for Unicode name with trailing dot and empty bloom")
+		}
+	})
+	t.Run("break when no dot present", func(t *testing.T) {
+		bf := newFakeBloom() // negative bloom
+		repo := &repository{bloom: bf}
+		// Non-ASCII single-label name -> strings.IndexByte returns -1 -> else break
+		if repo.checkBloom("例子") { // "example" in Chinese
+			t.Fatalf("expected false for single-label Unicode name with empty bloom")
+		}
+	})
+}
