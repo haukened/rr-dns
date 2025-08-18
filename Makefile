@@ -7,6 +7,8 @@ CMD_DIR=./cmd/rr-dnsd
 
 all: clean fmt vet test lint sec build
 
+check: clean fmt vet test lint sec cover
+
 build:
 	go build -o $(BINARY_NAME) $(CMD_DIR)
 
