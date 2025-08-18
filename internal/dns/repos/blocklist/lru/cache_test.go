@@ -89,3 +89,78 @@ func TestNewLRU_Error(t *testing.T) {
 	}
 	newLRU = originalLRU
 }
+func TestDecisionCache_Stats(t *testing.T) {
+	c, err := New(2)
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	// Initial stats
+	stats := c.Stats()
+	if stats.Capacity != 2 {
+		t.Errorf("Capacity=%d want=2", stats.Capacity)
+	}
+	if stats.Size != 0 {
+		t.Errorf("Size=%d want=0", stats.Size)
+	}
+	if stats.Hits != 0 {
+		t.Errorf("Hits=%d want=0", stats.Hits)
+	}
+	if stats.Misses != 0 {
+		t.Errorf("Misses=%d want=0", stats.Misses)
+	}
+	if stats.Evictions != 0 {
+		t.Errorf("Evictions=%d want=0", stats.Evictions)
+	}
+
+	// Miss
+	c.Get("notfound.")
+	stats = c.Stats()
+	if stats.Misses != 1 {
+		t.Errorf("Misses=%d want=1", stats.Misses)
+	}
+
+	// Put and Hit
+	c.Put("a.", domain.BlockDecision{Blocked: true})
+	c.Get("a.")
+	stats = c.Stats()
+	if stats.Hits != 1 {
+		t.Errorf("Hits=%d want=1", stats.Hits)
+	}
+	if stats.Size != 1 {
+		t.Errorf("Size=%d want=1", stats.Size)
+	}
+
+	// Eviction
+	c.Put("b.", domain.BlockDecision{Blocked: true})
+	c.Put("c.", domain.BlockDecision{Blocked: true}) // Should evict one
+	stats = c.Stats()
+	if stats.Evictions != 1 {
+		t.Errorf("Evictions=%d want=1", stats.Evictions)
+	}
+	if stats.Size != 2 {
+		t.Errorf("Size=%d want=2", stats.Size)
+	}
+}
+
+func TestDisabledCache_Stats(t *testing.T) {
+	c, err := New(0)
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	stats := c.Stats()
+	if stats.Capacity != 0 {
+		t.Errorf("Capacity=%d want=0", stats.Capacity)
+	}
+	if stats.Size != 0 {
+		t.Errorf("Size=%d want=0", stats.Size)
+	}
+	if stats.Hits != 0 {
+		t.Errorf("Hits=%d want=0", stats.Hits)
+	}
+	if stats.Misses != 0 {
+		t.Errorf("Misses=%d want=0", stats.Misses)
+	}
+	if stats.Evictions != 0 {
+		t.Errorf("Evictions=%d want=0", stats.Evictions)
+	}
+}
