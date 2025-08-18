@@ -6,8 +6,8 @@ import (
 )
 
 func TestFilter_AddTestClear(t *testing.T) {
-	// small parameters to keep test fast; k>=1
-	f := NewFilter(128, 3)
+	// small capacity and fp rate via factory
+	f := NewFactory().New(32, 0.05)
 
 	keyA := []byte("example.com")
 	keyB := []byte("other.com")
@@ -24,16 +24,13 @@ func TestFilter_AddTestClear(t *testing.T) {
 	// probabilistic: keyB might rarely be a false positive; accept both but ensure not both negative
 	_ = f.MightContain(keyB)
 
-	f.Clear()
-	// After clear, added key should be gone; allow tiny chance of FP but assert most likely negative
-	if f.MightContain(keyA) {
-		// flaky only if FP happens right after Clear; note but don't fail hard
-		t.Logf("keyA still reported maybe after Clear (likely FP)")
-	}
+	// No Clear in the interface anymore; create a fresh filter instead
+	f = NewFactory().New(32, 0.05)
+	_ = f
 }
 
 func TestFilter_ConcurrentReadsDuringWrites(t *testing.T) {
-	f := NewFilter(1024, 4)
+	f := NewFactory().New(256, 0.01)
 
 	var wg sync.WaitGroup
 	done := make(chan struct{})

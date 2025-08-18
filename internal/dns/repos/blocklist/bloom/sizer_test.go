@@ -2,17 +2,15 @@ package bloom
 
 import "testing"
 
-func TestSizer_CommonCases(t *testing.T) {
-	s := NewSizer()
-
+func TestSize_CommonCases(t *testing.T) {
 	// n=1, p=1% → m≈10, k≈7
-	m, k := s.Size(1, 0.01)
+	m, k := size(1, 0.01)
 	if m < 10 || k != 7 {
 		t.Fatalf("n=1,p=0.01: got m=%d k=%d; want m>=10 k=7", m, k)
 	}
 
 	// n=1e6, p=1% → m≈9.585e6 bits, k≈7
-	m, k = s.Size(1_000_000, 0.01)
+	m, k = size(1_000_000, 0.01)
 	if m < 9_500_000 || m > 9_700_000 { // loose bounds around expectation
 		t.Fatalf("n=1e6,p=0.01: unexpected m=%d (expected around 9.6e6)", m)
 	}
@@ -21,7 +19,7 @@ func TestSizer_CommonCases(t *testing.T) {
 	}
 
 	// p=0.5 → k rounds to 1 (very small number of hashes)
-	m, k = s.Size(10_000, 0.5)
+	m, k = size(10_000, 0.5)
 	if k != 1 {
 		t.Fatalf("p=0.5: k=%d; want 1", k)
 	}
@@ -30,18 +28,22 @@ func TestSizer_CommonCases(t *testing.T) {
 	}
 }
 
-func TestSizer_ClampingAndDefaults(t *testing.T) {
-	s := NewSizer()
-
+func TestSize_ClampingAndDefaults(t *testing.T) {
 	// n=0 → treated as 1; invalid p (<=0) defaults to 0.01
-	m, k := s.Size(0, 0)
+	m, k := size(0, 0)
 	if m == 0 || k == 0 {
 		t.Fatalf("n=0,p=0: expected m>=1 and k>=1; got m=%d k=%d", m, k)
 	}
 
 	// p>=1 → defaults to 0.01
-	m2, k2 := s.Size(100, 1.0)
+	m2, k2 := size(100, 1.0)
 	if m2 == 0 || k2 == 0 {
 		t.Fatalf("p>=1 default: expected m>=1 and k>=1; got m=%d k=%d", m2, k2)
+	}
+
+	// also hit edge where computed m would be 0 if not clamped (very small n with extreme p)
+	m3, k3 := size(1, 0.99999999)
+	if m3 == 0 || k3 == 0 {
+		t.Fatalf("extreme p clamp: expected m>=1 and k>=1; got m=%d k=%d", m3, k3)
 	}
 }
