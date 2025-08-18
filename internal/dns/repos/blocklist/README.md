@@ -1,13 +1,12 @@
-# DNS Blocklist Repository (v0.3 components)
+# DNS Blocklist Repository (v0.3)
 
-This folder contains the building blocks for the blocklist repository used by rr-dns. The current implementation provides:
+This folder contains the repository layer for rr-dns’s blocklist, plus its supporting components:
 
-- A Bloom filter wrapper and factory (`bloom/`)
-- A persistent Bolt-backed store with first-match semantics (`bolt/`)
-- An in-memory LRU decision cache (`lru/`)
-- Plain-text and hosts-file parsers that emit `domain.BlockRule` values (`parsers/`)
-
-These parts are designed to be wired together by a higher-level `Repository` (not included here) following CLEAN architecture.
+- Bloom filter wrapper and factory (`bloom/`)
+- Persistent Bolt-backed store with first-match semantics (`bolt/`)
+- In-memory LRU decision cache (`lru/`)
+- Plain-text and hosts-file parsers emitting `domain.BlockRule` (`parsers/`)
+- A concrete `Repository` implementation (`repo.go`) that wires cache → bloom → store
 
 ## Interfaces at a glance
 
@@ -21,23 +20,23 @@ As defined in `interfaces.go`:
     - `RebuildAll(rules []domain.BlockRule, version uint64, updatedUnix int64) error`
     - `Purge() error`
     - `Close() error`
-- Repository (to be wired elsewhere): `Decide(name)`, `UpdateAll(rules, version, updated)`
+- Repository: `Decide(name)`, `UpdateAll(rules, version, updated)`
 
-## Lookup pipeline: cache → bloom → store
+## Repository behavior: cache → bloom → store
 
-Typical read path for a canonical DNS name:
+All lookups operate on a canonical DNS name (lowercase, no trailing dots). The read path is:
 
-1) Check `DecisionCache` → return on hit
-2) Bloom pre-checks (advisory): test exact FQDN and candidate reversed anchors; skip store entirely if all tests are negative
+1) Bloom pre-check (advisory): test exact FQDN and candidate reversed anchors; early-allow if all tests are negative
+2) Cache check: return immediately on hit
 3) Store authoritative check via `GetFirstMatch(name)` which returns:
      - exact match if present, else
      - first matching suffix anchor found by a reversed-prefix cursor walk
-4) Materialize a `domain.BlockDecision` and cache it via `DecisionCache.Put`
+4) Materialize a `domain.BlockDecision` and cache it
 
 Update path (atomic):
 
 - `Store.RebuildAll(allRules, version, updatedUnix)` replaces data in a single write transaction
-- Recreate the Bloom (via `BloomFactory`) sized for the dataset
+- Recreate the Bloom (via `BloomFactory`) sized only by supported rules (exact+suffix)
 - Purge the decision cache to avoid stale decisions
 
 ---
@@ -96,12 +95,8 @@ rules := []domain.BlockRule{
 }
 _ = st.RebuildAll(rules, 1, time.Now().Unix())
 
-if r, ok, _ := st.GetFirstMatch("a.example.com"); ok {
-    _ = r // exact
-}
-if r, ok, _ := st.GetFirstMatch("x.example.org"); ok {
-    _ = r // suffix anchor
-}
+if r, ok, _ := st.GetFirstMatch("a.example.com"); ok { _ = r } // exact
+if r, ok, _ := st.GetFirstMatch("x.example.org"); ok { _ = r } // suffix
 ```
 
 ## lru/
@@ -115,6 +110,33 @@ LRU-backed implementation of `blocklist.DecisionCache`.
 Notes:
 - No internal stats counters; it’s a simple memoization layer
 - Not concurrency-safe by itself; coordinate access at the repository/service layer
+
+## repository/
+
+Concrete `blocklist.Repository` implementation in `repo.go`.
+
+Highlights:
+- Canonicalizes input names with `utils.CanonicalDNSName`
+- Early-allow when Bloom is definitely negative (tests exact and reversed anchors)
+- Reads consult cache before store on maybe-positives
+- `UpdateAll` performs a store rebuild, then rebuilds Bloom (using reversed keys for suffix rules), then purges the cache — all under lock during the swap
+- On internal errors during reads, policy prefers Allow (not blocked)
+
+End-to-end wiring example:
+
+```go
+st, _ := bolt.New("/tmp/bl.db")
+cache, _ := lru.New(50_000)
+factory := bloom.NewFactory()
+repo := blocklist.NewRepository(st, cache, factory, 0.01)
+
+// Load data
+_ = repo.UpdateAll(rules, 1, time.Now().Unix())
+
+// Query
+dec := repo.Decide("AdS.ExAmPlE.org.")
+if dec.IsBlocked() { /* handle */ }
+```
 
 ## parsers/
 
@@ -157,8 +179,9 @@ go test ./internal/dns/repos/blocklist/...
 
 Highlights:
 - `bolt/` store has 100% coverage of its code paths (including error branches)
-- `bloom/`, `lru/`, and `parsers/` have focused unit tests covering core behavior and edge cases
+- `repo.go` has full unit coverage for read and update flows
+- `bloom/`, `lru/`, and `parsers/` have focused tests covering core behavior and edge cases
 
 ## Architecture notes
 
-These components stay within the repos layer and expose minimal interfaces to keep the service layer testable and decoupled. Wiring (BloomFactory + DecisionCache + Store) happens in the composition root (cmd), following the CLEAN architecture boundaries defined in this repo.
+These components stay within the repos layer and expose minimal interfaces to keep the service layer testable and decoupled. Wiring (BloomFactory + DecisionCache + Store) typically happens in the composition root (cmd), following the CLEAN architecture boundaries defined in this repo. The `Repository` here is infrastructure that the composition root can instantiate directly.
