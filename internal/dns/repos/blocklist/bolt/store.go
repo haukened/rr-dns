@@ -72,7 +72,8 @@ func (s *boltStore) GetFirstMatch(name string) (out domain.BlockRule, ok bool, e
 			return nil
 		}
 		c := b.Cursor()
-		rp := reverseBytesInPlace([]byte(name))
+		// Build reversed bytes directly from the query with a single allocation.
+		rp := reverseToBytesFromString(name)
 		for {
 			if len(rp) == 0 {
 				break
@@ -80,7 +81,8 @@ func (s *boltStore) GetFirstMatch(name string) (out domain.BlockRule, ok bool, e
 			k, v := c.Seek(rp)
 			if k != nil && bytes.HasPrefix(k, rp) {
 				// first hit at this specificity
-				anchor := reverseString(string(k))
+				// Reverse key bytes directly to construct anchor without intermediate string conversions.
+				anchor := string(reverseBytesToNew(k))
 				rule, err := decodeRuleValueFn(anchor, v, domain.BlockRuleSuffix)
 				if err != nil {
 					return err
@@ -171,19 +173,29 @@ func decodeRuleValue(name string, v []byte, defaultKind domain.BlockRuleKind) (d
 // decodeRuleValueFn allows tests to override decoding to simulate errors.
 var decodeRuleValueFn = decodeRuleValue
 
+// reverseString reverses s by bytes. Domain names are ASCII, so byte-wise reverse is sufficient here.
 func reverseString(s string) string {
-	b := []byte(s)
-	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
-		b[i], b[j] = b[j], b[i]
+	out := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		out[i] = s[len(s)-1-i]
 	}
-	return string(b)
+	return string(out)
 }
 
-func reverseBytesInPlace(b []byte) []byte {
+// reverseToBytesFromString returns a new []byte containing the bytes of s in reverse order.
+func reverseToBytesFromString(s string) []byte {
+	out := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		out[i] = s[len(s)-1-i]
+	}
+	return out
+}
+
+// reverseBytesToNew returns a new []byte containing b reversed.
+func reverseBytesToNew(b []byte) []byte {
 	out := make([]byte, len(b))
-	copy(out, b)
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
+	for i := 0; i < len(b); i++ {
+		out[i] = b[len(b)-1-i]
 	}
 	return out
 }
@@ -234,7 +246,7 @@ func loadRules(tx *bbolt.Tx, rules []domain.BlockRule) error {
 				return err
 			}
 		case domain.BlockRuleSuffix:
-			key := []byte(reverseString(r.Name))
+			key := reverseToBytesFromString(r.Name)
 			if err := sb.Put(key, val); err != nil {
 				return err
 			}
@@ -259,3 +271,6 @@ func writeMeta(tx *bbolt.Tx, version uint64, updatedUnix int64) error {
 	}
 	return mb.Put([]byte("updated"), ubuf)
 }
+
+// reverseBytesInPlace keeps the old API used in tests; historically it returned a new slice.
+func reverseBytesInPlace(b []byte) []byte { return reverseBytesToNew(b) }
