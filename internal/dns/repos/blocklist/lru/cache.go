@@ -1,6 +1,8 @@
 package lru
 
 import (
+	"sync/atomic"
+
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 	"github.com/haukened/rr-dns/internal/dns/repos/blocklist"
@@ -9,7 +11,11 @@ import (
 // decisionCache is an LRU-backed implementation of blocklist.DecisionCache.
 // It tracks basic metrics: hits, misses, and evictions.
 type decisionCache struct {
-	lru *lru.Cache[string, domain.BlockDecision]
+	lru       *lru.Cache[string, domain.BlockDecision]
+	capacity  int
+	hits      uint64
+	misses    uint64
+	evictions uint64
 }
 
 // disabledCache is a no-op DecisionCache used when size <= 0.
@@ -30,21 +36,27 @@ func New(size int) (blocklist.DecisionCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &decisionCache{lru: cache}, nil
+	dc := &decisionCache{lru: cache, capacity: size}
+	return dc, nil
 }
 
 // Get looks up a decision by name. When found, increments hits; otherwise increments misses.
 func (c *decisionCache) Get(name string) (domain.BlockDecision, bool) {
 	if val, ok := c.lru.Get(name); ok {
+		atomic.AddUint64(&c.hits, 1)
 		return val, true
 	}
 	var zero domain.BlockDecision
+	atomic.AddUint64(&c.misses, 1)
 	return zero, false
 }
 
 // Put stores a decision by name.
 func (c *decisionCache) Put(name string, d domain.BlockDecision) {
-	c.lru.Add(name, d)
+	// In golang-lru/v2, Add returns true if an eviction occurred.
+	if evicted := c.lru.Add(name, d); evicted {
+		atomic.AddUint64(&c.evictions, 1)
+	}
 }
 
 // Len returns the number of entries in the cache.
@@ -52,6 +64,17 @@ func (c *decisionCache) Len() int { return c.lru.Len() }
 
 // Purge clears all entries. Evictions are counted via the eviction callback.
 func (c *decisionCache) Purge() { c.lru.Purge() }
+
+// Stats returns a best-effort snapshot of cache metrics.
+func (c *decisionCache) Stats() blocklist.CacheStats {
+	return blocklist.CacheStats{
+		Capacity:  c.capacity,
+		Size:      c.Len(),
+		Hits:      atomic.LoadUint64(&c.hits),
+		Misses:    atomic.LoadUint64(&c.misses),
+		Evictions: atomic.LoadUint64(&c.evictions),
+	}
+}
 
 // disabledCache implementation
 
@@ -65,6 +88,8 @@ func (d *disabledCache) Put(string, domain.BlockDecision) {}
 func (d *disabledCache) Len() int { return 0 }
 
 func (d *disabledCache) Purge() {}
+
+func (d *disabledCache) Stats() blocklist.CacheStats { return blocklist.CacheStats{} }
 
 var _ blocklist.DecisionCache = (*decisionCache)(nil)
 var _ blocklist.DecisionCache = (*disabledCache)(nil)

@@ -14,23 +14,24 @@ As defined in `interfaces.go`:
 
 - BloomFactory: `New(capacity uint64, fpRate float64) BloomFilter`
 - BloomFilter: `Add([]byte)`, `MightContain([]byte) bool`
-- DecisionCache: `Get(name)`, `Put(name, decision)`, `Len()`, `Purge()`
+- DecisionCache: `Get(name)`, `Put(name, decision)`, `Len()`, `Purge()`, `Stats() CacheStats`
 - Store:
     - `GetFirstMatch(name) (rule domain.BlockRule, ok bool, err error)`
     - `RebuildAll(rules []domain.BlockRule, version uint64, updatedUnix int64) error`
     - `Purge() error`
     - `Close() error`
-- Repository: `Decide(name)`, `UpdateAll(rules, version, updated)`
+    - `Stats() StoreStats`
+- Repository: `Decide(name)`, `UpdateAll(rules, version, updated)`, `CacheStats() CacheStats`, `StoreStats() StoreStats`
 
 ## Repository behavior: cache → bloom → store
 
 All lookups operate on a canonical DNS name (lowercase, no trailing dots). The read path is:
 
-1) Bloom pre-check (advisory): test exact FQDN and candidate reversed anchors; early-allow if all tests are negative
-2) Cache check: return immediately on hit
+1) Cache check: return immediately on hit (hot path)
+2) Bloom pre-check (advisory): test exact FQDN and candidate reversed anchors; early-allow if all tests are negative
 3) Store authoritative check via `GetFirstMatch(name)` which returns:
-     - exact match if present, else
-     - first matching suffix anchor found by a reversed-prefix cursor walk
+    - exact match if present, else
+    - first matching suffix anchor found by a reversed-prefix cursor walk
 4) Materialize a `domain.BlockDecision` and cache it
 
 Update path (atomic):
@@ -83,6 +84,9 @@ Behavior:
 - Values encode `{kind|addedAt|sourceLen|source}`; decoder tolerates legacy/minimal values
 - Writes are atomic; reads are consistent; error paths are covered (including read-only tx and invalid keys)
 
+Stats:
+- `Stats()` returns a cheap snapshot: `Version`, `UpdatedUnix`, and key counts from the `exact` and `suffix` buckets.
+
 Example:
 
 ```go
@@ -104,12 +108,12 @@ if r, ok, _ := st.GetFirstMatch("x.example.org"); ok { _ = r } // suffix
 LRU-backed implementation of `blocklist.DecisionCache`.
 
 - `New(size int) (blocklist.DecisionCache, error)` returns an LRU cache; when `size <= 0`, returns a disabled no-op cache
-- Methods: `Get`, `Put`, `Len`, `Purge`
+- Methods: `Get`, `Put`, `Len`, `Purge`, `Stats`
 - Backed by `github.com/hashicorp/golang-lru/v2`
 
 Notes:
-- No internal stats counters; it’s a simple memoization layer
-- Not concurrency-safe by itself; coordinate access at the repository/service layer
+- Tracks lightweight counters (hits, misses, evictions) using atomics; `Stats()` returns a best-effort snapshot including `Capacity` and current `Size`.
+- Not concurrency-safe by itself; access is coordinated by the repository layer.
 
 ## repository/
 
@@ -117,10 +121,14 @@ Concrete `blocklist.Repository` implementation in `repo.go`.
 
 Highlights:
 - Canonicalizes input names with `utils.CanonicalDNSName`
-- Early-allow when Bloom is definitely negative (tests exact and reversed anchors)
-- Reads consult cache before store on maybe-positives
+- Cache-first lookups; early-allow when Bloom is definitely negative (tests exact and reversed anchors)
+- Reads consult store only on Bloom maybe-positives
 - `UpdateAll` performs a store rebuild, then rebuilds Bloom (using reversed keys for suffix rules), then purges the cache — all under lock during the swap
 - On internal errors during reads, policy prefers Allow (not blocked)
+
+Stats:
+- `CacheStats()` exposes cache capacity/size and counters (hits, misses, evictions)
+- `StoreStats()` exposes store version/updated and key counts (exact/suffix)
 
 End-to-end wiring example:
 
@@ -136,6 +144,11 @@ _ = repo.UpdateAll(rules, 1, time.Now().Unix())
 // Query
 dec := repo.Decide("AdS.ExAmPlE.org.")
 if dec.IsBlocked() { /* handle */ }
+
+// Stats
+cs := repo.CacheStats()
+ss := repo.StoreStats()
+_ = cs; _ = ss
 ```
 
 ## parsers/

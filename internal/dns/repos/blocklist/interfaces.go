@@ -20,6 +20,7 @@ type DecisionCache interface {
 	Put(name string, d domain.BlockDecision)
 	Len() int
 	Purge()
+	Stats() CacheStats
 }
 
 // Store persists and serves raw BlockRules.
@@ -39,6 +40,7 @@ type Store interface {
 	// Maintenance
 	Purge() error
 	Close() error
+	Stats() StoreStats
 }
 
 // Repository wires cache → bloom → store.
@@ -50,4 +52,6 @@ type Store interface {
 type Repository interface {
 	Decide(name string) domain.BlockDecision
 	UpdateAll(rules []domain.BlockRule, version uint64, updatedUnix int64) error
+	CacheStats() CacheStats
+	StoreStats() StoreStats
 }

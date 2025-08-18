@@ -134,6 +134,31 @@ func (s *boltStore) Purge() error {
 	})
 }
 
+// Stats returns cheap counts and metadata from the store.
+func (s *boltStore) Stats() blocklist.StoreStats {
+	var out blocklist.StoreStats
+	_ = s.db.View(func(tx *bbolt.Tx) error {
+		if mb := tx.Bucket(bucketMeta); mb != nil {
+			if v := mb.Get([]byte("version")); len(v) == 8 {
+				out.Version = binary.BigEndian.Uint64(v)
+			}
+			if v := mb.Get([]byte("updated")); len(v) == 8 {
+				out.UpdatedUnix = int64(binary.BigEndian.Uint64(v))
+			}
+		}
+		if eb := tx.Bucket(bucketExact); eb != nil {
+			st := eb.Stats()
+			out.ExactKeys = uint64(st.KeyN)
+		}
+		if sb := tx.Bucket(bucketSuffix); sb != nil {
+			st := sb.Stats()
+			out.SuffixKeys = uint64(st.KeyN)
+		}
+		return nil
+	})
+	return out
+}
+
 // Helpers for encoding/decoding rule values.
 // value format: [kind:1][addedAt:8be][sourceLen:2be][source bytes]
 func encodeRuleValue(r domain.BlockRule) []byte {

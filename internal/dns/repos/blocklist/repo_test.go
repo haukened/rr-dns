@@ -59,8 +59,9 @@ func (s *fakeStore) RebuildAll(rules []domain.BlockRule, version uint64, updated
 	return s.rebuildErr
 }
 
-func (s *fakeStore) Purge() error { return nil }
-func (s *fakeStore) Close() error { return nil }
+func (s *fakeStore) Purge() error      { return nil }
+func (s *fakeStore) Close() error      { return nil }
+func (s *fakeStore) Stats() StoreStats { return StoreStats{} }
 
 type fakeCache struct {
 	m          map[string]domain.BlockDecision
@@ -88,6 +89,9 @@ func (c *fakeCache) Put(name string, d domain.BlockDecision) {
 
 func (c *fakeCache) Len() int { return len(c.m) }
 func (c *fakeCache) Purge()   { c.purgeCalls++; c.m = make(map[string]domain.BlockDecision) }
+func (c *fakeCache) Stats() CacheStats {
+	return CacheStats{Capacity: 0, Size: len(c.m)}
+}
 
 type fakeBloom struct {
 	contains map[string]bool

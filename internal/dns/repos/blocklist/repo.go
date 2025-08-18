@@ -81,6 +81,28 @@ func (r *repository) UpdateAll(rules []domain.BlockRule, version uint64, updated
 	return nil
 }
 
+// CacheStats returns a snapshot of cache metrics.
+func (r *repository) CacheStats() CacheStats {
+	r.mu.RLock()
+	c := r.cache
+	r.mu.RUnlock()
+	if c == nil {
+		return CacheStats{}
+	}
+	return c.Stats()
+}
+
+// StoreStats returns a snapshot of store metrics.
+func (r *repository) StoreStats() StoreStats {
+	r.mu.RLock()
+	s := r.store
+	r.mu.RUnlock()
+	if s == nil {
+		return StoreStats{}
+	}
+	return s.Stats()
+}
+
 // reverseString reverses the string bytes. Must match the store's reversal logic
 // used for suffix anchors to keep Bloom keys aligned with Bolt keys.
 func reverseString(s string) string {

@@ -77,8 +77,9 @@ func (c *countingStore) GetFirstMatch(name string) (domain.BlockRule, bool, erro
 func (c *countingStore) RebuildAll(rules []domain.BlockRule, version uint64, updatedUnix int64) error {
 	return c.inner.RebuildAll(rules, version, updatedUnix)
 }
-func (c *countingStore) Purge() error { return c.inner.Purge() }
-func (c *countingStore) Close() error { return c.inner.Close() }
+func (c *countingStore) Purge() error                { return c.inner.Purge() }
+func (c *countingStore) Close() error                { return c.inner.Close() }
+func (c *countingStore) Stats() blocklist.StoreStats { return c.inner.Stats() }
 
 // countingCache wraps a real DecisionCache to count gets/hits/puts.
 type countingCache struct {
@@ -101,8 +102,9 @@ func (c *countingCache) Put(name string, d domain.BlockDecision) {
 	atomic.AddUint64(&c.puts, 1)
 	c.inner.Put(name, d)
 }
-func (c *countingCache) Len() int { return c.inner.Len() }
-func (c *countingCache) Purge()   { atomic.AddUint64(&c.purges, 1); c.inner.Purge() }
+func (c *countingCache) Len() int                    { return c.inner.Len() }
+func (c *countingCache) Purge()                      { atomic.AddUint64(&c.purges, 1); c.inner.Purge() }
+func (c *countingCache) Stats() blocklist.CacheStats { return c.inner.Stats() }
 
 type repoCounters struct {
 	store *countingStore
@@ -340,11 +342,12 @@ func BenchmarkRepo_Parallel_Positive_Cached(b *testing.B) {
 	const pool = 4096
 	qs := make([]string, pool)
 	for i := 0; i < pool; i++ {
-		if i%3 == 0 {
+		switch i % 3 {
+		case 0:
 			qs[i] = fmt.Sprintf("p%04d.bench.repo", i%20000)
-		} else if i%3 == 1 {
+		case 1:
 			qs[i] = fmt.Sprintf("x.%d.ads.bench.repo", i)
-		} else {
+		default:
 			qs[i] = fmt.Sprintf("x.%d.track.bench.repo", i)
 		}
 		_ = repo.Decide(qs[i]) // warm
@@ -366,7 +369,7 @@ func BenchmarkRepo_Parallel_Negative_Repeated_Cached(b *testing.B) {
 	defer cleanup()
 	// Find a cached negative (bloom maybe → store miss → cached allow).
 	var q string
-	for i := 0; i < 100000; i++ {
+	for i := range 100000 {
 		candidate := fmt.Sprintf("neg-fp-%d.repeat.repo", i)
 		_ = repo.Decide(candidate)
 		_ = repo.Decide(candidate)
