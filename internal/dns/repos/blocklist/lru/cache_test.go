@@ -1,8 +1,10 @@
 package lru
 
 import (
+	"errors"
 	"testing"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/haukened/rr-dns/internal/dns/domain"
 )
 
@@ -16,20 +18,13 @@ func TestDecisionCache_HitMissAndPut(t *testing.T) {
 	if _, ok := c.Get("example.com."); ok {
 		t.Fatalf("expected miss before put")
 	}
-	// miss increments
-	if hits, misses, _ := c.Stats(); hits != 0 || misses != 1 {
-		t.Fatalf("stats mismatch: hits=%d misses=%d", hits, misses)
-	}
+	// miss path exercised; no stats asserted in MVP
 
 	c.Put("example.com.", d)
 
 	got, ok := c.Get("example.com.")
 	if !ok || !got.Blocked || got.MatchedRule != "test" {
 		t.Fatalf("unexpected get: ok=%v got=%+v", ok, got)
-	}
-	// hit increments
-	if hits, misses, _ := c.Stats(); hits != 1 || misses != 1 {
-		t.Fatalf("stats mismatch after hit: hits=%d misses=%d", hits, misses)
 	}
 }
 
@@ -48,10 +43,7 @@ func TestDecisionCache_EvictionAndLen(t *testing.T) {
 	if got := c.Len(); got != 2 {
 		t.Fatalf("len=%d want=2 after eviction", got)
 	}
-	// Give eviction callback time (though it's sync); verify evictions >= 1
-	if _, _, ev := c.Stats(); ev < 1 {
-		t.Fatalf("expected at least 1 eviction, got %d", ev)
-	}
+	// We don't expose eviction counts in MVP; capacity remained fixed at 2
 }
 
 func TestDecisionCache_PurgeCountsEvictions(t *testing.T) {
@@ -67,10 +59,7 @@ func TestDecisionCache_PurgeCountsEvictions(t *testing.T) {
 	if got := c.Len(); got != 0 {
 		t.Fatalf("len=%d want=0 after purge", got)
 	}
-	// Purge triggers evictions for each item
-	if _, _, ev := c.Stats(); ev < 3 {
-		t.Fatalf("expected at least 3 evictions from purge, got %d", ev)
-	}
+	// Purge empties the cache; no eviction stats in MVP
 }
 
 func TestDecisionCache_Disabled(t *testing.T) {
@@ -86,7 +75,17 @@ func TestDecisionCache_Disabled(t *testing.T) {
 	if got := c.Len(); got != 0 {
 		t.Fatalf("len=%d want=0 for disabled", got)
 	}
-	if hits, misses, ev := c.Stats(); hits != 0 || misses != 0 || ev != 0 {
-		t.Fatalf("disabled stats not zero: %d/%d/%d", hits, misses, ev)
+	// Disabled cache has no stats in MVP
+}
+
+func TestNewLRU_Error(t *testing.T) {
+	originalLRU := newLRU
+	newLRU = func(size int) (*lru.Cache[string, domain.BlockDecision], error) {
+		return nil, errors.New("cache creation error") // Simulate an error
 	}
+	_, err := New(1)
+	if err == nil {
+		t.Fatalf("expected error but got nil")
+	}
+	newLRU = originalLRU
 }
