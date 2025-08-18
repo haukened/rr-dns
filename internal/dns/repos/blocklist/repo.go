@@ -30,13 +30,13 @@ func NewRepository(store Store, cache DecisionCache, factory BloomFactory, fpRat
 // Policy: on internal errors, prefer Allow (not blocked).
 func (r *repository) Decide(name string) domain.BlockDecision {
 	cn := utils.CanonicalDNSName(name)
-	// 1) checkBloom: early-allow if definitively negative
-	if !r.checkBloom(cn) {
-		return domain.EmptyDecision()
-	}
-	// 2) checkCache
+	// 1) checkCache first: hot path avoids bloom/store entirely when present
 	if d, ok := r.checkCache(cn); ok {
 		return d
+	}
+	// 2) checkBloom: early-allow if definitively negative
+	if !r.checkBloom(cn) {
+		return domain.EmptyDecision()
 	}
 	// 3) checkStore
 	dec := r.checkStore(cn)

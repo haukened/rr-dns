@@ -132,8 +132,11 @@ func TestDecide_BloomNegativeEarlyAllow(t *testing.T) {
 	if st.getCalls != 0 {
 		t.Fatalf("store should not be consulted when bloom is negative; got %d calls", st.getCalls)
 	}
-	if ca.getCalls != 0 || ca.putCalls != 0 {
-		t.Fatalf("cache should not be used when bloom is negative; gets=%d puts=%d", ca.getCalls, ca.putCalls)
+	if ca.getCalls != 1 {
+		t.Fatalf("cache should be checked first even on bloom-negative; gets=%d", ca.getCalls)
+	}
+	if ca.putCalls != 0 {
+		t.Fatalf("cache should not be updated on early allow; puts=%d", ca.putCalls)
 	}
 }
 
